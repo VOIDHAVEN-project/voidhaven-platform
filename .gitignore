@@ -1,0 +1,23 @@
+# Java / Maven
+apps/api/target/
+
+# Node / Vite / Playwright
+**/node_modules/
+**/dist/
+**/coverage/
+apps/web/playwright-report/
+apps/web/test-results/
+
+# Local environment and runtime data
+.env
+.env.*
+!.env.example
+infra/compose/runtime/
+*.log
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,70 @@
+openapi: 3.1.0
+info:
+  title: VOIDHAVEN V0 API
+  version: 0.1.0
+  description: 公开读取、公开输入和受控后台的接口契约。所有写入接口均使用 Idempotency-Key；私密字段绝不出现在公开响应。
+servers: [{ url: /api/v1 }]
+paths:
+  /public/home:
+    get:
+      summary: 首页三栏投影
+      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/HomeEnvelope' } } } } }
+  /public/competitions:
+    get: { summary: 公开竞赛列表, responses: { '200': { description: 成功 } } }
+  /public/competitions/{id}:
+    get:
+      summary: 公开竞赛详情
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
+  /public/resources:
+    get: { summary: 公开学习资源列表, responses: { '200': { description: 成功 } } }
+  /public/resources/{id}:
+    get: { summary: 公开学习资源详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+  /public/recruitments:
+    get: { summary: 公开团队招募列表, responses: { '200': { description: 成功 } } }
+  /public/recruitments/{id}:
+    get: { summary: 公开团队招募详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+  /public/submissions:
+    post:
+      summary: 公开投稿或反馈；只接收文字、链接和图片说明
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubmissionRequest' } } } }
+      responses: { '201': { description: 已进入审核 }, '409': { $ref: '#/components/responses/IdempotencyConflict' } }
+  /public/partner-applications:
+    post:
+      summary: 公开合作方申请
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: 已进入审核 } }
+  /auth/session:
+    post: { summary: 受控账号登录, responses: { '200': { description: 会话已创建 }, '401': { description: 通用认证失败 } } }
+    delete: { summary: 销毁当前会话, responses: { '204': { description: 已退出 } } }
+  /auth/me:
+    get: { summary: 当前受控身份, responses: { '200': { description: 成功 }, '401': { description: 未认证 } } }
+  /partner/content-items:
+    get: { summary: 合作方自己的内容, responses: { '200': { description: 成功 }, '403': { description: 权限不足 } } }
+    post: { summary: 创建草稿, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '201': { description: 已创建 } } }
+  /admin/review-queue:
+    get: { summary: 管理员审核队列, responses: { '200': { description: 成功 }, '403': { description: 权限不足 } } }
+components:
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
+  responses:
+    HiddenNotFound: { description: 不存在、隐藏、待审或无权限时统一返回 404 }
+    IdempotencyConflict: { description: 相同幂等键用于不同请求 }
+  schemas:
+    SubmissionRequest:
+      type: object
+      required: [submissionType, title, message]
+      properties:
+        submissionType: { type: string, enum: [CONTENT, FEEDBACK, COPYRIGHT] }
+        title: { type: string, maxLength: 240 }
+        message: { type: string, maxLength: 5000 }
+        linkUrl: { type: [string, 'null'], format: uri }
+        imageDescription: { type: [string, 'null'], maxLength: 1000 }
+    HomeEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data: { type: object }

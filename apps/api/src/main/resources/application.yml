@@ -1,0 +1,42 @@
+spring:
+  application:
+    name: voidhaven-api
+  datasource:
+    url: ${VOIDHAVEN_DB_URL:jdbc:mysql://localhost:3306/voidhaven?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${VOIDHAVEN_DB_USERNAME:voidhaven_app}
+    password: ${VOIDHAVEN_DB_PASSWORD:change-me-local-only}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: Asia/Shanghai
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: non_null
+server:
+  port: ${SERVER_PORT:8081}
+  servlet:
+    session:
+      cookie:
+        name: VOIDHAVEN_SESSION
+        http-only: true
+        secure: ${VOIDHAVEN_COOKIE_SECURE:false}
+        same-site: strict
+      timeout: 8h
+  error:
+    include-message: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+voidhaven:
+  public-base-url: ${VOIDHAVEN_PUBLIC_BASE_URL:http://localhost:8080}
+  bootstrap-admin-login: ${VOIDHAVEN_BOOTSTRAP_ADMIN_LOGIN:}
+  bootstrap-admin-password: ${VOIDHAVEN_BOOTSTRAP_ADMIN_PASSWORD:}
+  community-gate-enabled: ${VOIDHAVEN_COMMUNITY_GATE_ENABLED:false}

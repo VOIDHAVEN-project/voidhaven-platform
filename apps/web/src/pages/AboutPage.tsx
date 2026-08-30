@@ -1,0 +1,2 @@
+import { Link } from 'react-router-dom'
+export function AboutPage() { return <section className="page prose"><p className="eyebrow">关于 VOIDHAVEN</p><h1>更少的信息差，<br />更清晰的下一步。</h1><p className="lead">我们服务本校学生，重点解决发现竞赛、理解规则、找到团队与学习机会时的信息分散问题。</p><h2>我们做什么</h2><p>网站负责展示、审核和沉淀信息；社群负责后续沟通、筛选和组队。竞赛页面必须保留官方来源，本站说明始终只是辅助理解。</p><h2>我们不做什么</h2><p>V0 不建立学生账户、简历、报名流程、私信、聊天、评论或复杂推荐，也不会保存社群沟通记录。</p><Link className="button ghost" to="/feedback">提供线索或反馈</Link></section> }
