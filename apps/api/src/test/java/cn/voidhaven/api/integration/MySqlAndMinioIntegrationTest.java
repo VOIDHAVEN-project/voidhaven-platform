@@ -28,8 +28,8 @@ class MySqlAndMinioIntegrationTest {
             minio.start();
             Flyway flyway = Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()).locations("classpath:db/migration").load();
             flyway.migrate();
-            assertThat(flyway.info().applied()).hasSize(5);
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
+            assertThat(flyway.info().applied()).hasSize(6);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
 
             String bucket = "voidhaven-media-test";
             try (S3Client s3 = S3Client.builder().endpointOverride(URI.create(minio.getS3URL())).region(Region.of("us-east-1"))

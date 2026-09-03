@@ -8,6 +8,7 @@ import java.time.Instant;
 public class ContentItem {
     @Id private String id;
     @Enumerated(EnumType.STRING) private ContentKind kind;
+    @Column(name = "module_key") private String moduleKey;
     @Enumerated(EnumType.STRING) @Column(name = "workflow_status") private WorkflowStatus workflowStatus;
     @Enumerated(EnumType.STRING) @Column(name = "publication_status") private PublicationStatus publicationStatus = PublicationStatus.NONE;
     @Enumerated(EnumType.STRING) private Visibility visibility;
@@ -24,6 +25,7 @@ public class ContentItem {
     }
     public String getId() { return id; }
     public ContentKind getKind() { return kind; }
+    public String getModuleKey() { return moduleKey; }
     public WorkflowStatus getWorkflowStatus() { return workflowStatus; }
     public PublicationStatus getPublicationStatus() { return publicationStatus; }
     public Visibility getVisibility() { return visibility; }
@@ -36,6 +38,7 @@ public class ContentItem {
     public void setCurrentRevision(ContentRevision value) { currentRevision = value; }
     public void setPublishedRevision(ContentRevision value) { publishedRevision = value; }
     public void setOwnerPartnerProfileId(String value) { ownerPartnerProfileId = value; }
+    public void setModuleKey(String value) { moduleKey = value; }
     public void beginCandidateRevision() { workflowStatus = WorkflowStatus.DRAFT; }
     public void submit() { workflowStatus = WorkflowStatus.PENDING_REVIEW; }
     public void approve() { workflowStatus = WorkflowStatus.APPROVED; }

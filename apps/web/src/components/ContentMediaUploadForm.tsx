@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../lib/api'
+import type { PublicMedia } from '../lib/api'
 
-export function ContentMediaUploadForm({ contentItemId, onUploaded }: { contentItemId: string; onUploaded?: () => void }) {
+export function ContentMediaUploadForm({ contentItemId, onUploaded }: { contentItemId: string; onUploaded?: (media: PublicMedia) => void }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -17,10 +18,10 @@ export function ContentMediaUploadForm({ contentItemId, onUploaded }: { contentI
     setBusy(true)
     setMessage(null)
     try {
-      await api.uploadContentMedia(contentItemId, file, altText)
+      const uploaded = await api.uploadContentMedia(contentItemId, file, altText)
       form.reset()
       setMessage('图片已关联到当前候选修订；送审并发布后才可能公开展示。')
-      onUploaded?.()
+      onUploaded?.(uploaded)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '图片上传未完成。')
     } finally { setBusy(false) }

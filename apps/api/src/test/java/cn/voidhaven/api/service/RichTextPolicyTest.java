@@ -21,4 +21,9 @@ class RichTextPolicyTest {
         assertThatThrownBy(() -> policy.requireAllowed(json.readTree("{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"text\":\"x\",\"onClick\":\"x\"}]}")))
                 .isInstanceOf(ApiException.class);
     }
+
+    @Test void allows_a_server_generated_markdown_document_but_not_unknown_block_properties() throws Exception {
+        assertThatCode(() -> policy.requireAllowed(json.readTree("{\"version\":2,\"blocks\":[{\"type\":\"heading\",\"level\":2,\"inlines\":[{\"type\":\"strong\",\"text\":\"安全标题\"}]},{\"type\":\"image\",\"mediaId\":\"01JCONTENT0000000000000000\",\"alt\":\"示例图片\"}]}"))).doesNotThrowAnyException();
+        assertThatThrownBy(() -> policy.requireAllowed(json.readTree("{\"version\":2,\"blocks\":[{\"type\":\"paragraph\",\"inlines\":[{\"type\":\"text\",\"text\":\"x\",\"href\":\"https://bad.example\"}]}]}"))).isInstanceOf(ApiException.class);
+    }
 }

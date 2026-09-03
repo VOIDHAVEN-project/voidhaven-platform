@@ -1,0 +1,9 @@
+apis:
+  voidhaven@v0:
+    root: ./voidhaven-v0.yaml
+
+rules:
+  struct: error
+  no-unresolved-refs: error
+  no-ambiguous-paths: error
+  no-identical-paths: error

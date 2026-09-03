@@ -24,6 +24,7 @@ public class AdminController {
     record PartnerApplicationDecision(@NotBlank @Pattern(regexp = "CHANGES_REQUESTED|REJECT") String decision, @NotBlank @Size(max = 1000) String reason) { }
     @GetMapping("/review-queue") ApiResponse<List<ContentManagementService.Managed>> queue(HttpServletRequest req) { return ok(content.pending(), req); }
     @GetMapping("/content-items") ApiResponse<List<ContentManagementService.Managed>> contentItems(HttpServletRequest req) { return ok(content.allManaged(), req); }
+    @GetMapping("/content-items/{id}") ApiResponse<ContentManagementService.Editable> contentItem(@PathVariable String id, HttpServletRequest req) { return ok(content.editable(id), req); }
     @GetMapping("/partner-applications") ApiResponse<List<PartnerAccountProvisioningService.PendingApplication>> partnerApplications(HttpServletRequest req) { return ok(provisioning.pendingApplications(), req); }
     @GetMapping("/partner-profiles") ApiResponse<List<PartnerAdministrationService.ProfileView>> partnerProfiles(HttpServletRequest req) { return ok(partnerAdministration.listProfiles(), req); }
     @GetMapping("/submissions") ApiResponse<List<PublicInputAdministrationService.Submission>> submissions(HttpServletRequest req) { return ok(publicInputAdministration.pendingSubmissions(), req); }

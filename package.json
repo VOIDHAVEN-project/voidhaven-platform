@@ -2,15 +2,24 @@
   "name": "voidhaven-v0",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/web"],
+  "workspaces": [
+    "apps/web"
+  ],
   "scripts": {
     "build": "npm run web:build",
+    "contract:lint": "redocly lint --config contracts/openapi/redocly.yaml contracts/openapi/voidhaven-v0.yaml",
     "lint": "npm run web:lint",
     "test": "npm run web:test",
+    "verify:web": "npm run lint && npm run test && npm run build && npm run contract:lint",
     "web:dev": "npm --workspace web run dev",
     "web:build": "npm --workspace web run build",
     "web:lint": "npm --workspace web run lint",
     "web:test": "npm --workspace web run test"
   },
-  "engines": { "node": ">=24" }
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.51.1"
+  }
 }
