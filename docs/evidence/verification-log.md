@@ -22,6 +22,7 @@
 | 2026-09-03 | R2 管理员公开输入工作台构建回归 | 通过 | `npm run lint`、`npm run test`（4 项）和 `npm run build` 通过。管理员工作台已接入真实投稿/反馈/版权审核与合作方申请的批准、退回、拒绝接口；一次性激活凭据仅在批准响应中显示。 |
 | 2026-09-03 | R1 空库 Compose V1–V3 与浏览器 Smoke Test | 通过 | 在隔离项目 `voidhavenr1clean0903` 的新建 MySQL/MinIO 卷完成镜像构建及 Flyway V1、V2、V3 迁移；`/healthz` 为 200。浏览器验证首页加载三类合成内容，竞赛详情直达和刷新均保持可用，且无页面控制台错误。 |
 | 2026-09-03 | R1 类型明细与可重复质量门 | 通过 | 修复 Windows PowerShell 下 Maven Wrapper 对普通 `.m2` 目录错误索引链接目标的问题；`apps/api/mvnw.cmd verify` 通过（16 项测试及可运行 JAR）。根目录 Web lint、4 项单元测试和生产构建也均通过。 |
+| 2026-09-03 | R2 管理员最小审计工作台 | 通过 | 审计面板仅读取 `/api/v1/admin/audit-logs` 的脱敏最小字段；Web lint、4 项单元测试、TypeScript 检查和生产构建通过，未引入浏览器端缓存或私密字段展示。 |
 | 2026-08-31 | Local/Candidate Compose 配置 | 通过 | 本地 Compose 与生产候选 Compose 均通过 `docker compose config --quiet`；候选验证仅使用示例变量，不创建容器、数据库、云资源或 Secret。 |
 | 2026-08-31 | Docker 联调复跑 | 待执行 | Docker Desktop Linux 引擎当前未运行，无法在本次后续变更后重建临时空库、执行 E2E 或恢复演练。此项不是通过状态。 |
 

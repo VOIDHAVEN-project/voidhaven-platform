@@ -10,6 +10,7 @@ export type PublicSubmission = { id: string; submissionType: 'CONTENT' | 'FEEDBA
 export type ReviewDecisionResult = { id: string; state: string }
 export type ProvisionedPartner = { partnerProfileId: string; loginId: string; activationToken: string }
 export type PartnerProfile = { id: string; displayName: string; contentQuota: number; active: boolean }
+export type AuditLogEntry = { createdAt: string; actorRole: string; action: string; objectType: string; objectId: string; reason: string | null; requestId: string }
 type Envelope<T> = { data: T; requestId: string }
 type CsrfPayload = { headerName: string; token: string }
 export class ApiFailure extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.code = code } }
@@ -62,6 +63,7 @@ export const api = {
   adminDecidePartnerApplication: (id: string, decision: 'CHANGES_REQUESTED' | 'REJECT', reason: string) => write<ReviewDecisionResult>(`/admin/partner-applications/${encodeURIComponent(id)}/decision`, { decision, reason }),
   adminSubmissions: () => request<PublicSubmission[]>('/admin/submissions'),
   adminDecideSubmission: (id: string, decision: 'APPROVE' | 'CHANGES_REQUESTED' | 'REJECT', reason: string) => write<ReviewDecisionResult>(`/admin/submissions/${encodeURIComponent(id)}/decision`, { decision, reason }),
+  adminAuditLogs: () => request<AuditLogEntry[]>('/admin/audit-logs?limit=30'),
   adminPartnerProfiles: () => request<PartnerProfile[]>('/admin/partner-profiles'),
   adminSetPartnerQuota: (id: string, quota: number, reason: string) => writePatch<PartnerProfile>(`/admin/partner-profiles/${encodeURIComponent(id)}/content-quota`, { quota, reason }),
   adminTransferOwnership: (contentItemId: string, toPartnerProfileId: string, reason: string) => write<{ contentItemId: string; toPartnerProfileId: string }>('/admin/content-ownership-transfers', { contentItemId, toPartnerProfileId, reason }),
