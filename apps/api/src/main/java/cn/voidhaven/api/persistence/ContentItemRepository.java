@@ -27,9 +27,9 @@ public interface ContentItemRepository extends JpaRepository<ContentItem, String
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from ContentItem c where c.id = :id")
     Optional<ContentItem> findByIdForUpdate(@Param("id") String id);
-    @Query("select count(c) from ContentItem c where c.ownerPartnerProfileId = :profileId and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE'")
+    @Query("select count(c) from ContentItem c where c.ownerPartnerProfileId = :profileId and c.publishedRevision is not null and c.publicationStatus = 'ACTIVE' and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE'")
     long countPublicActiveByOwnerPartnerProfileId(@Param("profileId") String profileId);
     @EntityGraph(attributePaths = "publishedRevision")
-    @Query("select c from ContentItem c where c.kind in ('COMPETITION', 'RECRUITMENT') and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE' and c.workflowStatus in ('PUBLISHED', 'CLOSED')")
+    @Query("select c from ContentItem c where c.kind in ('COMPETITION', 'RECRUITMENT') and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE' and c.publicationStatus in ('ACTIVE', 'CLOSED')")
     List<ContentItem> findTimedPublicItems();
 }

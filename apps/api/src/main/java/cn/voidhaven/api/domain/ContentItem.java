@@ -9,6 +9,7 @@ public class ContentItem {
     @Id private String id;
     @Enumerated(EnumType.STRING) private ContentKind kind;
     @Enumerated(EnumType.STRING) @Column(name = "workflow_status") private WorkflowStatus workflowStatus;
+    @Enumerated(EnumType.STRING) @Column(name = "publication_status") private PublicationStatus publicationStatus = PublicationStatus.NONE;
     @Enumerated(EnumType.STRING) private Visibility visibility;
     @Enumerated(EnumType.STRING) @Column(name = "record_state") private RecordState recordState;
     @OneToOne(fetch = FetchType.LAZY) @JoinColumn(name = "current_revision_id") private ContentRevision currentRevision;
@@ -24,6 +25,7 @@ public class ContentItem {
     public String getId() { return id; }
     public ContentKind getKind() { return kind; }
     public WorkflowStatus getWorkflowStatus() { return workflowStatus; }
+    public PublicationStatus getPublicationStatus() { return publicationStatus; }
     public Visibility getVisibility() { return visibility; }
     public RecordState getRecordState() { return recordState; }
     public ContentRevision getCurrentRevision() { return currentRevision; }
@@ -39,11 +41,11 @@ public class ContentItem {
     public void approve() { workflowStatus = WorkflowStatus.APPROVED; }
     public void reject() { workflowStatus = WorkflowStatus.REJECTED; }
     public void requestChanges() { workflowStatus = WorkflowStatus.CHANGES_REQUESTED; }
-    public void publish() { workflowStatus = WorkflowStatus.PUBLISHED; visibility = Visibility.PUBLIC; recordState = RecordState.ACTIVE; publishedRevision = currentRevision; }
-    public void close(Instant when) { workflowStatus = WorkflowStatus.CLOSED; closedAt = when; }
+    public void publish() { workflowStatus = WorkflowStatus.PUBLISHED; publicationStatus = PublicationStatus.ACTIVE; closedAt = null; visibility = Visibility.PUBLIC; recordState = RecordState.ACTIVE; publishedRevision = currentRevision; }
+    public void closePublic(Instant when) { publicationStatus = PublicationStatus.CLOSED; closedAt = when; }
     public void hide() { visibility = Visibility.HIDDEN; }
     public void show() { visibility = Visibility.PUBLIC; }
     public void archive() { recordState = RecordState.ARCHIVED; visibility = Visibility.HIDDEN; archivedAt = Instant.now(); }
-    public void restore() { recordState = RecordState.ACTIVE; visibility = Visibility.HIDDEN; workflowStatus = WorkflowStatus.APPROVED; archivedAt = null; }
+    public void restore() { recordState = RecordState.ACTIVE; visibility = Visibility.HIDDEN; workflowStatus = WorkflowStatus.APPROVED; publicationStatus = PublicationStatus.NONE; archivedAt = null; }
     public void markDeleted() { recordState = RecordState.DELETED; visibility = Visibility.HIDDEN; }
 }
