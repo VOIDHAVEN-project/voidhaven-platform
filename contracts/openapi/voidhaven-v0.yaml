@@ -110,6 +110,20 @@ paths:
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePartnerApplication' } } } }
       responses: { '200': { description: 凭据仅在此首次响应中出现 }, '409': { description: 申请已处理或凭据不可重放 } }
+  /admin/partner-applications/{id}/decision:
+    post:
+      summary: 退回修改或拒绝合作方申请；不返回私密联系方式
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerApplicationDecision' } } } }
+      responses: { '200': { description: 审核状态已更新 }, '409': { description: 申请已处理 } }
+  /admin/submissions:
+    get: { summary: 待审核的公开投稿、反馈和版权请求；不返回私密联系方式, responses: { '200': { description: 成功 } } }
+  /admin/submissions/{id}/decision:
+    post:
+      summary: 审核公开投稿、反馈或版权请求
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublicInputDecision' } } } }
+      responses: { '200': { description: 审核状态已更新 }, '409': { description: 请求已处理 } }
   /admin/partner-profiles:
     get: { summary: 合作方档案与当前配额, responses: { '200': { description: 成功 } } }
   /admin/partner-profiles/{id}/content-quota:
@@ -124,6 +138,12 @@ paths:
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OwnershipTransfer' } } } }
       responses: { '200': { description: 已转交 } }
+  /admin/accounts/{id}/qualification-status:
+    patch:
+      summary: 超级管理员停用或撤销受控账号；下一次受限请求会使既有会话失效
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AccountQualificationChange' } } } }
+      responses: { '200': { description: 账号资格已更新 }, '401': { description: 被停用账号的会话已失效 }, '403': { description: 仅超级管理员 } }
   /admin/audit-logs:
     get: { summary: 最小审计摘要查询, parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }], responses: { '200': { description: 成功，不含密码、令牌、私密正文或联系方式 } } }
 components:
@@ -238,4 +258,22 @@ components:
       properties:
         contentItemId: { type: string, minLength: 26, maxLength: 26 }
         toPartnerProfileId: { type: string, minLength: 26, maxLength: 26 }
+        reason: { type: string, maxLength: 1000 }
+    PublicInputDecision:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [APPROVE, CHANGES_REQUESTED, REJECT] }
+        reason: { type: string, maxLength: 1000 }
+    PartnerApplicationDecision:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [CHANGES_REQUESTED, REJECT] }
+        reason: { type: string, maxLength: 1000 }
+    AccountQualificationChange:
+      type: object
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [SUSPENDED, REVOKED] }
         reason: { type: string, maxLength: 1000 }

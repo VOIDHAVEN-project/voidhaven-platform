@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PartnerAccountProvisioningService {
     public record Provisioned(String partnerProfileId, String loginId, String activationToken) { }
     public record PendingApplication(String id, String displayName, String introduction, String portfolioUrl) { }
+    public record DecisionResult(String id, String state) { }
     private final JdbcTemplate jdbc;
     private final AccountRepository accounts;
     private final PartnerProfileRepository profiles;
@@ -53,11 +54,24 @@ public class PartnerAccountProvisioningService {
         account.addRole(partnerRole);
         accounts.saveAndFlush(account);
         PartnerProfile profile = profiles.saveAndFlush(new PartnerProfile(Ids.ulid(), account.getId(), displayName, 3));
-        int updated = jdbc.update("update partner_applications set state = 'APPROVED' where id = ? and state = 'PENDING_REVIEW'", applicationId);
+        int updated = jdbc.update("update partner_applications set state = 'APPROVED', reviewed_by_account_id = ?, review_reason = ?, reviewed_at = current_timestamp(6) where id = ? and state = 'PENDING_REVIEW'", actorId, "审核通过，已创建受控账号。", applicationId);
         if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "PARTNER_APPLICATION_NOT_ACTIONABLE", "该合作方申请已被其他操作处理。 ");
         String token = activations.issue(account.getId());
         audit.record(actorId, actorRole, "PARTNER_ACCOUNT_CREATED", "PARTNER_PROFILE", profile.getId(), "{}", "{\"applicationId\":\"" + applicationId + "\",\"qualificationStatus\":\"PENDING\"}", null, requestId);
         audit.record(actorId, actorRole, "ACTIVATION_ISSUED", "ACCOUNT", account.getId(), "{}", "{\"qualificationStatus\":\"PENDING\"}", null, requestId);
         return new Provisioned(profile.getId(), account.getLoginId(), token);
+    }
+
+    @Transactional
+    public DecisionResult decideApplication(String applicationId, String decision, String reason, String actorId, String actorRole, String requestId) {
+        if (!"REJECT".equals(decision) && !"CHANGES_REQUESTED".equals(decision)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PARTNER_APPLICATION_DECISION", "合作方申请只能退回修改或拒绝；通过操作会创建受控账号。 ");
+        }
+        String state = "REJECT".equals(decision) ? "REJECTED" : "CHANGES_REQUESTED";
+        int updated = jdbc.update("update partner_applications set state = ?, reviewed_by_account_id = ?, review_reason = ?, reviewed_at = current_timestamp(6) where id = ? and state = 'PENDING_REVIEW'", state, actorId, reason, applicationId);
+        if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "PARTNER_APPLICATION_NOT_ACTIONABLE", "该合作方申请不存在或已被处理。 ");
+        audit.record(actorId, actorRole, "PARTNER_APPLICATION_" + decision, "PARTNER_APPLICATION", applicationId,
+                "{\"state\":\"PENDING_REVIEW\"}", "{\"state\":\"" + state + "\"}", reason, requestId);
+        return new DecisionResult(applicationId, state);
     }
 }
