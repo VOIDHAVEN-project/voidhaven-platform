@@ -1,7 +1,7 @@
 export type ContentKind = 'COMPETITION' | 'RESOURCE' | 'RECRUITMENT'
 export type Content = { id: string; kind: ContentKind; title: string; summary: string; body: { version?: number; blocks?: { type: string; text: string }[] }; languageCode: string; sourceName: string; sourceUrl: string; rightsBasis: string; details: Record<string, unknown>; revision: number }
 export type PublicContentPage = { items: Content[]; nextCursor: string | null }
-export type ManagedContent = { id: string; kind: ContentKind; workflowStatus: string; visibility: string; recordState: string; title: string; revision: number }
+export type ManagedContent = { id: string; kind: ContentKind; workflowStatus: string; publicationStatus: string; visibility: string; recordState: string; title: string; revision: number }
 export type AdminDraft = { kind: ContentKind; title: string; summary: string; body: { version: number; blocks: { type: string; text: string }[] }; languageCode: string; sourceUrl: string; sourceName: string; rightsBasis: string; details: Record<string, unknown> }
 export type PartnerDashboard = { displayName: string; quota: number; publicActiveCount: number; contentItems: ManagedContent[] }
 export type EditablePartnerContent = { id: string; draft: AdminDraft; revision: number; workflowStatus: string; visibility: string; recordState: string }

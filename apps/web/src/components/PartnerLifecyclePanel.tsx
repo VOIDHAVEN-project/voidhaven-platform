@@ -21,7 +21,9 @@ function draftFrom(form: HTMLFormElement): AdminDraft {
     rightsBasis: '已核验公开来源；站内仅作辅助导读。',
     details: kind === 'COMPETITION'
       ? { officialRulesUrl: String(values.get('officialRulesUrl')).trim() || sourceUrl, deadlineDate: deadlineDate || undefined }
-      : { deadlineDate: deadlineDate || undefined },
+      : kind === 'RESOURCE'
+        ? { resourceType: String(values.get('resourceType')).trim(), deadlineDate: deadlineDate || undefined }
+        : { deadlineDate: deadlineDate || undefined, followUpUrl: String(values.get('followUpUrl')).trim() || undefined, relatedCompetitionId: String(values.get('relatedCompetitionId')).trim() || undefined },
   }
 }
 
@@ -105,6 +107,9 @@ export function PartnerLifecyclePanel() {
       <label>来源名称<input name="sourceName" required maxLength={240} defaultValue={editDraft?.sourceName} /></label>
       <label className="full">官方或原始来源 URL<input name="sourceUrl" type="url" placeholder="https://" required defaultValue={editDraft?.sourceUrl} /></label>
       <label className="full">竞赛官方规则 URL（竞赛必填）<input name="officialRulesUrl" type="url" placeholder="竞赛类型可与来源 URL 相同" defaultValue={typeof editDraft?.details.officialRulesUrl === 'string' ? editDraft.details.officialRulesUrl : ''} /></label>
+      <label>资源类型（资源必填）<input name="resourceType" placeholder="课程、文档、工具等" defaultValue={typeof editDraft?.details.resourceType === 'string' ? editDraft.details.resourceType : ''} /></label>
+      <label className="full">后续入口 URL（团队招募可选）<input name="followUpUrl" type="url" placeholder="https://" defaultValue={typeof editDraft?.details.followUpUrl === 'string' ? editDraft.details.followUpUrl : ''} /></label>
+      <label>关联竞赛 ID（团队招募可选）<input name="relatedCompetitionId" maxLength={26} defaultValue={typeof editDraft?.details.relatedCompetitionId === 'string' ? editDraft.details.relatedCompetitionId : ''} /></label>
       <div className="full partner-form-actions"><button className="button primary" disabled={busyId === 'create'}>{busyId === 'create' ? '保存中…' : editing ? '保存候选修订' : '保存合作方草稿'}</button>{editing ? <button className="button ghost" type="button" onClick={() => setEditing(null)}>取消编辑</button> : null}</div>
     </form>
     {notice ? <p className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}

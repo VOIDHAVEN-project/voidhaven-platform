@@ -7,16 +7,21 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
 public class ContentManagementService {
-    private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PartnerProfileRepository profiles; private final AuditService audit; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final RichTextPolicy richText;
-    public ContentManagementService(ContentItemRepository items, ContentRevisionRepository revisions, PartnerProfileRepository profiles, AuditService audit, ObjectMapper mapper, ContentSourcePolicy sources, RichTextPolicy richText) { this.items = items; this.revisions = revisions; this.profiles = profiles; this.audit = audit; this.mapper = mapper; this.sources = sources; this.richText = richText; }
+    private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PartnerProfileRepository profiles; private final AuditService audit; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final RichTextPolicy richText; private final JdbcTemplate jdbc;
+    public ContentManagementService(ContentItemRepository items, ContentRevisionRepository revisions, PartnerProfileRepository profiles, AuditService audit, ObjectMapper mapper, ContentSourcePolicy sources, RichTextPolicy richText, JdbcTemplate jdbc) { this.items = items; this.revisions = revisions; this.profiles = profiles; this.audit = audit; this.mapper = mapper; this.sources = sources; this.richText = richText; this.jdbc = jdbc; }
     public record Draft(
             @NotBlank @Size(max = 32) String kind,
             @NotBlank @Size(max = 240) String title,
@@ -31,7 +36,7 @@ public class ContentManagementService {
     public record Editable(String id, Draft draft, long revision, WorkflowStatus workflowStatus, Visibility visibility, RecordState recordState) { }
     @Transactional public Managed create(Draft draft, String ownerProfileId, String actorId, String role, String requestId) {
         ContentKind kind = parseKind(draft.kind()); validate(draft, kind); ContentItem item = new ContentItem(Ids.ulid(), kind, WorkflowStatus.DRAFT, Visibility.HIDDEN, RecordState.ACTIVE); item.setOwnerPartnerProfileId(ownerProfileId); item = items.saveAndFlush(item);
-        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, draft.title().trim(), draft.summary().trim(), json(draft.body()), draft.languageCode().trim(), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), json(draft.details()), actorId); revision = revisions.saveAndFlush(revision); item.setCurrentRevision(revision); item = items.saveAndFlush(item); audit.record(actorId, role, "CONTENT_CREATED", "CONTENT_ITEM", item.getId(), "{}", "{\"workflowStatus\":\"DRAFT\"}", null, requestId); return managed(item);
+        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, draft.title().trim(), draft.summary().trim(), json(draft.body()), draft.languageCode().trim(), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), json(draft.details()), actorId); revision = revisions.saveAndFlush(revision); writeTypedDetails(kind, revision.getId(), draft.details()); item.setCurrentRevision(revision); item = items.saveAndFlush(item); audit.record(actorId, role, "CONTENT_CREATED", "CONTENT_ITEM", item.getId(), "{}", "{\"workflowStatus\":\"DRAFT\"}", null, requestId); return managed(item);
     }
     @Transactional public Managed submit(String id, String ownerProfileId, String actorId, String role, String requestId) { ContentItem item = owned(id, ownerProfileId); require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED, "CONTENT_NOT_SUBMITTABLE"); item.submit(); audit.record(actorId, role, "CONTENT_SUBMITTED", "CONTENT_ITEM", id, "{\"workflowStatus\":\"DRAFT\"}", "{\"workflowStatus\":\"PENDING_REVIEW\"}", null, requestId); return managed(item); }
     @Transactional public Managed submitAsAdmin(String id, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED, "CONTENT_NOT_SUBMITTABLE"); item.submit(); audit.record(actorId, role, "CONTENT_SUBMITTED", "CONTENT_ITEM", id, "{\"workflowStatus\":\"DRAFT\"}", "{\"workflowStatus\":\"PENDING_REVIEW\"}", null, requestId); return managed(item); }
@@ -46,6 +51,7 @@ public class ContentManagementService {
         int nextRevision = item.getCurrentRevision().getRevisionNumber() + 1;
         ContentRevision revision = new ContentRevision(Ids.ulid(), item, nextRevision, draft.title().trim(), draft.summary().trim(), json(draft.body()), draft.languageCode().trim(), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), json(draft.details()), actorId);
         revision = revisions.saveAndFlush(revision);
+        writeTypedDetails(kind, revision.getId(), draft.details());
         item.setCurrentRevision(revision);
         item.beginCandidateRevision();
         item = items.saveAndFlush(item);
@@ -65,7 +71,27 @@ public class ContentManagementService {
     @Transactional(readOnly = true) public Editable ownedEditable(String id, String profileId) { ContentItem item = owned(id, profileId); ContentRevision revision = item.getCurrentRevision(); try { return new Editable(item.getId(), new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), mapper.readTree(revision.getDetailsJson())), item.getVersion() == null ? 0 : item.getVersion(), item.getWorkflowStatus(), item.getVisibility(), item.getRecordState()); } catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); } }
     private ContentItem find(String id) { return items.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); }
     private ContentItem owned(String id, String profileId) { ContentItem item = find(id); if (!Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"); return item; }
-    private void validate(Draft draft, ContentKind kind) { if (blank(draft.title()) || blank(draft.summary()) || blank(draft.sourceUrl()) || blank(draft.sourceName()) || blank(draft.rightsBasis()) || draft.body() == null || draft.details() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VALIDATION_FAILED", "请补齐标题、导读、正文、来源、权利说明和结构化字段。"); richText.requireAllowed(draft.body()); sources.requireAllowed(draft.sourceUrl()); if (kind == ContentKind.COMPETITION && !draft.details().hasNonNull("officialRulesUrl")) throw new ApiException(HttpStatus.BAD_REQUEST, "OFFICIAL_SOURCE_REQUIRED", "竞赛必须提供可核验的官方规则链接。"); if (kind == ContentKind.COMPETITION) sources.requireAllowed(draft.details().get("officialRulesUrl").asText()); }
+    private void validate(Draft draft, ContentKind kind) {
+        if (blank(draft.title()) || blank(draft.summary()) || blank(draft.sourceUrl()) || blank(draft.sourceName()) || blank(draft.rightsBasis()) || draft.body() == null || draft.details() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VALIDATION_FAILED", "请补齐标题、导读、正文、来源、权利说明和结构化字段。");
+        richText.requireAllowed(draft.body()); sources.requireAllowed(draft.sourceUrl());
+        parseDeadlineAt(draft.details()); parseDeadlineDate(draft.details());
+        if (kind == ContentKind.COMPETITION) {
+            if (!draft.details().hasNonNull("officialRulesUrl")) throw new ApiException(HttpStatus.BAD_REQUEST, "OFFICIAL_SOURCE_REQUIRED", "竞赛必须提供可核验的官方规则链接。");
+            sources.requireAllowed(draft.details().get("officialRulesUrl").asText());
+        }
+        if (kind == ContentKind.RESOURCE && blank(text(draft.details(), "resourceType"))) throw new ApiException(HttpStatus.BAD_REQUEST, "RESOURCE_TYPE_REQUIRED", "学习资源必须标明资源类型。");
+        if (kind == ContentKind.RECRUITMENT && !blank(text(draft.details(), "followUpUrl"))) sources.requireAllowed(text(draft.details(), "followUpUrl"));
+    }
+    private void writeTypedDetails(ContentKind kind, String revisionId, JsonNode details) {
+        Timestamp deadlineAt = parseDeadlineAt(details); Date deadlineDate = parseDeadlineDate(details);
+        if (kind == ContentKind.COMPETITION) jdbc.update("insert into competition_revision_details (revision_id, deadline_at, deadline_date, official_rules_url) values (?, ?, ?, ?)", revisionId, deadlineAt, deadlineDate, text(details, "officialRulesUrl"));
+        else if (kind == ContentKind.RESOURCE) jdbc.update("insert into resource_revision_details (revision_id, resource_type) values (?, ?)", revisionId, text(details, "resourceType"));
+        else jdbc.update("insert into recruitment_revision_details (revision_id, deadline_at, deadline_date, related_competition_id, follow_up_url) values (?, ?, ?, ?, ?)", revisionId, deadlineAt, deadlineDate, nullable(text(details, "relatedCompetitionId")), nullable(text(details, "followUpUrl")));
+    }
+    private Timestamp parseDeadlineAt(JsonNode details) { String value = text(details, "deadlineAt"); if (blank(value)) return null; try { return Timestamp.from(Instant.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE_AT", "截止时刻必须使用 ISO-8601 格式。 "); } }
+    private Date parseDeadlineDate(JsonNode details) { String value = text(details, "deadlineDate"); if (blank(value)) return null; try { return Date.valueOf(LocalDate.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE_DATE", "截止日期必须使用 YYYY-MM-DD 格式。 "); } }
+    private String text(JsonNode node, String field) { return node.hasNonNull(field) ? node.get(field).asText().trim() : ""; }
+    private String nullable(String value) { return blank(value) ? null : value; }
     private ContentKind parseKind(String value) { try { return ContentKind.valueOf(value); } catch (Exception e) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CONTENT_KIND", "内容类型无效。"); } }
     private String json(JsonNode node) { try { return mapper.writeValueAsString(node); } catch (Exception e) { throw new IllegalStateException(e); } }
     private boolean blank(String value) { return value == null || value.isBlank(); }
