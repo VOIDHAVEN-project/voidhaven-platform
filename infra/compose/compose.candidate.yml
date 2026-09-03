@@ -10,6 +10,7 @@ services:
       VOIDHAVEN_DB_PASSWORD: ${VOIDHAVEN_DB_PASSWORD:?Inject the application database password}
       VOIDHAVEN_PUBLIC_BASE_URL: ${VOIDHAVEN_PUBLIC_BASE_URL:?Set the canonical HTTPS base URL}
       VOIDHAVEN_COOKIE_SECURE: "true"
+      VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:?Inject a high-entropy public-write rate-limit secret}
       VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED: "false"
     read_only: true
     tmpfs: [/tmp]

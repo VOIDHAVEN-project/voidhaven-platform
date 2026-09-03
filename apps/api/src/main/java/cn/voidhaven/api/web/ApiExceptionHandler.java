@@ -3,12 +3,19 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.MissingRequestHeaderException;
 @RestControllerAdvice
 public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ApiError> handleApi(ApiException ex, HttpServletRequest request) { return response(ex.status(), ex.code(), ex.getMessage(), request); }
     @ExceptionHandler({ConstraintViolationException.class, org.springframework.web.bind.MethodArgumentNotValidException.class})
     ResponseEntity<ApiError> handleValidation(Exception ex, HttpServletRequest request) { return response(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "请检查填写内容后重试。", request); }
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    ResponseEntity<ApiError> handleMissingHeader(MissingRequestHeaderException ex, HttpServletRequest request) {
+        String code = "Idempotency-Key".equalsIgnoreCase(ex.getHeaderName()) ? "IDEMPOTENCY_KEY_REQUIRED" : "REQUEST_HEADER_REQUIRED";
+        String message = "IDEMPOTENCY_KEY_REQUIRED".equals(code) ? "请携带有效的幂等请求标识后重试。" : "请求缺少必要的安全标识。";
+        return response(HttpStatus.BAD_REQUEST, code, message, request);
+    }
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> handleUnexpected(Exception ex, HttpServletRequest request) { return response(HttpStatus.INTERNAL_SERVER_ERROR, "TEMPORARILY_UNAVAILABLE", "服务暂时不可用，请稍后重试。", request); }
     private ResponseEntity<ApiError> response(HttpStatus status, String code, String message, HttpServletRequest request) {

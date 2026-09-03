@@ -44,3 +44,6 @@ voidhaven:
   bootstrap-partner-login: ${VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN:}
   bootstrap-partner-password: ${VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD:}
   community-gate-enabled: ${VOIDHAVEN_COMMUNITY_GATE_ENABLED:false}
+  public-write-rate-limit-secret: ${VOIDHAVEN_RATE_LIMIT_SECRET:local-development-rate-limit-secret}
+  public-write-rate-limit-max-requests: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT:8}
+  public-write-rate-limit-window-seconds: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT_WINDOW_SECONDS:3600}

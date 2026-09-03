@@ -32,6 +32,7 @@ services:
       VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN: ${VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN:-local-partner}
       VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD: ${VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD:-change-me-before-first-local-run}
       VOIDHAVEN_COOKIE_SECURE: "false"
+      VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:-local-development-rate-limit-secret}
       VOIDHAVEN_PUBLIC_BASE_URL: http://localhost:${VOIDHAVEN_HTTP_PORT:-8080}
     depends_on:
       mysql:

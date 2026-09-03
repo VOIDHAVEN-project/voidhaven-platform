@@ -5,6 +5,7 @@ voidhaven:
   bootstrap-admin-password: ""
   bootstrap-partner-login: ""
   bootstrap-partner-password: ""
+  public-write-rate-limit-secret: ${VOIDHAVEN_RATE_LIMIT_SECRET:}
 server:
   forward-headers-strategy: framework
   servlet:
