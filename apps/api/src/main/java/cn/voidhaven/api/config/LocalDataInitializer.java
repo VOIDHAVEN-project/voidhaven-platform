@@ -35,7 +35,7 @@ public class LocalDataInitializer implements ApplicationRunner {
     }
     private Role role(String code) { return roles.findByCode(code).orElseGet(() -> roles.save(new Role(code))); }
     private void publish(ContentKind kind, String title, String summary, String deadlineDate, String sourceName) {
-        ContentItem item = items.saveAndFlush(new ContentItem(Ids.ulid(), kind, WorkflowStatus.PUBLISHED, Visibility.PUBLIC, RecordState.ACTIVE));
+        ContentItem item = new ContentItem(Ids.ulid(), kind, WorkflowStatus.PUBLISHED, Visibility.PUBLIC, RecordState.ACTIVE);
         item.setModuleKey(kind == ContentKind.COMPETITION ? "competition" : kind == ContentKind.RECRUITMENT ? "recruitment" : "resource");
         item = items.saveAndFlush(item);
         String details = deadlineDate == null ? "{}" : "{\"deadlineDate\":\"" + deadlineDate + "\"}";
