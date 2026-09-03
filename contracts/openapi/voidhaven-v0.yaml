@@ -33,6 +33,13 @@ paths:
       responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/recruitments/{id}:
     get: { summary: 公开团队招募详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+  /public/media/{id}:
+    get:
+      summary: 仅当媒体仍关联于公开、活跃内容时读取处理后的图片；响应不缓存
+      parameters: [{ $ref: '#/components/parameters/MediaId' }]
+      responses:
+        '200': { description: 处理后的 JPEG 或 PNG 图片，Cache-Control 为 no-store, content: { image/jpeg: {}, image/png: {} } }
+        '404': { $ref: '#/components/responses/HiddenNotFound' }
   /public/submissions:
     post:
       summary: 公开投稿或反馈；只接收文字、链接和图片说明
@@ -56,6 +63,27 @@ paths:
       summary: 使用一次性激活令牌设置首个密码
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActivationRequest' } } } }
       responses: { '200': { description: 已激活 }, '400': { description: 令牌无效、已使用或已过期 } }
+  /media/uploads:
+    post:
+      summary: 合作方或管理员向自己的可编辑候选修订上传一张正文图片
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [contentItemId, altText, file]
+              properties:
+                contentItemId: { type: string, minLength: 26, maxLength: 26 }
+                altText: { type: string, minLength: 1, maxLength: 240 }
+                file: { type: string, format: binary, description: 实际文件类型必须为 JPEG、PNG 或 WebP；服务端重编码后仅保存 JPEG/PNG。 }
+      responses:
+        '200': { description: 图片已安全处理并关联候选修订, content: { application/json: { schema: { $ref: '#/components/schemas/MediaEnvelope' } } } }
+        '400': { description: 类型、尺寸、大小或图片说明不合规 }
+        '403': { description: 未认证或不具备合作方/管理员资格 }
+        '404': { $ref: '#/components/responses/HiddenNotFound' }
+        '409': { description: 候选状态、图片数量/总量或幂等键冲突 }
   /partner/dashboard:
     get: { summary: 合作方自己的配额和内容工作台, responses: { '200': { description: 成功 }, '403': { description: 无有效合作方档案 } } }
   /partner/content-items:
@@ -149,6 +177,7 @@ paths:
 components:
   parameters:
     Id: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
+    MediaId: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, description: JPA 内容版本号 } }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
@@ -186,7 +215,7 @@ components:
             nextCursor: { type: [string, 'null'] }
     PublicContent:
       type: object
-      required: [id, kind, title, summary, body, languageCode, sourceName, sourceUrl, rightsBasis, details, revision]
+      required: [id, kind, title, summary, body, languageCode, sourceName, sourceUrl, rightsBasis, details, revision, media]
       properties:
         id: { type: string }
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
@@ -199,6 +228,23 @@ components:
         rightsBasis: { type: string }
         details: { type: object }
         revision: { type: integer }
+        media: { type: array, items: { $ref: '#/components/schemas/PublicMedia' } }
+    PublicMedia:
+      type: object
+      required: [id, url, mediaType, width, height, altText]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        url: { type: string, pattern: '^/api/v1/public/media/[A-Za-z0-9]+$' }
+        mediaType: { type: string, enum: [image/jpeg, image/png] }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        altText: { type: string, maxLength: 240 }
+    MediaEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data: { $ref: '#/components/schemas/PublicMedia' }
     RichTextDocument:
       type: object
       required: [version, blocks]
