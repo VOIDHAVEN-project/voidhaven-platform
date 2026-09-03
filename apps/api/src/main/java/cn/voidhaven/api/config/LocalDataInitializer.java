@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,13 +15,13 @@ import java.util.List;
 
 @Component @Profile("local")
 public class LocalDataInitializer implements ApplicationRunner {
-    private final RoleRepository roles; private final AccountRepository accounts; private final PartnerProfileRepository profiles; private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PasswordEncoder encoder;
+    private final RoleRepository roles; private final AccountRepository accounts; private final PartnerProfileRepository profiles; private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PasswordEncoder encoder; private final JdbcTemplate jdbc;
     @Value("${voidhaven.bootstrap-admin-login:}") String adminLogin;
     @Value("${voidhaven.bootstrap-admin-password:}") String adminPassword;
     @Value("${voidhaven.bootstrap-partner-login:}") String partnerLogin;
     @Value("${voidhaven.bootstrap-partner-password:}") String partnerPassword;
     @Value("${voidhaven.public-base-url:http://localhost:8080}") String publicBaseUrl;
-    public LocalDataInitializer(RoleRepository roles, AccountRepository accounts, PartnerProfileRepository profiles, ContentItemRepository items, ContentRevisionRepository revisions, PasswordEncoder encoder) { this.roles = roles; this.accounts = accounts; this.profiles = profiles; this.items = items; this.revisions = revisions; this.encoder = encoder; }
+    public LocalDataInitializer(RoleRepository roles, AccountRepository accounts, PartnerProfileRepository profiles, ContentItemRepository items, ContentRevisionRepository revisions, PasswordEncoder encoder, JdbcTemplate jdbc) { this.roles = roles; this.accounts = accounts; this.profiles = profiles; this.items = items; this.revisions = revisions; this.encoder = encoder; this.jdbc = jdbc; }
     @Override @Transactional
     public void run(ApplicationArguments args) {
         Role partner = role("PARTNER"), admin = role("ADMIN"), superAdmin = role("SUPER_ADMIN");
@@ -37,6 +38,13 @@ public class LocalDataInitializer implements ApplicationRunner {
         ContentItem item = items.saveAndFlush(new ContentItem(Ids.ulid(), kind, WorkflowStatus.PUBLISHED, Visibility.PUBLIC, RecordState.ACTIVE));
         String details = deadlineDate == null ? "{}" : "{\"deadlineDate\":\"" + deadlineDate + "\"}";
         ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, title, summary, "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"text\":\"这是仅用于本地环境的合成内容。请在生产前由审核人员替换为经核验的实际来源。\"}]}", "zh-CN", publicBaseUrl.replaceAll("/$", "") + "/local-fixtures/source", sourceName, "本地合成数据，仅用于验收", details, null);
-        revision = revisions.saveAndFlush(revision); item.setCurrentRevision(revision); item.setPublishedRevision(revision); items.saveAndFlush(item);
+        revision = revisions.saveAndFlush(revision);
+        writeTypedDetails(kind, revision.getId(), deadlineDate);
+        item.setCurrentRevision(revision); item.setPublishedRevision(revision); item.publish(); items.saveAndFlush(item);
+    }
+    private void writeTypedDetails(ContentKind kind, String revisionId, String deadlineDate) {
+        if (kind == ContentKind.COMPETITION) jdbc.update("insert into competition_revision_details (revision_id, deadline_date, official_rules_url) values (?, ?, ?)", revisionId, deadlineDate, publicBaseUrl.replaceAll("/$", "") + "/local-fixtures/source");
+        else if (kind == ContentKind.RESOURCE) jdbc.update("insert into resource_revision_details (revision_id, resource_type) values (?, ?)", revisionId, "GUIDE");
+        else jdbc.update("insert into recruitment_revision_details (revision_id, deadline_date) values (?, ?)", revisionId, deadlineDate);
     }
 }

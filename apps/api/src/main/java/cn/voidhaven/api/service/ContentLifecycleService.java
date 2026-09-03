@@ -1,30 +1,34 @@
 package cn.voidhaven.api.service;
 
 import cn.voidhaven.api.domain.ContentItem;
+import cn.voidhaven.api.domain.ContentKind;
 import cn.voidhaven.api.domain.PublicationStatus;
 import cn.voidhaven.api.persistence.ContentItemRepository;
 import cn.voidhaven.api.support.Ids;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class ContentLifecycleService {
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private final ContentItemRepository items;
-    private final ObjectMapper mapper;
+    private final JdbcTemplate jdbc;
     private final AuditService audit;
 
-    public ContentLifecycleService(ContentItemRepository items, ObjectMapper mapper, AuditService audit) {
+    public ContentLifecycleService(ContentItemRepository items, JdbcTemplate jdbc, AuditService audit) {
         this.items = items;
-        this.mapper = mapper;
+        this.jdbc = jdbc;
         this.audit = audit;
     }
 
@@ -49,13 +53,19 @@ public class ContentLifecycleService {
     }
 
     private boolean hasPassedDeadline(ContentItem item, Instant now) {
-        try {
-            JsonNode details = mapper.readTree(item.getPublishedRevision().getDetailsJson());
-            if (details.hasNonNull("deadlineAt")) return Instant.parse(details.get("deadlineAt").asText()).isBefore(now);
-            if (details.hasNonNull("deadlineDate")) return LocalDate.parse(details.get("deadlineDate").asText()).isBefore(ZonedDateTime.ofInstant(now, SHANGHAI).toLocalDate());
-        } catch (Exception ignored) {
-            // A malformed optional deadline must never make a public item disappear automatically.
-        }
-        return false;
+        if (item.getKind() == ContentKind.RESOURCE || item.getPublishedRevision() == null) return false;
+        List<Map<String, Object>> rows = jdbc.queryForList(deadlineSql(item.getKind()), item.getPublishedRevision().getId());
+        if (rows.isEmpty()) return false;
+        Map<String, Object> detail = rows.get(0);
+        Timestamp deadlineAt = (Timestamp) detail.get("deadline_at");
+        if (deadlineAt != null) return deadlineAt.toInstant().isBefore(now);
+        Date deadlineDate = (Date) detail.get("deadline_date");
+        return deadlineDate != null && deadlineDate.toLocalDate().isBefore(ZonedDateTime.ofInstant(now, SHANGHAI).toLocalDate());
+    }
+
+    private String deadlineSql(ContentKind kind) {
+        return kind == ContentKind.COMPETITION
+                ? "select deadline_at, deadline_date from competition_revision_details where revision_id = ?"
+                : "select deadline_at, deadline_date from recruitment_revision_details where revision_id = ?";
     }
 }

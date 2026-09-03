@@ -80,7 +80,14 @@ public class ContentManagementService {
             sources.requireAllowed(draft.details().get("officialRulesUrl").asText());
         }
         if (kind == ContentKind.RESOURCE && blank(text(draft.details(), "resourceType"))) throw new ApiException(HttpStatus.BAD_REQUEST, "RESOURCE_TYPE_REQUIRED", "学习资源必须标明资源类型。");
-        if (kind == ContentKind.RECRUITMENT && !blank(text(draft.details(), "followUpUrl"))) sources.requireAllowed(text(draft.details(), "followUpUrl"));
+        if (kind == ContentKind.RECRUITMENT) {
+            if (!blank(text(draft.details(), "followUpUrl"))) sources.requireAllowed(text(draft.details(), "followUpUrl"));
+            String relatedCompetitionId = text(draft.details(), "relatedCompetitionId");
+            if (!blank(relatedCompetitionId)) {
+                ContentItem related = items.findById(relatedCompetitionId).orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "RELATED_COMPETITION_NOT_FOUND", "关联竞赛不存在。"));
+                if (related.getKind() != ContentKind.COMPETITION) throw new ApiException(HttpStatus.BAD_REQUEST, "RELATED_CONTENT_NOT_COMPETITION", "关联内容必须是竞赛。 ");
+            }
+        }
     }
     private void writeTypedDetails(ContentKind kind, String revisionId, JsonNode details) {
         Timestamp deadlineAt = parseDeadlineAt(details); Date deadlineDate = parseDeadlineDate(details);
