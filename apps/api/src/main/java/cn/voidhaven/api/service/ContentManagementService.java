@@ -3,6 +3,9 @@ import cn.voidhaven.api.domain.*;
 import cn.voidhaven.api.persistence.*;
 import cn.voidhaven.api.support.Ids;
 import cn.voidhaven.api.web.ApiException;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +17,16 @@ import java.util.*;
 public class ContentManagementService {
     private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PartnerProfileRepository profiles; private final AuditService audit; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final RichTextPolicy richText;
     public ContentManagementService(ContentItemRepository items, ContentRevisionRepository revisions, PartnerProfileRepository profiles, AuditService audit, ObjectMapper mapper, ContentSourcePolicy sources, RichTextPolicy richText) { this.items = items; this.revisions = revisions; this.profiles = profiles; this.audit = audit; this.mapper = mapper; this.sources = sources; this.richText = richText; }
-    public record Draft(String kind, String title, String summary, JsonNode body, String languageCode, String sourceUrl, String sourceName, String rightsBasis, JsonNode details) { }
+    public record Draft(
+            @NotBlank @Size(max = 32) String kind,
+            @NotBlank @Size(max = 240) String title,
+            @NotBlank @Size(max = 1000) String summary,
+            @NotNull JsonNode body,
+            @NotBlank @Size(max = 16) String languageCode,
+            @NotBlank @Size(max = 2048) String sourceUrl,
+            @NotBlank @Size(max = 240) String sourceName,
+            @NotBlank @Size(max = 120) String rightsBasis,
+            @NotNull JsonNode details) { }
     public record Managed(String id, ContentKind kind, WorkflowStatus workflowStatus, PublicationStatus publicationStatus, Visibility visibility, RecordState recordState, String title, long revision) { }
     public record Editable(String id, Draft draft, long revision, WorkflowStatus workflowStatus, Visibility visibility, RecordState recordState) { }
     @Transactional public Managed create(Draft draft, String ownerProfileId, String actorId, String role, String requestId) {
