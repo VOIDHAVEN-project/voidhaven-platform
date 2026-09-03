@@ -14,10 +14,12 @@ import java.io.InputStream;
 import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * The module file is deliberately versioned with the application.  It is a
@@ -27,6 +29,8 @@ import java.util.Set;
 public class ContentModuleRegistry {
     private static final Set<String> SUPPORTED_FIELD_TYPES = Set.of(
             "text", "textarea", "date", "datetime", "select", "url", "boolean", "relation", "number", "tags");
+    private static final Pattern MODULE_KEY = Pattern.compile("[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*");
+    private static final Pattern FIELD_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9_]*");
     public record Field(String key, String label, String type, boolean required, boolean filterable, List<String> options, String help) { }
     public record Module(String key, String label, ContentKind legacyKind, boolean active, boolean allowsOriginalSource,
                          boolean requiresOfficialRules, String deadlinePolicy, String template, List<Field> fields, JsonNode snapshot) { }
@@ -44,19 +48,20 @@ public class ContentModuleRegistry {
             Map<String, Module> loaded = new LinkedHashMap<>();
             for (JsonNode value : document.path("modules")) {
                 String key = value.path("key").asText();
-                if (key.isBlank() || loaded.containsKey(key)) throw new IllegalStateException("Duplicate or empty content module key");
+                if (!MODULE_KEY.matcher(key).matches() || loaded.containsKey(key)) throw new IllegalStateException("Duplicate or invalid content module key");
                 List<Field> fields = value.path("fields").valueStream().map(field -> new Field(
                         field.path("key").asText(), field.path("label").asText(), field.path("type").asText(),
                         field.path("required").asBoolean(false), field.path("filterable").asBoolean(false),
                         field.path("options").valueStream().map(JsonNode::asText).toList(), field.path("help").asText("")
                 )).toList();
-                if (fields.stream().anyMatch(field -> field.key().isBlank() || !SUPPORTED_FIELD_TYPES.contains(field.type()))) throw new IllegalStateException("Invalid content module field");
+                if (fields.stream().anyMatch(field -> !FIELD_KEY.matcher(field.key()).matches() || !SUPPORTED_FIELD_TYPES.contains(field.type()))
+                        || fields.stream().map(Field::key).distinct().count() != fields.size()) throw new IllegalStateException("Invalid or duplicate content module field");
                 loaded.put(key, new Module(key, value.path("label").asText(), ContentKind.valueOf(value.path("legacyKind").asText()),
                         value.path("active").asBoolean(false), value.path("allowsOriginalSource").asBoolean(false),
                         value.path("requiresOfficialRules").asBoolean(false), value.path("deadlinePolicy").asText("NONE"),
                         value.path("template").asText(""), fields, value.deepCopy()));
             }
-            this.modules = Map.copyOf(loaded);
+            this.modules = Collections.unmodifiableMap(new LinkedHashMap<>(loaded));
         } catch (Exception error) {
             throw new IllegalStateException("Cannot load content module registry", error);
         }

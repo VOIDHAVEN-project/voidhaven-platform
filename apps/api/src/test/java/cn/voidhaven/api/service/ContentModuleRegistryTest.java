@@ -15,6 +15,8 @@ class ContentModuleRegistryTest {
         assertThat(article.allowsOriginalSource()).isTrue();
         assertThat(article.legacyKind().name()).isEqualTo("RESOURCE");
         assertThat(article.fields()).extracting(ContentModuleRegistry.Field::key).contains("sourceMode", "resourceType");
+        assertThat(registry.publicDefinitions().path("modules").valueStream().map(node -> node.path("key").asText()).toList())
+                .containsExactly("competition", "recruitment", "resource", "resource.article");
     }
 
     @Test void exposes_only_declared_public_filters_and_validates_typed_metadata() throws Exception {

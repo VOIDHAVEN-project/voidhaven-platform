@@ -29,7 +29,7 @@
 | 2026-09-03 | R3 受控媒体代码与前端接入 | 通过（单元/构建） | 根目录 `npm run lint`、`npm run test`（5 项）与 `npm run build` 通过；`apps/api/mvnw.cmd verify` 通过（22 项并生成可运行 JAR）。覆盖真实 PNG 解码/重编码、文本伪装媒体拒绝、候选修订附件和孤儿对象删除锁定逻辑。未执行 MinIO、MySQL 或浏览器端上传集成验证。 |
 | 2026-09-03 | R1 语言与权利结构化回归 | 通过（单元/构建） | 根目录 `npm run lint`、`npm run test`（5 项）与 `npm run build` 通过；`apps/api/mvnw.cmd verify` 通过（26 项并生成可运行 JAR）。受限语言值映射为正式中文标签；非中文内容缺原始标题会在送审前被拒绝；作者展示名与两类复用许可进入内容修订、DTO 和后台表单。未执行空库 V5 或浏览器端发布链路。 |
 | 2026-09-03 | R4 干净 MySQL/MinIO 容器集成 | 通过 | `apps/api/mvnw.cmd clean verify` 使用 Testcontainers 2.0.5 启动短生命周期 MySQL 8.4 与 MinIO。Flyway 从空库执行 V1–V5，私有 S3 兼容桶完成写入、读取和删除；26 项既有单元测试同时通过并生成可运行 JAR。未覆盖应用 HTTP/媒体权限或浏览器流程。 |
-| 2026-09-04 | 可演进内容内核 V6 与 Markdown 编辑器 | 部分通过 | 根目录 `npm run verify:web` 通过：无 lint 警告、6 项组件测试、TypeScript/Vite 生产构建和 Redocly 2.51.1 OpenAPI 核心校验全部成功；完整 `npm audit` 报告 0 个已知漏洞。API `mvnw.cmd clean verify` 完成编译、31 项非容器测试和可运行 JAR，总计 32 项中 1 项容器测试被跳过。新增模块注册表、Markdown 安全文档、统一编辑器、稳定详情 URL、修订快照/筛选投影/关联表和媒体按正文引用继承。当前 Docker 引擎不可用，因此 V6 空库迁移、真实媒体和浏览器闭环仍不是通过状态。 |
+| 2026-09-04 | 可演进内容内核 V6 与 Markdown 编辑器 | 通过（不含浏览器 E2E） | 根目录 `npm run verify:web` 通过：无 lint 警告、6 项组件测试、TypeScript/Vite 生产构建和 Redocly 2.51.1 OpenAPI 核心校验全部成功；完整 `npm audit` 报告 0 个已知漏洞。API `mvnw.cmd verify` 使用短生命周期 MySQL 8.4 与 MinIO，Flyway 从空库顺序应用 V1–V6；32 项测试全部通过并生成可运行 JAR。新增模块注册表、Markdown 安全文档、统一编辑器、稳定详情 URL、修订快照/筛选投影/关联表和媒体按正文引用继承。完整应用 Compose 与管理员/合作方浏览器闭环仍需另行验收。 |
 
 正式上线候选的阻断项与已知限制见 [known-limitations.md](known-limitations.md)。
 
