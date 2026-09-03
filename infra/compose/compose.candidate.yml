@@ -11,6 +11,10 @@ services:
       VOIDHAVEN_PUBLIC_BASE_URL: ${VOIDHAVEN_PUBLIC_BASE_URL:?Set the canonical HTTPS base URL}
       VOIDHAVEN_COOKIE_SECURE: "true"
       VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:?Inject a high-entropy public-write rate-limit secret}
+      VOIDHAVEN_MEDIA_ENDPOINT: ${VOIDHAVEN_MEDIA_ENDPOINT:?Inject an HTTPS S3-compatible endpoint}
+      VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:?Inject the least-privilege media access key}
+      VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:?Inject the least-privilege media secret}
+      VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:?Set the private media bucket}
       VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED: "false"
     read_only: true
     tmpfs: [/tmp]

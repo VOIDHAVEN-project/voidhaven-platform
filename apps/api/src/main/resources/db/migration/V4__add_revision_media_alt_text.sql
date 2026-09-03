@@ -1,0 +1,1 @@
+ALTER TABLE revision_media ADD COLUMN alt_text VARCHAR(240) NOT NULL DEFAULT '';

@@ -1,5 +1,6 @@
 export type ContentKind = 'COMPETITION' | 'RESOURCE' | 'RECRUITMENT'
-export type Content = { id: string; kind: ContentKind; title: string; summary: string; body: { version?: number; blocks?: { type: string; text: string }[] }; languageCode: string; sourceName: string; sourceUrl: string; rightsBasis: string; details: Record<string, unknown>; revision: number }
+export type PublicMedia = { id: string; url: string; mediaType: string; width: number; height: number; altText: string }
+export type Content = { id: string; kind: ContentKind; title: string; summary: string; body: { version?: number; blocks?: { type: string; text: string }[] }; languageCode: string; sourceName: string; sourceUrl: string; rightsBasis: string; details: Record<string, unknown>; revision: number; media?: PublicMedia[] }
 export type PublicContentPage = { items: Content[]; nextCursor: string | null }
 export type ManagedContent = { id: string; kind: ContentKind; workflowStatus: string; publicationStatus: string; visibility: string; recordState: string; title: string; revision: number }
 export type AdminDraft = { kind: ContentKind; title: string; summary: string; body: { version: number; blocks: { type: string; text: string }[] }; languageCode: string; sourceUrl: string; sourceName: string; rightsBasis: string; details: Record<string, unknown> }
@@ -32,6 +33,9 @@ function write<T>(path: string, body?: unknown): Promise<T> {
 }
 function writePatch<T>(path: string, body: unknown): Promise<T> {
   return protectedRequest<T>(path, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) })
+}
+function writeForm<T>(path: string, body: FormData): Promise<T> {
+  return protectedRequest<T>(path, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body })
 }
 export const api = {
   home: () => request<{ competitions: Content[]; resources: Content[]; recruitments: Content[] }>('/public/home'),
@@ -67,6 +71,7 @@ export const api = {
   adminPartnerProfiles: () => request<PartnerProfile[]>('/admin/partner-profiles'),
   adminSetPartnerQuota: (id: string, quota: number, reason: string) => writePatch<PartnerProfile>(`/admin/partner-profiles/${encodeURIComponent(id)}/content-quota`, { quota, reason }),
   adminTransferOwnership: (contentItemId: string, toPartnerProfileId: string, reason: string) => write<{ contentItemId: string; toPartnerProfileId: string }>('/admin/content-ownership-transfers', { contentItemId, toPartnerProfileId, reason }),
+  uploadContentMedia: (contentItemId: string, file: File, altText: string) => { const body = new FormData(); body.set('contentItemId', contentItemId); body.set('altText', altText); body.set('file', file); return writeForm<{ id: string; url: string; mediaType: string; width: number; height: number; altText: string }>('/media/uploads', body) },
   partnerDashboard: () => request<PartnerDashboard>('/partner/dashboard'),
   partnerContent: (id: string) => request<EditablePartnerContent>(`/partner/content-items/${encodeURIComponent(id)}`),
   partnerCreate: (draft: AdminDraft) => write<ManagedContent>('/partner/content-items', draft),

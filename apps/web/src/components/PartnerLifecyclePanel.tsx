@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { AdminDraft, ContentKind, EditablePartnerContent, PartnerDashboard } from '../lib/api'
 import { api } from '../lib/api'
+import { ContentMediaUploadForm } from './ContentMediaUploadForm'
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
 
@@ -115,7 +116,7 @@ export function PartnerLifecyclePanel() {
     {notice ? <p className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
     <div className="partner-content-list" aria-live="polite">
       {!dashboard ? <p>正在加载自己的内容…</p> : dashboard.contentItems.length === 0 ? <p>尚无内容。创建草稿后，它只会在你的受控工作台中可见。</p> : dashboard.contentItems.map((item) => <article className="partner-content-row" key={item.id}>
-        <div><p className="eyebrow"><span>{item.kind}</span><span>{statusText(item.workflowStatus)}</span></p><h3>{item.title}</h3><p className="admin-state">可见性：{item.visibility} · 存放：{item.recordState}</p></div>
+        <div><p className="eyebrow"><span>{item.kind}</span><span>{statusText(item.workflowStatus)}</span></p><h3>{item.title}</h3><p className="admin-state">可见性：{item.visibility} · 存放：{item.recordState}</p>{(item.workflowStatus === 'DRAFT' || item.workflowStatus === 'CHANGES_REQUESTED') ? <ContentMediaUploadForm contentItemId={item.id} /> : null}</div>
         <div className="partner-row-actions">{(item.workflowStatus === 'DRAFT' || item.workflowStatus === 'CHANGES_REQUESTED' || item.workflowStatus === 'PUBLISHED') ? <button className="button ghost" type="button" onClick={() => void startEdit(item.id)} disabled={busyId === item.id}>{busyId === item.id ? '加载中…' : '编辑'}</button> : null}{(item.workflowStatus === 'DRAFT' || item.workflowStatus === 'CHANGES_REQUESTED') ? <button className="button primary" type="button" onClick={() => void submit(item.id)} disabled={busyId === item.id}>{busyId === item.id ? '送审中…' : '送审'}</button> : null}</div>
       </article>)}
     </div>

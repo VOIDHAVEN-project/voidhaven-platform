@@ -6,6 +6,10 @@ voidhaven:
   bootstrap-partner-login: ""
   bootstrap-partner-password: ""
   public-write-rate-limit-secret: ${VOIDHAVEN_RATE_LIMIT_SECRET:}
+  media-endpoint: ${VOIDHAVEN_MEDIA_ENDPOINT:}
+  media-access-key: ${VOIDHAVEN_MEDIA_ACCESS_KEY:}
+  media-secret-key: ${VOIDHAVEN_MEDIA_SECRET_KEY:}
+  media-bucket: ${VOIDHAVEN_MEDIA_BUCKET:}
 server:
   forward-headers-strategy: framework
   servlet:

@@ -20,6 +20,18 @@ services:
       MINIO_ROOT_USER: ${VOIDHAVEN_MEDIA_ACCESS_KEY:-voidhaven-local}
       MINIO_ROOT_PASSWORD: ${VOIDHAVEN_MEDIA_SECRET_KEY:-change-me-local-only}
     volumes: ["minio-data:/data"]
+  minio-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    depends_on: [minio]
+    environment:
+      VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:-voidhaven-local}
+      VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:-change-me-local-only}
+      VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:-voidhaven-media}
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      until mc alias set local http://minio:9000 "$${VOIDHAVEN_MEDIA_ACCESS_KEY}" "$${VOIDHAVEN_MEDIA_SECRET_KEY}"; do sleep 1; done;
+      mc mb --ignore-existing "local/$${VOIDHAVEN_MEDIA_BUCKET}";
+      mc anonymous set none "local/$${VOIDHAVEN_MEDIA_BUCKET}"
   api:
     build: ../../apps/api
     environment:
@@ -33,10 +45,16 @@ services:
       VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD: ${VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD:-change-me-before-first-local-run}
       VOIDHAVEN_COOKIE_SECURE: "false"
       VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:-local-development-rate-limit-secret}
+      VOIDHAVEN_MEDIA_ENDPOINT: ${VOIDHAVEN_MEDIA_ENDPOINT:-http://minio:9000}
+      VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:-voidhaven-local}
+      VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:-change-me-local-only}
+      VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:-voidhaven-media}
       VOIDHAVEN_PUBLIC_BASE_URL: http://localhost:${VOIDHAVEN_HTTP_PORT:-8080}
     depends_on:
       mysql:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
   web:
     build: ../../apps/web
   nginx:

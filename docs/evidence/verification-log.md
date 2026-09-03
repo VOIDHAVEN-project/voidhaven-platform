@@ -26,6 +26,7 @@
 | 2026-09-03 | R3 公开写入限流与输入链接校验 | 通过 | `apps/api/mvnw.cmd verify` 通过（18 项）。公开投稿、合作方申请和社群验证路径在控制器前按 HMAC 摘要限流；生产 profile 缺少独立限流密钥会拒绝启动；公开输入链接使用来源 HTTPS 策略校验。 |
 | 2026-08-31 | Local/Candidate Compose 配置 | 通过 | 本地 Compose 与生产候选 Compose 均通过 `docker compose config --quiet`；候选验证仅使用示例变量，不创建容器、数据库、云资源或 Secret。 |
 | 2026-08-31 | Docker 联调复跑 | 待执行 | Docker Desktop Linux 引擎当前未运行，无法在本次后续变更后重建临时空库、执行 E2E 或恢复演练。此项不是通过状态。 |
+| 2026-09-03 | R3 受控媒体代码与前端接入 | 通过（单元/构建） | 根目录 `npm run lint`、`npm run test`（5 项）与 `npm run build` 通过；`apps/api/mvnw.cmd verify` 通过（22 项并生成可运行 JAR）。覆盖真实 PNG 解码/重编码、文本伪装媒体拒绝、候选修订附件和孤儿对象删除锁定逻辑。未执行 MinIO、MySQL 或浏览器端上传集成验证。 |
 
 正式上线候选的阻断项与已知限制见 [known-limitations.md](known-limitations.md)。
 
