@@ -16,6 +16,7 @@
 | 2026-09-03 | R0 生产来源与 Cookie 回归 | 通过 | `.\mvnw.cmd verify` 通过（10 项）。生产 profile 显式强制会话 Cookie `Secure`；本地合成来源迁移已移除；公开投影对遗留的 localhost、保留域名及非 HTTPS 来源 fail-closed。 |
 | 2026-09-03 | R0 干净 Compose 与浏览器 Smoke Test | 通过 | 在隔离项目 `voidhavenr0clean0903` 的新建 MySQL/MinIO 卷执行 Compose 构建。Flyway 仅从空库应用 V1；`/healthz`、`/api/v1/public/home`、首页、竞赛详情直达与刷新均返回成功。公开响应包含本地来源说明而不含 `example.invalid`。 |
 | 2026-09-03 | R1 候选/公开生命周期分离单元回归 | 通过 | `.\mvnw.cmd verify` 通过（10 项）；状态机测试验证已发布内容创建候选草稿后，到期关闭只改变 `publicationStatus`，不覆盖候选修订的 `workflowStatus`。 |
+| 2026-09-03 | R3 账号资格与会话失效单元回归 | 通过 | `.\mvnw.cmd verify` 通过（13 项）。超级管理员可审计地停用或撤销其他账号；过滤器回归验证既有会话会在失效账号的下一次受限请求被清除并返回 `ACCOUNT_INACTIVE`。 |
 | 2026-08-31 | Local/Candidate Compose 配置 | 通过 | 本地 Compose 与生产候选 Compose 均通过 `docker compose config --quiet`；候选验证仅使用示例变量，不创建容器、数据库、云资源或 Secret。 |
 | 2026-08-31 | Docker 联调复跑 | 待执行 | Docker Desktop Linux 引擎当前未运行，无法在本次后续变更后重建临时空库、执行 E2E 或恢复演练。此项不是通过状态。 |
 

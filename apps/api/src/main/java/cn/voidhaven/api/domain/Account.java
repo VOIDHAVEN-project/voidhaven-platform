@@ -25,4 +25,5 @@ public class Account {
     public void addRole(Role role) { roles.add(role); }
     public void activateWithPassword(String value) { passwordHash = value; qualificationStatus = "ACTIVE"; }
     public void suspend() { qualificationStatus = "SUSPENDED"; }
+    public void changeQualificationStatus(String value) { qualificationStatus = value; }
 }

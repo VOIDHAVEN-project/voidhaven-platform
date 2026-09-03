@@ -15,6 +15,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
+import cn.voidhaven.api.web.AccountEligibilityFilter;
 
 @Configuration @EnableWebSecurity @EnableMethodSecurity
 public class SecurityConfig {
@@ -22,11 +24,12 @@ public class SecurityConfig {
     @Bean PasswordEncoder passwordEncoder() { return Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8(); }
     @Bean UserDetailsService userDetailsService(AccountRepository accounts) { return login -> accounts.findByLoginId(login).filter(account -> account.isActive()).map(account -> User.withUsername(account.getLoginId()).password(account.getPasswordHash()).authorities(account.getRoles().stream().map(role -> new SimpleGrantedAuthority("ROLE_" + role.getCode())).toList()).build()).orElseThrow(() -> new UsernameNotFoundException("Account not found")); }
     @Bean DaoAuthenticationProvider authenticationProvider(UserDetailsService users, PasswordEncoder encoder) { DaoAuthenticationProvider provider = new DaoAuthenticationProvider(users); provider.setPasswordEncoder(encoder); return provider; }
-    @Bean SecurityFilterChain filterChain(HttpSecurity http, DaoAuthenticationProvider provider) throws Exception {
+    @Bean SecurityFilterChain filterChain(HttpSecurity http, DaoAuthenticationProvider provider, AccountEligibilityFilter accountEligibilityFilter) throws Exception {
         CookieCsrfTokenRepository csrf = CookieCsrfTokenRepository.withHttpOnlyFalse(); csrf.setCookieCustomizer(cookie -> cookie.sameSite("Strict").secure(cookieSecure));
         http.authenticationProvider(provider).csrf(config -> config.csrfTokenRepository(csrf).ignoringRequestMatchers("/api/v1/public/**", "/api/v1/auth/session", "/api/v1/auth/activation/consume"))
             .authorizeHttpRequests(auth -> auth.requestMatchers("/healthz", "/actuator/health/**", "/api/v1/public/**", "/api/v1/auth/session", "/api/v1/auth/csrf", "/api/v1/auth/activation/consume").permitAll().requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN").requestMatchers("/api/v1/partner/**", "/api/v1/media/**").hasAnyRole("PARTNER", "ADMIN", "SUPER_ADMIN").anyRequest().authenticated())
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)).exceptionHandling(errors -> errors.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))).httpBasic(httpBasic -> httpBasic.disable());
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)).exceptionHandling(errors -> errors.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))).httpBasic(httpBasic -> httpBasic.disable())
+            .addFilterAfter(accountEligibilityFilter, SecurityContextHolderFilter.class);
         return http.build();
     }
 }
