@@ -37,7 +37,7 @@ public class LocalDataInitializer implements ApplicationRunner {
     private void publish(ContentKind kind, String title, String summary, String deadlineDate, String sourceName) {
         ContentItem item = items.saveAndFlush(new ContentItem(Ids.ulid(), kind, WorkflowStatus.PUBLISHED, Visibility.PUBLIC, RecordState.ACTIVE));
         String details = deadlineDate == null ? "{}" : "{\"deadlineDate\":\"" + deadlineDate + "\"}";
-        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, title, summary, "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"text\":\"这是仅用于本地环境的合成内容。请在生产前由审核人员替换为经核验的实际来源。\"}]}", "zh-CN", publicBaseUrl.replaceAll("/$", "") + "/local-fixtures/source", sourceName, "本地合成数据，仅用于验收", details, null);
+        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, title, summary, "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"text\":\"这是仅用于本地环境的合成内容。请在生产前由审核人员替换为经核验的实际来源。\"}]}", "zh-CN", null, publicBaseUrl.replaceAll("/$", "") + "/local-fixtures/source", sourceName, "本地合成数据，仅用于验收", "VOIDHAVEN 本地合成内容", "NOT_ALLOWED", "NOT_ALLOWED", details, null);
         revision = revisions.saveAndFlush(revision);
         writeTypedDetails(kind, revision.getId(), deadlineDate);
         item.setCurrentRevision(revision); item.setPublishedRevision(revision); item.publish(); items.saveAndFlush(item);

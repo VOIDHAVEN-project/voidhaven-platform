@@ -215,7 +215,7 @@ components:
             nextCursor: { type: [string, 'null'] }
     PublicContent:
       type: object
-      required: [id, kind, title, summary, body, languageCode, sourceName, sourceUrl, rightsBasis, details, revision, media]
+      required: [id, kind, title, summary, body, languageCode, languageLabel, sourceName, sourceUrl, rightsBasis, authorDisplayName, reprintPermission, adaptationPermission, details, revision, media]
       properties:
         id: { type: string }
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
@@ -223,9 +223,14 @@ components:
         summary: { type: string, maxLength: 1000 }
         body: { $ref: '#/components/schemas/RichTextDocument' }
         languageCode: { type: string }
+        languageLabel: { type: string, enum: [中文, 英文, 中英双语], description: other:具体语种 时返回“其他语言（具体语种）”。 }
+        originalTitle: { type: [string, 'null'], maxLength: 240, description: 非中文内容的原始标题。 }
         sourceName: { type: string }
         sourceUrl: { type: string, format: uri }
         rightsBasis: { type: string }
+        authorDisplayName: { type: string, maxLength: 120 }
+        reprintPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
+        adaptationPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
         details: { type: object }
         revision: { type: integer }
         media: { type: array, items: { $ref: '#/components/schemas/PublicMedia' } }
@@ -264,16 +269,23 @@ components:
               text: { type: string, maxLength: 5000 }
     ContentDraft:
       type: object
-      required: [kind, title, summary, body, languageCode, sourceUrl, sourceName, rightsBasis, details]
+      required: [kind, title, summary, body, languageCode, sourceUrl, sourceName, rightsBasis, authorDisplayName, reprintPermission, adaptationPermission, details]
       properties:
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
         title: { type: string, maxLength: 240 }
         summary: { type: string, maxLength: 1000 }
         body: { $ref: '#/components/schemas/RichTextDocument' }
-        languageCode: { type: string, maxLength: 16 }
+        languageCode:
+          oneOf:
+            - { type: string, enum: [zh-CN, en, zh-CN,en] }
+            - { type: string, pattern: '^other:[A-Za-z][A-Za-z -]{1,29}$' }
+        originalTitle: { type: [string, 'null'], maxLength: 240, description: 非中文内容必填。 }
         sourceUrl: { type: string, format: uri }
         sourceName: { type: string, maxLength: 240 }
         rightsBasis: { type: string, maxLength: 120 }
+        authorDisplayName: { type: string, maxLength: 120 }
+        reprintPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
+        adaptationPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
         details: { type: object }
     ReviewDecision:
       type: object

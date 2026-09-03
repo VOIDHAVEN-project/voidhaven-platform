@@ -20,23 +20,28 @@ import java.util.*;
 
 @Service
 public class ContentManagementService {
-    private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PartnerProfileRepository profiles; private final AuditService audit; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final RichTextPolicy richText; private final JdbcTemplate jdbc;
-    public ContentManagementService(ContentItemRepository items, ContentRevisionRepository revisions, PartnerProfileRepository profiles, AuditService audit, ObjectMapper mapper, ContentSourcePolicy sources, RichTextPolicy richText, JdbcTemplate jdbc) { this.items = items; this.revisions = revisions; this.profiles = profiles; this.audit = audit; this.mapper = mapper; this.sources = sources; this.richText = richText; this.jdbc = jdbc; }
+    private final ContentItemRepository items; private final ContentRevisionRepository revisions; private final PartnerProfileRepository profiles; private final AuditService audit; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final RichTextPolicy richText; private final ContentLanguagePolicy languages; private final JdbcTemplate jdbc;
+    public ContentManagementService(ContentItemRepository items, ContentRevisionRepository revisions, PartnerProfileRepository profiles, AuditService audit, ObjectMapper mapper, ContentSourcePolicy sources, RichTextPolicy richText, ContentLanguagePolicy languages, JdbcTemplate jdbc) { this.items = items; this.revisions = revisions; this.profiles = profiles; this.audit = audit; this.mapper = mapper; this.sources = sources; this.richText = richText; this.languages = languages; this.jdbc = jdbc; }
     public record Draft(
             @NotBlank @Size(max = 32) String kind,
             @NotBlank @Size(max = 240) String title,
             @NotBlank @Size(max = 1000) String summary,
             @NotNull JsonNode body,
             @NotBlank @Size(max = 16) String languageCode,
+            @Size(max = 240) String originalTitle,
             @NotBlank @Size(max = 2048) String sourceUrl,
             @NotBlank @Size(max = 240) String sourceName,
             @NotBlank @Size(max = 120) String rightsBasis,
+            @NotBlank @Size(max = 120) String authorDisplayName,
+            @NotBlank @Size(max = 32) String reprintPermission,
+            @NotBlank @Size(max = 32) String adaptationPermission,
             @NotNull JsonNode details) { }
     public record Managed(String id, ContentKind kind, WorkflowStatus workflowStatus, PublicationStatus publicationStatus, Visibility visibility, RecordState recordState, String title, long revision) { }
     public record Editable(String id, Draft draft, long revision, WorkflowStatus workflowStatus, Visibility visibility, RecordState recordState) { }
     @Transactional public Managed create(Draft draft, String ownerProfileId, String actorId, String role, String requestId) {
         ContentKind kind = parseKind(draft.kind()); validate(draft, kind); ContentItem item = new ContentItem(Ids.ulid(), kind, WorkflowStatus.DRAFT, Visibility.HIDDEN, RecordState.ACTIVE); item.setOwnerPartnerProfileId(ownerProfileId); item = items.saveAndFlush(item);
-        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, draft.title().trim(), draft.summary().trim(), json(draft.body()), draft.languageCode().trim(), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), json(draft.details()), actorId); revision = revisions.saveAndFlush(revision); writeTypedDetails(kind, revision.getId(), draft.details()); item.setCurrentRevision(revision); item = items.saveAndFlush(item); audit.record(actorId, role, "CONTENT_CREATED", "CONTENT_ITEM", item.getId(), "{}", "{\"workflowStatus\":\"DRAFT\"}", null, requestId); return managed(item);
+        String language = languages.normalize(draft.languageCode());
+        ContentRevision revision = new ContentRevision(Ids.ulid(), item, 1, draft.title().trim(), draft.summary().trim(), json(draft.body()), language, nullable(draft.originalTitle()), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), draft.authorDisplayName().trim(), draft.reprintPermission().trim(), draft.adaptationPermission().trim(), json(draft.details()), actorId); revision = revisions.saveAndFlush(revision); writeTypedDetails(kind, revision.getId(), draft.details()); item.setCurrentRevision(revision); item = items.saveAndFlush(item); audit.record(actorId, role, "CONTENT_CREATED", "CONTENT_ITEM", item.getId(), "{}", "{\"workflowStatus\":\"DRAFT\"}", null, requestId); return managed(item);
     }
     @Transactional public Managed submit(String id, String ownerProfileId, String actorId, String role, String requestId) { ContentItem item = owned(id, ownerProfileId); require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED, "CONTENT_NOT_SUBMITTABLE"); item.submit(); audit.record(actorId, role, "CONTENT_SUBMITTED", "CONTENT_ITEM", id, "{\"workflowStatus\":\"DRAFT\"}", "{\"workflowStatus\":\"PENDING_REVIEW\"}", null, requestId); return managed(item); }
     @Transactional public Managed submitAsAdmin(String id, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED, "CONTENT_NOT_SUBMITTABLE"); item.submit(); audit.record(actorId, role, "CONTENT_SUBMITTED", "CONTENT_ITEM", id, "{\"workflowStatus\":\"DRAFT\"}", "{\"workflowStatus\":\"PENDING_REVIEW\"}", null, requestId); return managed(item); }
@@ -49,7 +54,8 @@ public class ContentManagementService {
         if (kind != item.getKind()) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_KIND_IMMUTABLE", "已创建内容不能变更栏目类型。");
         validate(draft, kind);
         int nextRevision = item.getCurrentRevision().getRevisionNumber() + 1;
-        ContentRevision revision = new ContentRevision(Ids.ulid(), item, nextRevision, draft.title().trim(), draft.summary().trim(), json(draft.body()), draft.languageCode().trim(), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), json(draft.details()), actorId);
+        String language = languages.normalize(draft.languageCode());
+        ContentRevision revision = new ContentRevision(Ids.ulid(), item, nextRevision, draft.title().trim(), draft.summary().trim(), json(draft.body()), language, nullable(draft.originalTitle()), draft.sourceUrl().trim(), draft.sourceName().trim(), draft.rightsBasis().trim(), draft.authorDisplayName().trim(), draft.reprintPermission().trim(), draft.adaptationPermission().trim(), json(draft.details()), actorId);
         revision = revisions.saveAndFlush(revision);
         writeTypedDetails(kind, revision.getId(), draft.details());
         item.setCurrentRevision(revision);
@@ -68,11 +74,14 @@ public class ContentManagementService {
     @Transactional(readOnly = true) public List<Managed> pending() { return items.findByWorkflowStatusOrderByIdAsc(WorkflowStatus.PENDING_REVIEW).stream().map(this::managed).toList(); }
     @Transactional(readOnly = true) public List<Managed> allManaged() { return items.findAllByOrderByIdDesc().stream().map(this::managed).toList(); }
     @Transactional(readOnly = true) public List<Managed> ownedList(String profileId) { return items.findByOwnerPartnerProfileIdOrderByIdDesc(profileId).stream().map(this::managed).toList(); }
-    @Transactional(readOnly = true) public Editable ownedEditable(String id, String profileId) { ContentItem item = owned(id, profileId); ContentRevision revision = item.getCurrentRevision(); try { return new Editable(item.getId(), new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), mapper.readTree(revision.getDetailsJson())), item.getVersion() == null ? 0 : item.getVersion(), item.getWorkflowStatus(), item.getVisibility(), item.getRecordState()); } catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); } }
+    @Transactional(readOnly = true) public Editable ownedEditable(String id, String profileId) { ContentItem item = owned(id, profileId); ContentRevision revision = item.getCurrentRevision(); try { return new Editable(item.getId(), new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getOriginalTitle(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), revision.getAuthorDisplayName(), revision.getReprintPermission(), revision.getAdaptationPermission(), mapper.readTree(revision.getDetailsJson())), item.getVersion() == null ? 0 : item.getVersion(), item.getWorkflowStatus(), item.getVisibility(), item.getRecordState()); } catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); } }
     private ContentItem find(String id) { return items.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); }
     private ContentItem owned(String id, String profileId) { ContentItem item = find(id); if (!Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"); return item; }
     private void validate(Draft draft, ContentKind kind) {
-        if (blank(draft.title()) || blank(draft.summary()) || blank(draft.sourceUrl()) || blank(draft.sourceName()) || blank(draft.rightsBasis()) || draft.body() == null || draft.details() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VALIDATION_FAILED", "请补齐标题、导读、正文、来源、权利说明和结构化字段。");
+        String language = languages.normalize(draft.languageCode());
+        if (blank(draft.title()) || blank(draft.summary()) || blank(draft.sourceUrl()) || blank(draft.sourceName()) || blank(draft.rightsBasis()) || blank(draft.authorDisplayName()) || draft.body() == null || draft.details() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VALIDATION_FAILED", "请补齐标题、导读、正文、来源、权利说明、作者展示名和结构化字段。");
+        if (languages.requiresOriginalTitle(language) && blank(draft.originalTitle())) throw new ApiException(HttpStatus.BAD_REQUEST, "ORIGINAL_TITLE_REQUIRED", "非中文内容必须保留原始标题。 ");
+        if (!Set.of("NOT_ALLOWED", "ATTRIBUTION_ALLOWED").contains(draft.reprintPermission()) || !Set.of("NOT_ALLOWED", "ATTRIBUTION_ALLOWED").contains(draft.adaptationPermission())) throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REUSE_PERMISSION", "转载和改编许可仅支持允许署名或不允许。 ");
         richText.requireAllowed(draft.body()); sources.requireAllowed(draft.sourceUrl());
         parseDeadlineAt(draft.details()); parseDeadlineDate(draft.details());
         if (kind == ContentKind.COMPETITION) {

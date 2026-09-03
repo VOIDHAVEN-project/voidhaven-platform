@@ -1,9 +1,10 @@
 export type ContentKind = 'COMPETITION' | 'RESOURCE' | 'RECRUITMENT'
 export type PublicMedia = { id: string; url: string; mediaType: string; width: number; height: number; altText: string }
-export type Content = { id: string; kind: ContentKind; title: string; summary: string; body: { version?: number; blocks?: { type: string; text: string }[] }; languageCode: string; sourceName: string; sourceUrl: string; rightsBasis: string; details: Record<string, unknown>; revision: number; media?: PublicMedia[] }
+export type Content = { id: string; kind: ContentKind; title: string; summary: string; body: { version?: number; blocks?: { type: string; text: string }[] }; languageCode: string; languageLabel: string; originalTitle?: string | null; sourceName: string; sourceUrl: string; rightsBasis: string; authorDisplayName: string; reprintPermission: ReusePermission; adaptationPermission: ReusePermission; details: Record<string, unknown>; revision: number; media?: PublicMedia[] }
 export type PublicContentPage = { items: Content[]; nextCursor: string | null }
 export type ManagedContent = { id: string; kind: ContentKind; workflowStatus: string; publicationStatus: string; visibility: string; recordState: string; title: string; revision: number }
-export type AdminDraft = { kind: ContentKind; title: string; summary: string; body: { version: number; blocks: { type: string; text: string }[] }; languageCode: string; sourceUrl: string; sourceName: string; rightsBasis: string; details: Record<string, unknown> }
+export type ReusePermission = 'NOT_ALLOWED' | 'ATTRIBUTION_ALLOWED'
+export type AdminDraft = { kind: ContentKind; title: string; summary: string; body: { version: number; blocks: { type: string; text: string }[] }; languageCode: string; originalTitle?: string; sourceUrl: string; sourceName: string; rightsBasis: string; authorDisplayName: string; reprintPermission: ReusePermission; adaptationPermission: ReusePermission; details: Record<string, unknown> }
 export type PartnerDashboard = { displayName: string; quota: number; publicActiveCount: number; contentItems: ManagedContent[] }
 export type EditablePartnerContent = { id: string; draft: AdminDraft; revision: number; workflowStatus: string; visibility: string; recordState: string }
 export type PendingPartnerApplication = { id: string; displayName: string; introduction: string; portfolioUrl: string | null }

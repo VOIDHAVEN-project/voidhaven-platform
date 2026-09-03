@@ -11,15 +11,21 @@ function draftFrom(form: HTMLFormElement): AdminDraft {
   const kind = String(values.get('kind')) as ContentKind
   const sourceUrl = String(values.get('sourceUrl')).trim()
   const deadlineDate = String(values.get('deadlineDate')).trim()
+  const languageSelection = String(values.get('languageCode')).trim()
+  const languageCode = languageSelection === 'other' ? `other:${String(values.get('otherLanguage')).trim()}` : languageSelection || 'zh-CN'
   return {
     kind,
     title: String(values.get('title')).trim(),
     summary: String(values.get('summary')).trim(),
     body: { version: 1, blocks: [{ type: 'paragraph', text: String(values.get('body')).trim() }] },
-    languageCode: 'zh-CN',
+    languageCode,
+    originalTitle: String(values.get('originalTitle')).trim() || undefined,
     sourceUrl,
     sourceName: String(values.get('sourceName')).trim(),
     rightsBasis: '已核验公开来源；站内仅作辅助导读。',
+    authorDisplayName: String(values.get('authorDisplayName')).trim(),
+    reprintPermission: String(values.get('reprintPermission')) as AdminDraft['reprintPermission'],
+    adaptationPermission: String(values.get('adaptationPermission')) as AdminDraft['adaptationPermission'],
     details: kind === 'COMPETITION'
       ? { officialRulesUrl: String(values.get('officialRulesUrl')).trim() || sourceUrl, deadlineDate: deadlineDate || undefined }
       : kind === 'RESOURCE'
@@ -104,13 +110,19 @@ export function PartnerLifecyclePanel() {
       <label>标题<input name="title" required maxLength={240} defaultValue={editDraft?.title} /></label>
       <label className="full">中文导读<textarea name="summary" required maxLength={1000} rows={3} defaultValue={editDraft?.summary} /></label>
       <label className="full">正文（安全段落）<textarea name="body" required rows={5} defaultValue={bodyText} /></label>
+      <label>内容语言<select name="languageCode" defaultValue={editDraft?.languageCode?.startsWith('other:') ? 'other' : editDraft?.languageCode ?? 'zh-CN'}><option value="zh-CN">中文</option><option value="en">英文</option><option value="zh-CN,en">中英双语</option><option value="other">其他语言</option></select></label>
+      <label>其他语言名称<input name="otherLanguage" maxLength={30} defaultValue={editDraft?.languageCode?.startsWith('other:') ? editDraft.languageCode.slice(6) : ''} placeholder="如 Japanese" /></label>
+      <label>原始标题（非中文必填）<input name="originalTitle" maxLength={240} defaultValue={editDraft?.originalTitle ?? ''} /></label>
       <label>截止日期（可选）<input name="deadlineDate" type="date" defaultValue={typeof editDraft?.details.deadlineDate === 'string' ? editDraft.details.deadlineDate : ''} /></label>
       <label>来源名称<input name="sourceName" required maxLength={240} defaultValue={editDraft?.sourceName} /></label>
+      <label>作者展示名<input name="authorDisplayName" required maxLength={120} defaultValue={editDraft?.authorDisplayName} /></label>
       <label className="full">官方或原始来源 URL<input name="sourceUrl" type="url" placeholder="https://" required defaultValue={editDraft?.sourceUrl} /></label>
       <label className="full">竞赛官方规则 URL（竞赛必填）<input name="officialRulesUrl" type="url" placeholder="竞赛类型可与来源 URL 相同" defaultValue={typeof editDraft?.details.officialRulesUrl === 'string' ? editDraft.details.officialRulesUrl : ''} /></label>
       <label>资源类型（资源必填）<input name="resourceType" placeholder="课程、文档、工具等" defaultValue={typeof editDraft?.details.resourceType === 'string' ? editDraft.details.resourceType : ''} /></label>
       <label className="full">后续入口 URL（团队招募可选）<input name="followUpUrl" type="url" placeholder="https://" defaultValue={typeof editDraft?.details.followUpUrl === 'string' ? editDraft.details.followUpUrl : ''} /></label>
       <label>关联竞赛 ID（团队招募可选）<input name="relatedCompetitionId" maxLength={26} defaultValue={typeof editDraft?.details.relatedCompetitionId === 'string' ? editDraft.details.relatedCompetitionId : ''} /></label>
+      <label>署名转载<select name="reprintPermission" defaultValue={editDraft?.reprintPermission ?? 'NOT_ALLOWED'}><option value="NOT_ALLOWED">不允许</option><option value="ATTRIBUTION_ALLOWED">允许署名转载</option></select></label>
+      <label>署名改编<select name="adaptationPermission" defaultValue={editDraft?.adaptationPermission ?? 'NOT_ALLOWED'}><option value="NOT_ALLOWED">不允许</option><option value="ATTRIBUTION_ALLOWED">允许署名改编</option></select></label>
       <div className="full partner-form-actions"><button className="button primary" disabled={busyId === 'create'}>{busyId === 'create' ? '保存中…' : editing ? '保存候选修订' : '保存合作方草稿'}</button>{editing ? <button className="button ghost" type="button" onClick={() => setEditing(null)}>取消编辑</button> : null}</div>
     </form>
     {notice ? <p className={`notice notice-${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}

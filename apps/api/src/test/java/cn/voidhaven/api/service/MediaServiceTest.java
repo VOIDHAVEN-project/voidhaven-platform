@@ -21,7 +21,7 @@ import static org.mockito.Mockito.*;
 class MediaServiceTest {
     @Test void attaches_a_normalized_image_only_to_an_editable_draft_and_audits_the_minimum_event() {
         ContentItem item = new ContentItem("01JCONTENT0000000000000000", ContentKind.COMPETITION, WorkflowStatus.DRAFT, Visibility.HIDDEN, RecordState.ACTIVE);
-        ContentRevision revision = new ContentRevision("01JREVISION000000000000000", item, 1, "草稿", "导读", "{}", "zh-CN", "https://contest.example.edu", "来源", "已授权", "{}", "01JADMIN000000000000000000");
+        ContentRevision revision = new ContentRevision("01JREVISION000000000000000", item, 1, "草稿", "导读", "{}", "zh-CN", null, "https://contest.example.edu", "来源", "已授权", "测试作者", "NOT_ALLOWED", "NOT_ALLOWED", "{}", "01JADMIN000000000000000000");
         item.setCurrentRevision(revision);
         ContentItemRepository items = mock(ContentItemRepository.class);
         JdbcTemplate jdbc = mock(JdbcTemplate.class);

@@ -18,7 +18,7 @@ import static org.mockito.Mockito.*;
 class ContentLifecycleServiceTest {
     @Test void closes_a_competition_from_its_typed_deadline_not_the_json_projection() {
         ContentItem item = new ContentItem("01JCONTENT0000000000000000", ContentKind.COMPETITION, WorkflowStatus.APPROVED, Visibility.HIDDEN, RecordState.ACTIVE);
-        ContentRevision revision = new ContentRevision("01JREVISION000000000000000", item, 1, "测试竞赛", "测试", "{}", "zh-CN", "https://contest.example.edu/rules", "来源", "已授权", "{}", null);
+        ContentRevision revision = new ContentRevision("01JREVISION000000000000000", item, 1, "测试竞赛", "测试", "{}", "zh-CN", null, "https://contest.example.edu/rules", "来源", "已授权", "测试作者", "NOT_ALLOWED", "NOT_ALLOWED", "{}", null);
         item.setCurrentRevision(revision);
         item.publish();
         ContentItemRepository items = mock(ContentItemRepository.class);

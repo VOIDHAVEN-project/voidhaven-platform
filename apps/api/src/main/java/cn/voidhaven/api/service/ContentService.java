@@ -10,8 +10,8 @@ import java.util.*;
 
 @Service
 public class ContentService {
-    private final ContentItemRepository items; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final MediaReadService media;
-    public ContentService(ContentItemRepository items, ObjectMapper mapper, ContentSourcePolicy sources, MediaReadService media) { this.items = items; this.mapper = mapper; this.sources = sources; this.media = media; }
+    private final ContentItemRepository items; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final MediaReadService media; private final ContentLanguagePolicy languages;
+    public ContentService(ContentItemRepository items, ObjectMapper mapper, ContentSourcePolicy sources, MediaReadService media, ContentLanguagePolicy languages) { this.items = items; this.mapper = mapper; this.sources = sources; this.media = media; this.languages = languages; }
     public record PublicPage(List<PublicContentDto> items, String nextCursor) { }
     public List<PublicContentDto> listPublic(ContentKind kind, int size) { return listPublicPage(kind, size, null, null).items(); }
     public PublicPage listPublicPage(ContentKind kind, int size, String cursor, String query) {
@@ -38,7 +38,7 @@ public class ContentService {
     }
     private PublicContentDto toPublic(ContentItem item, boolean includeMedia) {
         ContentRevision r = item.getPublishedRevision();
-        try { return new PublicContentDto(item.getId(), item.getKind(), r.getTitle(), r.getSummary(), mapper.readTree(r.getBodyJson()), r.getLanguageCode(), r.getSourceName(), r.getSourceUrl(), r.getRightsBasis(), mapper.readTree(r.getDetailsJson()), item.getVersion() == null ? 0 : item.getVersion(), includeMedia ? media.forPublishedRevision(r.getId()) : List.of()); }
+        try { return new PublicContentDto(item.getId(), item.getKind(), r.getTitle(), r.getSummary(), mapper.readTree(r.getBodyJson()), r.getLanguageCode(), languages.label(r.getLanguageCode()), r.getOriginalTitle(), r.getSourceName(), r.getSourceUrl(), r.getRightsBasis(), r.getAuthorDisplayName(), r.getReprintPermission(), r.getAdaptationPermission(), mapper.readTree(r.getDetailsJson()), item.getVersion() == null ? 0 : item.getVersion(), includeMedia ? media.forPublishedRevision(r.getId()) : List.of()); }
         catch (Exception e) { throw new IllegalStateException("Invalid persisted content document", e); }
     }
     private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
