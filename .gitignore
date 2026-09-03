@@ -12,6 +12,7 @@ apps/web/test-results/
 .env
 .env.*
 !.env.example
+!.env.candidate.example
 infra/compose/runtime/
 *.log
 

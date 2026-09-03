@@ -1,0 +1,13 @@
+voidhaven:
+  cookie-secure: true
+  local-fixture-sources-enabled: false
+  bootstrap-admin-login: ""
+  bootstrap-admin-password: ""
+  bootstrap-partner-login: ""
+  bootstrap-partner-password: ""
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true

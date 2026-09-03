@@ -1,4 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AdminLifecyclePanel } from '../components/AdminLifecyclePanel'
+import { AdminPartnerApplicationsPanel } from '../components/AdminPartnerApplicationsPanel'
+import { AdminPartnerProfilesPanel } from '../components/AdminPartnerProfilesPanel'
+import { PartnerLifecyclePanel } from '../components/PartnerLifecyclePanel'
 import { api } from '../lib/api'
-export function WorkspacePage() { const [identity, setIdentity] = useState<{ loginId: string; roles: string[] } | null>(null); const [message, setMessage] = useState('正在验证受控会话…'); useEffect(() => { api.me().then(setIdentity).catch(() => setMessage('当前没有有效的受控会话。')) }, []); if (!identity) return <main className="auth-page"><Link className="brand" to="/">VOIDHAVEN<span>／</span></Link><section className="state"><strong>{message}</strong><Link className="button ghost" to="/auth/sign-in">前往登录</Link></section></main>; return <main className="workspace"><header><Link className="brand" to="/">VOIDHAVEN<span>／</span></Link><button className="text-button" onClick={() => api.signOut().finally(() => location.assign('/'))}>退出</button></header><section><p className="eyebrow">受控工作台</p><h1>你好，{identity.loginId}</h1><p>当前角色：{identity.roles.join('、')}。内容草稿、审核队列、配额与审计操作会在后端完成授权校验。</p><div className="workspace-grid"><article><h2>合作方内容</h2><p>创建草稿、送审、查看审核反馈；已发布内容的改动会生成新的候选修订。</p></article><article><h2>管理员审核</h2><p>审核、发布、隐藏、归档、代录、配额与归属转交均保留最小审计记录。</p></article></div></section></main> }
+
+type Identity = { loginId: string; roles: string[] }
+export function WorkspacePage() {
+  const [identity, setIdentity] = useState<Identity | null>(null)
+  const [message, setMessage] = useState('正在验证受控会话…')
+  useEffect(() => { api.me().then(setIdentity).catch(() => setMessage('当前没有有效的受控会话。')) }, [])
+  if (!identity) return <main className="auth-page"><Link className="brand" to="/">VOIDHAVEN<span>／</span></Link><section className="state"><strong>{message}</strong><Link className="button ghost" to="/auth/sign-in">前往登录</Link></section></main>
+  const isAdmin = identity.roles.includes('ADMIN') || identity.roles.includes('SUPER_ADMIN')
+  const isPartner = identity.roles.includes('PARTNER')
+  return <main className="workspace"><header><Link className="brand" to="/">VOIDHAVEN<span>／</span></Link><button className="text-button" onClick={() => api.signOut().finally(() => location.assign('/'))}>退出</button></header><section><p className="eyebrow">受控工作台</p><h1>你好，{identity.loginId}</h1><p>当前角色：{identity.roles.join('、')}。前端路由只改善体验；所有关键操作均由服务端再次检查角色、归属和内容状态。</p>{isAdmin ? <><AdminLifecyclePanel /><AdminPartnerApplicationsPanel /><AdminPartnerProfilesPanel /></> : isPartner ? <PartnerLifecyclePanel /> : <section className="state"><strong>当前账号没有可用的工作台权限。</strong><span>如账号资格有变化，请联系管理员在受控流程中处理。</span></section>}</section></main>
+}

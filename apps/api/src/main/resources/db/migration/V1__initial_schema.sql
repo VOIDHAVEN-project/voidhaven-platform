@@ -23,7 +23,7 @@ CREATE TABLE partner_profiles (
   id CHAR(26) PRIMARY KEY,
   account_id CHAR(26) NOT NULL UNIQUE,
   display_name VARCHAR(120) NOT NULL,
-  content_quota TINYINT NOT NULL DEFAULT 3,
+  content_quota INT NOT NULL DEFAULT 3,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   CONSTRAINT fk_partner_profile_account FOREIGN KEY (account_id) REFERENCES accounts(id),
@@ -169,7 +169,7 @@ CREATE TABLE content_ownership_transfers (
 CREATE TABLE partner_quota_overrides (
   id CHAR(26) PRIMARY KEY,
   partner_profile_id CHAR(26) NOT NULL,
-  quota TINYINT NOT NULL,
+  quota INT NOT NULL,
   reason VARCHAR(1000) NOT NULL,
   operator_account_id CHAR(26) NOT NULL,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),

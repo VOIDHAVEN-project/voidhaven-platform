@@ -30,14 +30,20 @@ public class ContentItem {
     public ContentRevision getPublishedRevision() { return publishedRevision; }
     public String getOwnerPartnerProfileId() { return ownerPartnerProfileId; }
     public Long getVersion() { return version; }
+    public Instant getClosedAt() { return closedAt; }
     public void setCurrentRevision(ContentRevision value) { currentRevision = value; }
     public void setPublishedRevision(ContentRevision value) { publishedRevision = value; }
     public void setOwnerPartnerProfileId(String value) { ownerPartnerProfileId = value; }
+    public void beginCandidateRevision() { workflowStatus = WorkflowStatus.DRAFT; }
     public void submit() { workflowStatus = WorkflowStatus.PENDING_REVIEW; }
     public void approve() { workflowStatus = WorkflowStatus.APPROVED; }
     public void reject() { workflowStatus = WorkflowStatus.REJECTED; }
     public void requestChanges() { workflowStatus = WorkflowStatus.CHANGES_REQUESTED; }
     public void publish() { workflowStatus = WorkflowStatus.PUBLISHED; visibility = Visibility.PUBLIC; recordState = RecordState.ACTIVE; publishedRevision = currentRevision; }
+    public void close(Instant when) { workflowStatus = WorkflowStatus.CLOSED; closedAt = when; }
     public void hide() { visibility = Visibility.HIDDEN; }
+    public void show() { visibility = Visibility.PUBLIC; }
     public void archive() { recordState = RecordState.ARCHIVED; visibility = Visibility.HIDDEN; archivedAt = Instant.now(); }
+    public void restore() { recordState = RecordState.ACTIVE; visibility = Visibility.HIDDEN; workflowStatus = WorkflowStatus.APPROVED; archivedAt = null; }
+    public void markDeleted() { recordState = RecordState.DELETED; visibility = Visibility.HIDDEN; }
 }

@@ -10,18 +10,27 @@ paths:
       summary: 首页三栏投影
       responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/HomeEnvelope' } } } } }
   /public/competitions:
-    get: { summary: 公开竞赛列表, responses: { '200': { description: 成功 } } }
+    get:
+      summary: 公开竞赛列表（服务端筛选与 Cursor 分页）
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
+      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/competitions/{id}:
     get:
       summary: 公开竞赛详情
       parameters: [{ $ref: '#/components/parameters/Id' }]
       responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
   /public/resources:
-    get: { summary: 公开学习资源列表, responses: { '200': { description: 成功 } } }
+    get:
+      summary: 公开学习资源列表（服务端筛选与 Cursor 分页）
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
+      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/resources/{id}:
     get: { summary: 公开学习资源详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
   /public/recruitments:
-    get: { summary: 公开团队招募列表, responses: { '200': { description: 成功 } } }
+    get:
+      summary: 公开团队招募列表（服务端筛选与 Cursor 分页）
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
+      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/recruitments/{id}:
     get: { summary: 公开团队招募详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
   /public/submissions:
@@ -40,15 +49,91 @@ paths:
     delete: { summary: 销毁当前会话, responses: { '204': { description: 已退出 } } }
   /auth/me:
     get: { summary: 当前受控身份, responses: { '200': { description: 成功 }, '401': { description: 未认证 } } }
+  /auth/csrf:
+    get: { summary: 获取受控写操作的 CSRF 令牌, responses: { '200': { description: 成功 } } }
+  /auth/activation/consume:
+    post:
+      summary: 使用一次性激活令牌设置首个密码
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActivationRequest' } } } }
+      responses: { '200': { description: 已激活 }, '400': { description: 令牌无效、已使用或已过期 } }
+  /partner/dashboard:
+    get: { summary: 合作方自己的配额和内容工作台, responses: { '200': { description: 成功 }, '403': { description: 无有效合作方档案 } } }
   /partner/content-items:
     get: { summary: 合作方自己的内容, responses: { '200': { description: 成功 }, '403': { description: 权限不足 } } }
     post: { summary: 创建草稿, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '201': { description: 已创建 } } }
+  /partner/content-items/{id}:
+    patch:
+      summary: 合作方创建候选修订
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentDraft' } } } }
+      responses: { '200': { description: 已创建候选修订 }, '404': { $ref: '#/components/responses/HiddenNotFound' }, '409': { description: 版本或状态冲突 } }
+  /partner/content-items/{id}/submit-review:
+    post: { summary: 合作方送审自己的草稿, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已送审 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
   /admin/review-queue:
     get: { summary: 管理员审核队列, responses: { '200': { description: 成功 }, '403': { description: 权限不足 } } }
+  /admin/content-items:
+    get: { summary: 管理员内容列表, responses: { '200': { description: 成功 } } }
+    post:
+      summary: 管理员创建或代录草稿
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentDraft' } } } }
+      responses: { '200': { description: 已创建 } }
+  /admin/content-items/{id}:
+    patch:
+      summary: 管理员创建候选修订
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentDraft' } } } }
+      responses: { '200': { description: 已创建候选修订 }, '409': { description: 版本冲突 } }
+  /admin/content-items/{id}/submit-review:
+    post: { summary: 管理员送审草稿, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已送审 } } }
+  /admin/reviews/{id}/decision:
+    post:
+      summary: 管理员审核通过、退回或拒绝
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReviewDecision' } } } }
+      responses: { '200': { description: 已记录审核决定 } }
+  /admin/content-items/{id}/publish:
+    post: { summary: 发布已通过内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已发布 }, '409': { description: 状态或配额冲突 } } }
+  /admin/content-items/{id}/hide:
+    post: { summary: 隐藏内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已隐藏 } } }
+  /admin/content-items/{id}/show:
+    post: { summary: 重新公开已隐藏的已发布内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已重新公开 } } }
+  /admin/content-items/{id}/archive:
+    post: { summary: 归档内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已归档 } } }
+  /admin/content-items/{id}/restore:
+    post: { summary: 恢复归档内容为隐藏状态, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已恢复 } } }
+  /admin/partner-applications:
+    get: { summary: 待处理合作方申请（不返回私密联系方式）, responses: { '200': { description: 成功 } } }
+  /admin/partner-applications/{id}/approve:
+    post:
+      summary: 批准申请并一次性返回待交付的激活凭据
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePartnerApplication' } } } }
+      responses: { '200': { description: 凭据仅在此首次响应中出现 }, '409': { description: 申请已处理或凭据不可重放 } }
+  /admin/partner-profiles:
+    get: { summary: 合作方档案与当前配额, responses: { '200': { description: 成功 } } }
+  /admin/partner-profiles/{id}/content-quota:
+    patch:
+      summary: 设置 0–5 条公开活跃内容配额
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/QuotaChange' } } } }
+      responses: { '200': { description: 配额已更新 } }
+  /admin/content-ownership-transfers:
+    post:
+      summary: 管理员转交内容归属
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OwnershipTransfer' } } } }
+      responses: { '200': { description: 已转交 } }
+  /admin/audit-logs:
+    get: { summary: 最小审计摘要查询, parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }], responses: { '200': { description: 成功，不含密码、令牌、私密正文或联系方式 } } }
 components:
   parameters:
     Id: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
+    IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, description: JPA 内容版本号 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+    CsCursor: { name: cursor, in: query, schema: { type: string, description: 上一页最后一条不透明 ID } }
+    SearchQuery: { name: q, in: query, schema: { type: string, maxLength: 240 } }
   responses:
     HiddenNotFound: { description: 不存在、隐藏、待审或无权限时统一返回 404 }
     IdempotencyConflict: { description: 相同幂等键用于不同请求 }
@@ -68,3 +153,89 @@ components:
       properties:
         requestId: { type: string }
         data: { type: object }
+    PublicPageEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [items]
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
+            nextCursor: { type: [string, 'null'] }
+    PublicContent:
+      type: object
+      required: [id, kind, title, summary, body, languageCode, sourceName, sourceUrl, rightsBasis, details, revision]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        title: { type: string, maxLength: 240 }
+        summary: { type: string, maxLength: 1000 }
+        body: { $ref: '#/components/schemas/RichTextDocument' }
+        languageCode: { type: string }
+        sourceName: { type: string }
+        sourceUrl: { type: string, format: uri }
+        rightsBasis: { type: string }
+        details: { type: object }
+        revision: { type: integer }
+    RichTextDocument:
+      type: object
+      required: [version, blocks]
+      additionalProperties: false
+      properties:
+        version: { type: integer, const: 1 }
+        blocks:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, text]
+            properties:
+              type: { type: string, const: paragraph }
+              text: { type: string, maxLength: 5000 }
+    ContentDraft:
+      type: object
+      required: [kind, title, summary, body, languageCode, sourceUrl, sourceName, rightsBasis, details]
+      properties:
+        kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        title: { type: string, maxLength: 240 }
+        summary: { type: string, maxLength: 1000 }
+        body: { $ref: '#/components/schemas/RichTextDocument' }
+        languageCode: { type: string, maxLength: 16 }
+        sourceUrl: { type: string, format: uri }
+        sourceName: { type: string, maxLength: 240 }
+        rightsBasis: { type: string, maxLength: 120 }
+        details: { type: object }
+    ReviewDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [APPROVE, CHANGES_REQUESTED, REJECT] }
+        reason: { type: [string, 'null'], maxLength: 1000 }
+    ActivationRequest:
+      type: object
+      required: [token, password]
+      properties:
+        token: { type: string }
+        password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    ApprovePartnerApplication:
+      type: object
+      required: [loginId]
+      properties:
+        loginId: { type: string, pattern: '^[A-Za-z0-9._-]{4,100}$' }
+    QuotaChange:
+      type: object
+      required: [quota, reason]
+      properties:
+        quota: { type: integer, minimum: 0, maximum: 5 }
+        reason: { type: string, maxLength: 1000 }
+    OwnershipTransfer:
+      type: object
+      required: [contentItemId, toPartnerProfileId, reason]
+      properties:
+        contentItemId: { type: string, minLength: 26, maxLength: 26 }
+        toPartnerProfileId: { type: string, minLength: 26, maxLength: 26 }
+        reason: { type: string, maxLength: 1000 }

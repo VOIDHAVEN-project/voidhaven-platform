@@ -14,10 +14,15 @@ public class Account {
     @JoinTable(name = "account_roles", joinColumns = @JoinColumn(name = "account_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new HashSet<>();
     protected Account() { }
-    public Account(String id, String loginId, String passwordHash) { this.id = id; this.loginId = loginId; this.passwordHash = passwordHash; this.qualificationStatus = "ACTIVE"; }
+    public Account(String id, String loginId, String passwordHash) { this(id, loginId, passwordHash, "ACTIVE"); }
+    public Account(String id, String loginId, String passwordHash, String qualificationStatus) { this.id = id; this.loginId = loginId; this.passwordHash = passwordHash; this.qualificationStatus = qualificationStatus; }
     public String getId() { return id; }
     public String getLoginId() { return loginId; }
     public String getPasswordHash() { return passwordHash; }
+    public String getQualificationStatus() { return qualificationStatus; }
+    public boolean isActive() { return "ACTIVE".equals(qualificationStatus); }
     public Set<Role> getRoles() { return roles; }
     public void addRole(Role role) { roles.add(role); }
+    public void activateWithPassword(String value) { passwordHash = value; qualificationStatus = "ACTIVE"; }
+    public void suspend() { qualificationStatus = "SUSPENDED"; }
 }

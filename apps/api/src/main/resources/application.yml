@@ -36,7 +36,11 @@ management:
     health:
       show-details: never
 voidhaven:
+  cookie-secure: ${VOIDHAVEN_COOKIE_SECURE:false}
   public-base-url: ${VOIDHAVEN_PUBLIC_BASE_URL:http://localhost:8080}
+  local-fixture-sources-enabled: ${VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED:false}
   bootstrap-admin-login: ${VOIDHAVEN_BOOTSTRAP_ADMIN_LOGIN:}
   bootstrap-admin-password: ${VOIDHAVEN_BOOTSTRAP_ADMIN_PASSWORD:}
+  bootstrap-partner-login: ${VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN:}
+  bootstrap-partner-password: ${VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD:}
   community-gate-enabled: ${VOIDHAVEN_COMMUNITY_GATE_ENABLED:false}

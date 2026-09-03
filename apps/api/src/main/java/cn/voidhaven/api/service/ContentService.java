@@ -10,10 +10,29 @@ import java.util.*;
 
 @Service
 public class ContentService {
-    private final ContentItemRepository items; private final ObjectMapper mapper;
-    public ContentService(ContentItemRepository items, ObjectMapper mapper) { this.items = items; this.mapper = mapper; }
-    public List<PublicContentDto> listPublic(ContentKind kind, int size) { return items.findPublicByKind(kind, PageRequest.of(0, Math.min(size, 50))).stream().map(this::toPublic).toList(); }
-    public PublicContentDto publicDetail(ContentKind kind, String id) { return items.findPublicByIdAndKind(id, kind).map(this::toPublic).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。")); }
+    private final ContentItemRepository items; private final ObjectMapper mapper; private final ContentSourcePolicy sources;
+    public ContentService(ContentItemRepository items, ObjectMapper mapper, ContentSourcePolicy sources) { this.items = items; this.mapper = mapper; this.sources = sources; }
+    public record PublicPage(List<PublicContentDto> items, String nextCursor) { }
+    public List<PublicContentDto> listPublic(ContentKind kind, int size) { return listPublicPage(kind, size, null, null).items(); }
+    public PublicPage listPublicPage(ContentKind kind, int size, String cursor, String query) {
+        int pageSize = Math.max(1, Math.min(size, 50));
+        String normalizedCursor = blankToNull(cursor);
+        String normalizedQuery = blankToNull(query);
+        List<ContentItem> rows = items.findPublicPageByKind(kind, normalizedCursor, normalizedQuery, PageRequest.of(0, pageSize + 1));
+        boolean hasNext = rows.size() > pageSize;
+        List<ContentItem> rawPage = hasNext ? rows.subList(0, pageSize) : rows;
+        List<ContentItem> visible = rawPage.stream()
+                .filter(item -> sources.isAllowed(item.getPublishedRevision().getSourceUrl()))
+                .toList();
+        String nextCursor = hasNext ? rawPage.get(rawPage.size() - 1).getId() : null;
+        return new PublicPage(visible.stream().map(this::toPublic).toList(), nextCursor);
+    }
+    public PublicContentDto publicDetail(ContentKind kind, String id) {
+        return items.findPublicByIdAndKind(id, kind)
+                .filter(item -> sources.isAllowed(item.getPublishedRevision().getSourceUrl()))
+                .map(this::toPublic)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"));
+    }
     public Map<String, Object> home() {
         Map<String, Object> result = new LinkedHashMap<>(); result.put("competitions", listPublic(ContentKind.COMPETITION, 4)); result.put("resources", listPublic(ContentKind.RESOURCE, 4)); result.put("recruitments", listPublic(ContentKind.RECRUITMENT, 4)); return result;
     }
@@ -22,4 +41,5 @@ public class ContentService {
         try { return new PublicContentDto(item.getId(), item.getKind(), r.getTitle(), r.getSummary(), mapper.readTree(r.getBodyJson()), r.getLanguageCode(), r.getSourceName(), r.getSourceUrl(), r.getRightsBasis(), mapper.readTree(r.getDetailsJson()), item.getVersion() == null ? 0 : item.getVersion()); }
         catch (Exception e) { throw new IllegalStateException("Invalid persisted content document", e); }
     }
+    private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
 }

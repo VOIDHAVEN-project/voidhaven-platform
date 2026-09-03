@@ -4,6 +4,9 @@
   "private": true,
   "workspaces": ["apps/web"],
   "scripts": {
+    "build": "npm run web:build",
+    "lint": "npm run web:lint",
+    "test": "npm run web:test",
     "web:dev": "npm --workspace web run dev",
     "web:build": "npm --workspace web run build",
     "web:lint": "npm --workspace web run lint",
