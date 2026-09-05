@@ -14,7 +14,8 @@
     "web:dev": "npm --workspace web run dev",
     "web:build": "npm --workspace web run build",
     "web:lint": "npm --workspace web run lint",
-    "web:test": "npm --workspace web run test"
+    "web:test": "npm --workspace web run test",
+    "web:e2e": "npm --workspace web run e2e"
   },
   "engines": {
     "node": ">=24"

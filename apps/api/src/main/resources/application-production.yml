@@ -10,6 +10,8 @@ voidhaven:
   media-access-key: ${VOIDHAVEN_MEDIA_ACCESS_KEY:}
   media-secret-key: ${VOIDHAVEN_MEDIA_SECRET_KEY:}
   media-bucket: ${VOIDHAVEN_MEDIA_BUCKET:}
+  trust-proxy-headers: true
+  trusted-proxy-networks: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32,::1/128}
 server:
   forward-headers-strategy: framework
   servlet:

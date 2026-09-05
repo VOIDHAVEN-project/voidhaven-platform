@@ -31,7 +31,7 @@ export default function App() {
     </Route>
     <Route path="/auth/sign-in" element={<SignInPage />} />
     <Route path="/auth/activate" element={<ActivationPage />} />
-    <Route path="/workspace" element={<WorkspacePage />} />
+    <Route path="/workspace/*" element={<WorkspacePage />} />
     <Route path="*" element={<NotFoundPage />} />
   </Routes></BrowserRouter>
 }

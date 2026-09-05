@@ -60,4 +60,15 @@ public class ContentRevision {
         this.markdownSource = markdownSource; this.documentVersion = documentVersion; this.schemaVersion = schemaVersion;
         this.schemaSnapshotJson = schemaSnapshotJson; this.metadataJson = metadataJson;
     }
+    public void updateDraft(String title, String summary, String bodyJson, String languageCode, String originalTitle,
+                            String sourceUrl, String sourceName, String rightsBasis, String authorDisplayName,
+                            String reprintPermission, String adaptationPermission, String detailsJson,
+                            String markdownSource, int documentVersion, int schemaVersion, String schemaSnapshotJson, String metadataJson) {
+        this.title = title; this.summary = summary; this.bodyJson = bodyJson; this.languageCode = languageCode;
+        this.originalTitle = originalTitle; this.sourceUrl = sourceUrl; this.sourceName = sourceName;
+        this.rightsBasis = rightsBasis; this.authorDisplayName = authorDisplayName;
+        this.reprintPermission = reprintPermission; this.adaptationPermission = adaptationPermission;
+        this.detailsJson = detailsJson; this.markdownSource = markdownSource; this.documentVersion = documentVersion;
+        this.schemaVersion = schemaVersion; this.schemaSnapshotJson = schemaSnapshotJson; this.metadataJson = metadataJson;
+    }
 }

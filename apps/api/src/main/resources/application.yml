@@ -51,6 +51,13 @@ voidhaven:
   public-write-rate-limit-secret: ${VOIDHAVEN_RATE_LIMIT_SECRET:local-development-rate-limit-secret}
   public-write-rate-limit-max-requests: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT:8}
   public-write-rate-limit-window-seconds: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT_WINDOW_SECONDS:3600}
+  auth-login-failure-limit: ${VOIDHAVEN_AUTH_LOGIN_FAILURE_LIMIT:5}
+  auth-login-network-limit: ${VOIDHAVEN_AUTH_LOGIN_NETWORK_LIMIT:20}
+  auth-activation-network-limit: ${VOIDHAVEN_AUTH_ACTIVATION_NETWORK_LIMIT:10}
+  auth-rate-limit-window-minutes: ${VOIDHAVEN_AUTH_RATE_LIMIT_WINDOW_MINUTES:15}
+  idempotency-in-progress-seconds: ${VOIDHAVEN_IDEMPOTENCY_IN_PROGRESS_SECONDS:86400}
+  trust-proxy-headers: ${VOIDHAVEN_TRUST_PROXY_HEADERS:false}
+  trusted-proxy-networks: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:127.0.0.1/32,::1/128}
   media-endpoint: ${VOIDHAVEN_MEDIA_ENDPOINT:http://localhost:9000}
   media-access-key: ${VOIDHAVEN_MEDIA_ACCESS_KEY:voidhaven-local}
   media-secret-key: ${VOIDHAVEN_MEDIA_SECRET_KEY:change-me-local-only}

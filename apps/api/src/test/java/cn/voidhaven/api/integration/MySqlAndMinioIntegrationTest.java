@@ -15,6 +15,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.net.URI;
+import java.sql.DriverManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,8 +29,15 @@ class MySqlAndMinioIntegrationTest {
             minio.start();
             Flyway flyway = Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()).locations("classpath:db/migration").load();
             flyway.migrate();
-            assertThat(flyway.info().applied()).hasSize(6);
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
+            assertThat(flyway.info().applied()).hasSize(7);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
+            try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "media_deletion_jobs", null).next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "auth_rate_limit_events", null).next()).isTrue();
+                assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "content_items", "submitted_at").next()).isTrue();
+            } catch (Exception error) {
+                throw new AssertionError("V7 schema evidence could not be inspected", error);
+            }
 
             String bucket = "voidhaven-media-test";
             try (S3Client s3 = S3Client.builder().endpointOverride(URI.create(minio.getS3URL())).region(Region.of("us-east-1"))

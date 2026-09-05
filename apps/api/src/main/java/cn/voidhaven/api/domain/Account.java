@@ -26,4 +26,8 @@ public class Account {
     public void activateWithPassword(String value) { passwordHash = value; qualificationStatus = "ACTIVE"; }
     public void suspend() { qualificationStatus = "SUSPENDED"; }
     public void changeQualificationStatus(String value) { qualificationStatus = value; }
+    public void reactivate() {
+        if (!"SUSPENDED".equals(qualificationStatus)) throw new IllegalStateException("Only suspended accounts can be reactivated");
+        qualificationStatus = "ACTIVE";
+    }
 }

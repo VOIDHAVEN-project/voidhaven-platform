@@ -3,6 +3,7 @@ package cn.voidhaven.api.service;
 import cn.voidhaven.api.domain.*;
 import cn.voidhaven.api.persistence.*;
 import cn.voidhaven.api.support.Ids;
+import cn.voidhaven.api.support.PageResult;
 import cn.voidhaven.api.web.ApiException;
 import cn.voidhaven.api.web.PublicMediaDto;
 import jakarta.validation.constraints.NotBlank;
@@ -62,9 +63,15 @@ public class ContentManagementService {
     }
 
     public record Managed(String id, ContentKind kind, String moduleKey, WorkflowStatus workflowStatus, PublicationStatus publicationStatus,
-                          Visibility visibility, RecordState recordState, String title, long revision) { }
+                          Visibility visibility, RecordState recordState, String title, long revision, String ownerPartnerProfileId,
+                          Instant submittedAt, ReviewRecord latestReview) { }
+    public record ReviewRecord(String decision, String reason, Instant createdAt, String revisionId) { }
     public record Editable(String id, Draft draft, long revision, WorkflowStatus workflowStatus, Visibility visibility,
-                           RecordState recordState, List<PublicMediaDto> media) { }
+                           RecordState recordState, PublicationStatus publicationStatus, String ownerPartnerProfileId,
+                           Instant submittedAt, List<PublicMediaDto> media, List<ReviewRecord> reviews) { }
+    public record PublicationBlocker(String code, String message) { }
+    public record PublicationReadiness(boolean ready, List<PublicationBlocker> blockers, String partnerProfileId,
+                                       Integer quota, Long publicActiveCount) { }
     private record Prepared(ContentModuleRegistry.Module module, ContentKind kind, String markdownSource, JsonNode document,
                             String language, String sourceUrl, String sourceName) { }
 
@@ -115,30 +122,61 @@ public class ContentManagementService {
         require(item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_EDITABLE");
         require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED || item.getWorkflowStatus() == WorkflowStatus.PUBLISHED, "CONTENT_NOT_EDITABLE");
         Prepared prepared = prepare(draft, item);
-        int nextRevision = item.getCurrentRevision().getRevisionNumber() + 1;
         ContentRevision previous = item.getCurrentRevision();
-        ContentRevision revision = revision(Ids.ulid(), item, nextRevision, draft, prepared, actorId);
-        revision = revisions.saveAndFlush(revision);
-        copyReferencedMedia(previous.getId(), revision.getId(), markdown.mediaIds(prepared.document()));
-        writeRevisionProjections(revision.getId(), prepared.module(), prepared.kind(), draft.details());
-        item.setCurrentRevision(revision);
+        int nextRevision = previous.getRevisionNumber();
+        boolean createCandidate = item.getWorkflowStatus() == WorkflowStatus.PUBLISHED;
+        ContentRevision revision;
+        if (createCandidate) {
+            nextRevision++;
+            revision = revisions.saveAndFlush(revision(Ids.ulid(), item, nextRevision, draft, prepared, actorId));
+            copyReferencedMedia(previous.getId(), revision.getId(), markdown.mediaIds(prepared.document()));
+            writeRevisionProjections(revision.getId(), prepared.module(), prepared.kind(), draft.details());
+            item.setCurrentRevision(revision);
+        } else {
+            revision = previous;
+            syncReferencedMedia(revision.getId(), markdown.mediaIds(prepared.document()));
+            replaceRevisionProjections(revision.getId(), prepared.module(), prepared.kind(), draft.details());
+            revision.updateDraft(draft.title().trim(), draft.summary().trim(), json(prepared.document()), prepared.language(),
+                    nullable(draft.originalTitle()), prepared.sourceUrl(), prepared.sourceName(), draft.rightsBasis().trim(),
+                    draft.authorDisplayName().trim(), draft.reprintPermission().trim(), draft.adaptationPermission().trim(),
+                    json(draft.details()), prepared.markdownSource(), 2, modules.version(),
+                    json(modules.snapshot(prepared.module())), json(draft.details()));
+            revisions.saveAndFlush(revision);
+        }
         item.beginCandidateRevision();
         item = items.saveAndFlush(item);
-        audit.record(actorId, role, "CONTENT_REVISION_CREATED", "CONTENT_ITEM", id, "{\"revision\":" + (nextRevision - 1) + "}", "{\"revision\":" + nextRevision + ",\"workflowStatus\":\"DRAFT\"}", null, requestId);
+        audit.record(actorId, role, createCandidate ? "CONTENT_REVISION_CREATED" : "CONTENT_DRAFT_SAVED", "CONTENT_ITEM", id,
+                "{\"revision\":" + (createCandidate ? nextRevision - 1 : nextRevision) + "}",
+                "{\"revision\":" + nextRevision + ",\"workflowStatus\":\"DRAFT\"}", null, requestId);
         return managed(item);
     }
 
     @Transactional
-    public Managed decide(String id, String decision, String reason, String actorId, String role, String requestId) {
+    public Managed decide(String id, String decision, String reason, Long expectedVersion, String actorId, String role, String requestId) {
         ContentItem item = find(id);
+        if (expectedVersion == null || !Objects.equals(item.getVersion(), expectedVersion)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "送审内容已发生变化，请刷新后重新审核。");
         require(item.getWorkflowStatus() == WorkflowStatus.PENDING_REVIEW, "CONTENT_NOT_IN_REVIEW");
+        String normalizedReason = reason == null ? null : reason.trim();
+        if (("CHANGES_REQUESTED".equals(decision) || "REJECT".equals(decision)) && blank(normalizedReason)) throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_REASON_REQUIRED", "退回修改或拒绝时必须填写审核原因。");
         String before = "{\"workflowStatus\":\"PENDING_REVIEW\"}";
         if ("APPROVE".equals(decision)) item.approve();
         else if ("CHANGES_REQUESTED".equals(decision)) item.requestChanges();
         else if ("REJECT".equals(decision)) item.reject();
         else throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_DECISION", "审核决定无效。");
-        audit.recordReview(item.getId(), item.getCurrentRevision().getId(), actorId, decision, reason);
-        audit.record(actorId, role, "REVIEW_" + decision, "CONTENT_ITEM", id, before, "{\"workflowStatus\":\"" + item.getWorkflowStatus() + "\"}", reason, requestId);
+        item.touch();
+        audit.recordReview(item.getId(), item.getCurrentRevision().getId(), actorId, decision, normalizedReason);
+        audit.record(actorId, role, "REVIEW_" + decision, "CONTENT_ITEM", id, before, "{\"workflowStatus\":\"" + item.getWorkflowStatus() + "\"}", normalizedReason, requestId);
+        return managed(item);
+    }
+
+    @Transactional
+    public Managed reopen(String id, String reason, String actorId, String role, String requestId) {
+        ContentItem item = find(id);
+        require(item.getWorkflowStatus() == WorkflowStatus.REJECTED && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_REOPENABLE");
+        String normalizedReason = requireReason(reason);
+        item.reopenForChanges();
+        audit.recordReview(item.getId(), item.getCurrentRevision().getId(), actorId, "REOPENED", normalizedReason);
+        audit.record(actorId, role, "CONTENT_REOPENED", "CONTENT_ITEM", id, "{\"workflowStatus\":\"REJECTED\"}", "{\"workflowStatus\":\"CHANGES_REQUESTED\"}", normalizedReason, requestId);
         return managed(item);
     }
 
@@ -147,29 +185,58 @@ public class ContentManagementService {
         ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
         require(item.getWorkflowStatus() == WorkflowStatus.APPROVED, "CONTENT_NOT_APPROVED");
         requireCurrentMediaMatchesDocument(item.getCurrentRevision());
-        if (item.getOwnerPartnerProfileId() != null) {
-            PartnerProfile profile = profiles.findByIdForUpdate(item.getOwnerPartnerProfileId()).orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "PARTNER_PROFILE_INACTIVE", "内容归属合作方当前不可用。"));
-            require(profile.isActive(), "PARTNER_PROFILE_INACTIVE");
-            long active = items.countPublicActiveByOwnerPartnerProfileId(profile.getId());
-            boolean alreadyPublic = item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE;
-            if (!alreadyPublic && active >= profile.getContentQuota()) throw new ApiException(HttpStatus.CONFLICT, "PARTNER_QUOTA_EXCEEDED", "该合作方的公开活跃内容已达到配额。");
-        }
+        requirePartnerPublicationCapacity(item);
         item.publish();
         audit.record(actorId, role, "CONTENT_PUBLISHED", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId);
         return managed(item);
     }
 
-    @Transactional public Managed hide(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); item.hide(); audit.record(actorId, role, "CONTENT_HIDDEN", "CONTENT_ITEM", id, "{}", "{\"visibility\":\"HIDDEN\"}", reason, requestId); return managed(item); }
-    @Transactional public Managed show(String id, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getPublicationStatus() != PublicationStatus.NONE && item.getRecordState() == RecordState.ACTIVE && item.getVisibility() == Visibility.HIDDEN, "CONTENT_NOT_SHOWABLE"); item.show(); audit.record(actorId, role, "CONTENT_SHOWN", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId); return managed(item); }
-    @Transactional public Managed archive(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); item.archive(); audit.record(actorId, role, "CONTENT_ARCHIVED", "CONTENT_ITEM", id, "{}", "{\"recordState\":\"ARCHIVED\"}", reason, requestId); return managed(item); }
+    @Transactional public Managed hide(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_HIDEABLE"); item.hide(); audit.record(actorId, role, "CONTENT_HIDDEN", "CONTENT_ITEM", id, "{\"visibility\":\"PUBLIC\"}", "{\"visibility\":\"HIDDEN\"}", requireReason(reason), requestId); return managed(item); }
+    @Transactional public Managed show(String id, String actorId, String role, String requestId) { ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); require(item.getPublishedRevision() != null && item.getPublicationStatus() != PublicationStatus.NONE && item.getRecordState() == RecordState.ACTIVE && item.getVisibility() == Visibility.HIDDEN, "CONTENT_NOT_SHOWABLE"); requirePartnerPublicationCapacity(item); item.show(); audit.record(actorId, role, "CONTENT_SHOWN", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId); return managed(item); }
+    @Transactional public Managed archive(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_ARCHIVABLE"); item.archive(); audit.record(actorId, role, "CONTENT_ARCHIVED", "CONTENT_ITEM", id, "{\"recordState\":\"ACTIVE\"}", "{\"recordState\":\"ARCHIVED\"}", requireReason(reason), requestId); return managed(item); }
     @Transactional public Managed restore(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); require(item.getRecordState() == RecordState.ARCHIVED, "CONTENT_NOT_RESTORABLE"); item.restore(); audit.record(actorId, role, "CONTENT_RESTORED", "CONTENT_ITEM", id, "{\"recordState\":\"ARCHIVED\"}", "{\"recordState\":\"ACTIVE\",\"visibility\":\"HIDDEN\",\"workflowStatus\":\"APPROVED\"}", reason, requestId); return managed(item); }
     @Transactional public Managed delete(String id, String reason, String actorId, String role, String requestId) { ContentItem item = find(id); item.markDeleted(); audit.record(actorId, role, "CONTENT_DELETED", "CONTENT_ITEM", id, "{}", "{\"recordState\":\"DELETED\",\"visibility\":\"HIDDEN\"}", reason, requestId); return managed(item); }
 
     @Transactional(readOnly = true) public List<Managed> pending() { return items.findByWorkflowStatusOrderByIdAsc(WorkflowStatus.PENDING_REVIEW).stream().map(this::managed).toList(); }
     @Transactional(readOnly = true) public List<Managed> allManaged() { return items.findAllByOrderByIdDesc().stream().map(this::managed).toList(); }
     @Transactional(readOnly = true) public List<Managed> ownedList(String profileId) { return items.findByOwnerPartnerProfileIdOrderByIdDesc(profileId).stream().map(this::managed).toList(); }
+    @Transactional(readOnly = true) public long publicActiveCount(String profileId) { return items.countPublicActiveByOwnerPartnerProfileId(profileId); }
+    @Transactional(readOnly = true)
+    public PageResult<Managed> managedPage(String ownerProfileId, String requiredStatus, String moduleKey, String query, String cursor, int requestedSize) {
+        int pageSize = Math.max(1, Math.min(requestedSize, 50));
+        StringBuilder sql = new StringBuilder("select c.id from content_items c join content_revisions r on r.id = c.current_revision_id where 1=1");
+        List<Object> arguments = new ArrayList<>();
+        if (!blank(ownerProfileId)) { sql.append(" and c.owner_partner_profile_id = ?"); arguments.add(ownerProfileId); }
+        if (!blank(requiredStatus)) { try { WorkflowStatus.valueOf(requiredStatus); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_STATUS_INVALID", "内容状态筛选无效。"); } sql.append(" and c.workflow_status = ?"); arguments.add(requiredStatus); }
+        if (!blank(moduleKey)) { modules.requireKnown(moduleKey); sql.append(" and c.module_key = ?"); arguments.add(moduleKey); }
+        if (!blank(query)) { sql.append(" and (lower(r.title) like ? or lower(r.summary) like ?)"); String pattern = "%" + query.trim().toLowerCase(Locale.ROOT) + "%"; arguments.add(pattern); arguments.add(pattern); }
+        if (!blank(cursor)) { sql.append(" and c.id < ?"); arguments.add(cursor); }
+        sql.append(" order by c.id desc limit ?"); arguments.add(pageSize + 1);
+        List<Managed> values = jdbc.query(sql.toString(), (row, index) -> row.getString(1), arguments.toArray()).stream().map(id -> managed(find(id))).toList();
+        return PageResult.from(values, pageSize, Managed::id);
+    }
     @Transactional(readOnly = true) public Editable editable(String id) { return editable(find(id)); }
     @Transactional(readOnly = true) public Editable ownedEditable(String id, String profileId) { return editable(owned(id, profileId)); }
+
+    @Transactional(readOnly = true)
+    public PublicationReadiness publicationReadiness(String id) {
+        ContentItem item = find(id);
+        List<PublicationBlocker> blockers = new ArrayList<>();
+        if (item.getWorkflowStatus() != WorkflowStatus.APPROVED) blockers.add(new PublicationBlocker("CONTENT_NOT_APPROVED", "内容尚未审核通过。"));
+        try { requireCurrentMediaMatchesDocument(item.getCurrentRevision()); }
+        catch (ApiException error) { blockers.add(new PublicationBlocker(error.code(), error.getMessage())); }
+        Integer quota = null; Long active = null;
+        if (item.getOwnerPartnerProfileId() != null) {
+            PartnerProfile profile = profiles.findById(item.getOwnerPartnerProfileId()).orElse(null);
+            if (profile == null || !profile.isActive()) blockers.add(new PublicationBlocker("PARTNER_PROFILE_INACTIVE", "内容归属合作方当前不可用。"));
+            else {
+                quota = profile.getContentQuota(); active = items.countPublicActiveByOwnerPartnerProfileId(profile.getId());
+                boolean alreadyPublic = item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE;
+                if (!alreadyPublic && active >= quota) blockers.add(new PublicationBlocker("PARTNER_QUOTA_EXCEEDED", "该合作方公开活跃内容已达到配额 " + active + " / " + quota + "。请先调整配额或隐藏其他内容。"));
+            }
+        }
+        return new PublicationReadiness(blockers.isEmpty(), List.copyOf(blockers), item.getOwnerPartnerProfileId(), quota, active);
+    }
 
     private Editable editable(ContentItem item) {
         ContentRevision revision = item.getCurrentRevision();
@@ -179,7 +246,8 @@ public class ContentManagementService {
             JsonNode metadata = revision.getMetadataJson() == null ? mapper.readTree(revision.getDetailsJson()) : mapper.readTree(revision.getMetadataJson());
             Draft draft = new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getOriginalTitle(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), revision.getAuthorDisplayName(), revision.getReprintPermission(), revision.getAdaptationPermission(), metadata, moduleKey, revision.getSchemaVersion(), source);
             return new Editable(item.getId(), draft, item.getVersion() == null ? 0 : item.getVersion(), item.getWorkflowStatus(),
-                    item.getVisibility(), item.getRecordState(), mediaForRevision(revision.getId()));
+                    item.getVisibility(), item.getRecordState(), item.getPublicationStatus(), item.getOwnerPartnerProfileId(), item.getSubmittedAt(),
+                    mediaForRevision(revision.getId()), reviews(item.getId()));
         } catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); }
     }
 
@@ -273,10 +341,29 @@ public class ContentManagementService {
                     newRevisionId, assetId, index, altText);
         }
     }
+    private void syncReferencedMedia(String revisionId, List<String> referencedIds) {
+        Map<String, String> available = new LinkedHashMap<>();
+        for (Map<String, Object> row : jdbc.queryForList("select media_asset_id, alt_text from revision_media where revision_id = ?", revisionId)) available.put(Objects.toString(row.get("media_asset_id")), Objects.toString(row.get("alt_text"), ""));
+        for (String assetId : referencedIds) if (!available.containsKey(assetId)) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_MEDIA_REFERENCE_INVALID", "正文引用了不属于当前内容的图片。 ");
+        jdbc.update("delete from revision_media where revision_id = ?", revisionId);
+        for (int index = 0; index < referencedIds.size(); index++) jdbc.update("insert into revision_media (revision_id, media_asset_id, sort_order, alt_text) values (?, ?, ?, ?)", revisionId, referencedIds.get(index), index, available.get(referencedIds.get(index)));
+    }
+    private void replaceRevisionProjections(String revisionId, ContentModuleRegistry.Module module, ContentKind kind, JsonNode details) {
+        jdbc.update("delete from revision_filter_values where revision_id = ?", revisionId);
+        jdbc.update("delete from revision_content_relations where revision_id = ?", revisionId);
+        if (kind == ContentKind.COMPETITION) jdbc.update("delete from competition_revision_details where revision_id = ?", revisionId);
+        else if (kind == ContentKind.RESOURCE) jdbc.update("delete from resource_revision_details where revision_id = ?", revisionId);
+        else jdbc.update("delete from recruitment_revision_details where revision_id = ?", revisionId);
+        writeRevisionProjections(revisionId, module, kind, details);
+    }
     private List<PublicMediaDto> mediaForRevision(String revisionId) {
-        return jdbc.query("select media_asset_id, media_type, width_px, height_px, alt_text from revision_media join media_assets on media_assets.id = revision_media.media_asset_id where revision_id = ? order by sort_order asc",
-                (row, index) -> new PublicMediaDto(row.getString("media_asset_id"), "/api/v1/public/media/" + row.getString("media_asset_id"),
+        return jdbc.query("select media_asset_id, media_type, width_px, height_px, alt_text from revision_media join media_assets on media_assets.id = revision_media.media_asset_id where revision_id = ? and media_assets.lifecycle_state = 'ACTIVE' order by sort_order asc",
+                (row, index) -> new PublicMediaDto(row.getString("media_asset_id"), "/api/v1/media/" + row.getString("media_asset_id") + "/preview",
                         row.getString("media_type"), row.getInt("width_px"), row.getInt("height_px"), row.getString("alt_text")), revisionId);
+    }
+    private List<ReviewRecord> reviews(String contentId) {
+        return jdbc.query("select decision, reason, created_at, revision_id from review_records where content_item_id = ? order by created_at desc",
+                (row, index) -> new ReviewRecord(row.getString("decision"), row.getString("reason"), row.getTimestamp("created_at").toInstant(), row.getString("revision_id")), contentId);
     }
     private void requireCurrentMediaMatchesDocument(ContentRevision revision) {
         try {
@@ -286,7 +373,7 @@ public class ContentManagementService {
         } catch (ApiException error) { throw error; }
         catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); }
     }
-    private Managed managed(ContentItem item) { String moduleKey = item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey(); return new Managed(item.getId(), item.getKind(), moduleKey, item.getWorkflowStatus(), item.getPublicationStatus(), item.getVisibility(), item.getRecordState(), item.getCurrentRevision().getTitle(), item.getVersion() == null ? 0 : item.getVersion()); }
+    private Managed managed(ContentItem item) { String moduleKey = item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey(); List<ReviewRecord> history = reviews(item.getId()); return new Managed(item.getId(), item.getKind(), moduleKey, item.getWorkflowStatus(), item.getPublicationStatus(), item.getVisibility(), item.getRecordState(), item.getCurrentRevision().getTitle(), item.getVersion() == null ? 0 : item.getVersion(), item.getOwnerPartnerProfileId(), item.getSubmittedAt(), history.isEmpty() ? null : history.get(0)); }
     private ContentItem find(String id) { return items.findWithCurrentRevisionById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); }
     private ContentItem owned(String id, String profileId) { ContentItem item = find(id); if (!Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"); return item; }
     private String moduleFromKind(String kind) { try { return modules.legacyModuleKey(ContentKind.valueOf(kind)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CONTENT_KIND", "内容类型无效。"); } }
@@ -296,5 +383,14 @@ public class ContentManagementService {
     private String text(JsonNode value, String field) { return value == null ? "" : value.path(field).asText("").trim(); }
     private String nullable(String value) { return blank(value) ? null : value.trim(); }
     private boolean blank(String value) { return value == null || value.isBlank(); }
+    private String requireReason(String value) { String normalized = value == null ? "" : value.trim(); if (normalized.isBlank()) throw new ApiException(HttpStatus.BAD_REQUEST, "ACTION_REASON_REQUIRED", "请填写操作原因。"); return normalized; }
+    private void requirePartnerPublicationCapacity(ContentItem item) {
+        if (item.getOwnerPartnerProfileId() == null) return;
+        PartnerProfile profile = profiles.findByIdForUpdate(item.getOwnerPartnerProfileId()).orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "PARTNER_PROFILE_INACTIVE", "内容归属合作方当前不可用。"));
+        require(profile.isActive(), "PARTNER_PROFILE_INACTIVE");
+        long active = items.countPublicActiveByOwnerPartnerProfileId(profile.getId());
+        boolean alreadyPublic = item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE;
+        if (!alreadyPublic && active >= profile.getContentQuota()) throw new ApiException(HttpStatus.CONFLICT, "PARTNER_QUOTA_EXCEEDED", "该合作方公开活跃内容已达到配额 " + active + " / " + profile.getContentQuota() + "。请先调整配额或隐藏其他内容。");
+    }
     private void require(boolean condition, String code) { if (!condition) throw new ApiException(HttpStatus.CONFLICT, code, "当前内容状态不支持该操作。 "); }
 }

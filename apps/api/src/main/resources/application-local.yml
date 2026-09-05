@@ -1,2 +1,5 @@
 voidhaven:
   local-fixture-sources-enabled: true
+  auth-login-network-limit: 200
+  trust-proxy-headers: true
+  trusted-proxy-networks: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32,::1/128

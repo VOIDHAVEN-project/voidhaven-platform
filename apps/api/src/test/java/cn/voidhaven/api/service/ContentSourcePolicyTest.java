@@ -21,6 +21,10 @@ class ContentSourcePolicyTest {
                 .isInstanceOf(ApiException.class).hasMessageContaining("HTTPS");
         assertThat(policy.isAllowed("http://localhost:8080/local-fixtures/source")).isFalse();
         assertThat(policy.isAllowed("https://example.invalid/rules")).isFalse();
+        assertThat(policy.isAllowed("https://127.0.0.1/rules")).isFalse();
+        assertThat(policy.isAllowed("https://192.168.1.2/rules")).isFalse();
+        assertThat(policy.isAllowed("https://metadata.internal/rules")).isFalse();
+        assertThat(policy.isAllowed("https://user:password@contest.example.edu/rules")).isFalse();
     }
 
     @Test void accepts_only_the_configured_local_fixture_source_when_explicitly_enabled() {

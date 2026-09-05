@@ -15,18 +15,13 @@ public class PublicWriteRateLimitInterceptor implements HandlerInterceptor {
             "/api/v1/public/partner-applications",
             "/api/v1/public/community-gate/verify");
     private final PublicWriteRateLimiter limiter;
+    private final ClientNetworkSubject networkSubject;
 
-    public PublicWriteRateLimitInterceptor(PublicWriteRateLimiter limiter) { this.limiter = limiter; }
+    public PublicWriteRateLimitInterceptor(PublicWriteRateLimiter limiter, ClientNetworkSubject networkSubject) { this.limiter = limiter; this.networkSubject = networkSubject; }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        if ("POST".equals(request.getMethod()) && PROTECTED_PATHS.contains(request.getRequestURI())) limiter.requireAvailable(networkSubject(request));
+        if ("POST".equals(request.getMethod()) && PROTECTED_PATHS.contains(request.getRequestURI())) limiter.requireAvailable(networkSubject.resolve(request));
         return true;
-    }
-
-    private String networkSubject(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) return forwarded.split(",", 2)[0].trim();
-        return request.getRemoteAddr();
     }
 }

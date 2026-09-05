@@ -32,4 +32,17 @@ class AccountAdministrationServiceTest {
         assertThatThrownBy(() -> service.disable("01JACCOUNT00000000000000000", "ACTIVE", "x", "01JADMIN000000000000000000", "SUPER_ADMIN", "01JREQUEST0000000000000000"))
                 .hasMessageContaining("只能调整");
     }
+
+    @Test void suspended_accounts_can_be_reactivated_but_revoked_accounts_are_final() {
+        AccountRepository accounts = mock(AccountRepository.class);
+        Account account = new Account("01JACCOUNT00000000000000000", "partner-one", "hash");
+        when(accounts.findById(account.getId())).thenReturn(Optional.of(account));
+        AccountAdministrationService service = new AccountAdministrationService(accounts, mock(AuditService.class));
+
+        assertThat(service.suspend(account.getId(), "暂停资格复核", "01JADMIN000000000000000000", "SUPER_ADMIN", "01JREQUEST0000000000000000").qualificationStatus()).isEqualTo("SUSPENDED");
+        assertThat(service.reactivate(account.getId(), "复核完成", "01JADMIN000000000000000000", "SUPER_ADMIN", "01JREQUEST0000000000000001").qualificationStatus()).isEqualTo("ACTIVE");
+        assertThat(service.revoke(account.getId(), "永久撤销", "01JADMIN000000000000000000", "SUPER_ADMIN", "01JREQUEST0000000000000002").qualificationStatus()).isEqualTo("REVOKED");
+        assertThatThrownBy(() -> service.reactivate(account.getId(), "尝试恢复", "01JADMIN000000000000000000", "SUPER_ADMIN", "01JREQUEST0000000000000003"))
+                .hasFieldOrPropertyWithValue("code", "ACCOUNT_NOT_REACTIVATABLE");
+    }
 }

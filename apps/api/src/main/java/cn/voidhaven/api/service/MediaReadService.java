@@ -16,11 +16,17 @@ public class MediaReadService {
     public MediaReadService(JdbcTemplate jdbc, MediaStorage storage) { this.jdbc = jdbc; this.storage = storage; }
 
     public List<PublicMediaDto> forPublishedRevision(String revisionId) {
-        return jdbc.query("select media_asset_id, media_type, width_px, height_px, alt_text from revision_media join media_assets on media_assets.id = revision_media.media_asset_id where revision_id = ? order by sort_order asc", (row, index) -> new PublicMediaDto(row.getString("media_asset_id"), "/api/v1/public/media/" + row.getString("media_asset_id"), row.getString("media_type"), row.getInt("width_px"), row.getInt("height_px"), row.getString("alt_text")), revisionId);
+        return jdbc.query("select media_asset_id, media_type, width_px, height_px, alt_text from revision_media join media_assets on media_assets.id = revision_media.media_asset_id where revision_id = ? and media_assets.lifecycle_state = 'ACTIVE' order by sort_order asc", (row, index) -> new PublicMediaDto(row.getString("media_asset_id"), "/api/v1/public/media/" + row.getString("media_asset_id"), row.getString("media_type"), row.getInt("width_px"), row.getInt("height_px"), row.getString("alt_text")), revisionId);
     }
 
     public MediaStorage.StoredObject loadPublic(String assetId) {
-        String key = jdbc.query("select media_assets.storage_key from media_assets join revision_media on revision_media.media_asset_id = media_assets.id join content_items on content_items.published_revision_id = revision_media.revision_id where media_assets.id = ? and content_items.visibility = 'PUBLIC' and content_items.record_state = 'ACTIVE'", result -> result.next() ? result.getString(1) : null, assetId);
+        String key = jdbc.query("select media_assets.storage_key from media_assets join revision_media on revision_media.media_asset_id = media_assets.id join content_items on content_items.published_revision_id = revision_media.revision_id where media_assets.id = ? and media_assets.lifecycle_state = 'ACTIVE' and content_items.visibility = 'PUBLIC' and content_items.record_state = 'ACTIVE'", result -> result.next() ? result.getString(1) : null, assetId);
+        if (key == null) throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "媒体不存在或当前不可见。");
+        return storage.get(key);
+    }
+
+    public MediaStorage.StoredObject loadManaged(String assetId, String actorAccountId, boolean administrator) {
+        String key = jdbc.query("select ma.storage_key from media_assets ma join revision_media rm on rm.media_asset_id = ma.id join content_items c on c.current_revision_id = rm.revision_id left join partner_profiles p on p.id = c.owner_partner_profile_id where ma.id = ? and ma.lifecycle_state = 'ACTIVE' and c.record_state = 'ACTIVE' and (? = true or (p.account_id = ? and p.active = true))", result -> result.next() ? result.getString(1) : null, assetId, administrator, actorAccountId);
         if (key == null) throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "媒体不存在或当前不可见。");
         return storage.get(key);
     }

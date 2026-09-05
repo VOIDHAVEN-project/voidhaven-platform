@@ -7,6 +7,8 @@ apps/api/target/
 **/coverage/
 apps/web/playwright-report/
 apps/web/test-results/
+docs/evidence/playwright-artifacts/
+docs/evidence/playwright-report/
 
 # Local environment and runtime data
 .env
@@ -15,6 +17,8 @@ apps/web/test-results/
 !.env.candidate.example
 infra/compose/runtime/
 *.log
+hs_err_pid*.log
+replay_pid*.log
 
 # IDE and operating-system files
 .idea/

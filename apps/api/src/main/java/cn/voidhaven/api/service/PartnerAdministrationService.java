@@ -3,6 +3,7 @@ package cn.voidhaven.api.service;
 import cn.voidhaven.api.domain.ContentItem;
 import cn.voidhaven.api.domain.PartnerProfile;
 import cn.voidhaven.api.persistence.ContentItemRepository;
+import cn.voidhaven.api.persistence.AccountRepository;
 import cn.voidhaven.api.persistence.PartnerProfileRepository;
 import cn.voidhaven.api.support.Ids;
 import cn.voidhaven.api.web.ApiException;
@@ -12,25 +13,39 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import cn.voidhaven.api.support.PageResult;
 
 @Service
 public class PartnerAdministrationService {
-    public record ProfileView(String id, String displayName, int contentQuota, boolean active) { }
+    public record ProfileView(String id, String accountId, String displayName, int contentQuota, boolean active, String qualificationStatus) { }
     private final PartnerProfileRepository profiles;
     private final ContentItemRepository items;
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private final AccountRepository accounts;
 
-    public PartnerAdministrationService(PartnerProfileRepository profiles, ContentItemRepository items, JdbcTemplate jdbc, AuditService audit) {
+    public PartnerAdministrationService(PartnerProfileRepository profiles, ContentItemRepository items, JdbcTemplate jdbc, AuditService audit, AccountRepository accounts) {
         this.profiles = profiles;
         this.items = items;
         this.jdbc = jdbc;
         this.audit = audit;
+        this.accounts = accounts;
     }
 
     @Transactional(readOnly = true)
     public List<ProfileView> listProfiles() {
-        return profiles.findAll().stream().map(profile -> new ProfileView(profile.getId(), profile.getDisplayName(), profile.getContentQuota(), profile.isActive())).toList();
+        return profiles.findAll().stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<ProfileView> page(String cursor, String query, int requestedSize) {
+        int pageSize = Math.max(1, Math.min(requestedSize, 50));
+        String normalized = query == null ? "" : query.trim().toLowerCase();
+        List<ProfileView> values = profiles.findAll().stream().map(this::view)
+                .filter(value -> cursor == null || cursor.isBlank() || value.id().compareTo(cursor) < 0)
+                .filter(value -> normalized.isBlank() || value.displayName().toLowerCase().contains(normalized) || value.accountId().toLowerCase().contains(normalized))
+                .sorted(java.util.Comparator.comparing(ProfileView::id).reversed()).limit(pageSize + 1L).toList();
+        return PageResult.from(values, pageSize, ProfileView::id);
     }
 
     @Transactional
@@ -41,7 +56,7 @@ public class PartnerAdministrationService {
         profile.setContentQuota(quota);
         jdbc.update("insert into partner_quota_overrides (id, partner_profile_id, quota, reason, operator_account_id) values (?, ?, ?, ?, ?)", Ids.ulid(), profileId, quota, reason, actorId);
         audit.record(actorId, role, "PARTNER_QUOTA_UPDATED", "PARTNER_PROFILE", profileId, "{\"quota\":" + before + "}", "{\"quota\":" + quota + "}", reason, requestId);
-        return new ProfileView(profile.getId(), profile.getDisplayName(), profile.getContentQuota(), profile.isActive());
+        return view(profile);
     }
 
     @Transactional
@@ -56,4 +71,8 @@ public class PartnerAdministrationService {
     }
 
     private String quote(String value) { return value == null ? "null" : "\"" + value + "\""; }
+    private ProfileView view(PartnerProfile profile) {
+        String status = accounts.findById(profile.getAccountId()).map(value -> value.getQualificationStatus()).orElse("UNKNOWN");
+        return new ProfileView(profile.getId(), profile.getAccountId(), profile.getDisplayName(), profile.getContentQuota(), profile.isActive(), status);
+    }
 }

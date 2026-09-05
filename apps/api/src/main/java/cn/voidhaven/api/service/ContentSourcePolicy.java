@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.net.InetAddress;
 import java.util.Locale;
 
 @Component
@@ -38,13 +39,33 @@ public class ContentSourcePolicy {
             String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
             if (!"https".equalsIgnoreCase(uri.getScheme()) || host.isBlank() || host.equals("localhost")
                     || host.endsWith(".localhost") || host.equals("example.invalid") || host.endsWith(".invalid")
-                    || host.endsWith(".test") || host.endsWith(".example")) {
+                    || host.endsWith(".test") || host.endsWith(".example") || host.endsWith(".local")
+                    || host.endsWith(".internal") || uri.getUserInfo() != null || isUnsafeLiteralAddress(host)) {
                 return false;
             }
             return true;
         } catch (IllegalArgumentException error) {
             return false;
         }
+    }
+
+    private boolean isUnsafeLiteralAddress(String host) {
+        boolean numeric = host.matches("[0-9.]+") || host.contains(":");
+        if (!numeric) return false;
+        try {
+            InetAddress address = InetAddress.getByName(host);
+            if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress() || address.isMulticastAddress()) return true;
+            byte[] bytes = address.getAddress();
+            if (bytes.length == 4) {
+                int first = bytes[0] & 255; int second = bytes[1] & 255; int third = bytes[2] & 255;
+                return first == 0 || first >= 224 || (first == 100 && second >= 64 && second <= 127)
+                        || (first == 192 && second == 0 && (third == 0 || third == 2))
+                        || (first == 198 && (second == 18 || second == 19 || (second == 51 && third == 100)))
+                        || (first == 203 && second == 0 && third == 113);
+            }
+            return (bytes[0] & 0xfe) == 0xfc || ((bytes[0] & 255) == 0x20 && (bytes[1] & 255) == 0x01 && (bytes[2] & 255) == 0x0d && (bytes[3] & 255) == 0xb8);
+        } catch (Exception error) { return true; }
     }
 
     private void reject() {

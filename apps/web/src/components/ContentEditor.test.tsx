@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { AdminDraft, ContentModuleSet, ManagedContent } from '../lib/api'
+import type { AdminDraft, ContentModuleSet, EditableContent, ManagedContent } from '../lib/api'
+import { markdownPreview } from '../lib/markdown-preview'
 import { ContentEditor } from './ContentEditor'
 
 const moduleSet: ContentModuleSet = {
@@ -32,6 +33,34 @@ describe('ContentEditor', () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
     expect(onSave.mock.calls[0][0]).toMatchObject({ moduleKey: 'resource.article', markdownSource: expect.stringContaining('# 写下你的经验'), sourceUrl: undefined, sourceName: undefined })
-    expect(await screen.findByText('“一次复盘”已保存为候选修订。')).toBeInTheDocument()
+    expect(await screen.findByText('“一次复盘”已保存。')).toBeInTheDocument()
+  })
+
+  it('finishes the latest draft save before submitting it for review', async () => {
+    const draft: AdminDraft = {
+      kind: 'RESOURCE', moduleKey: 'resource.article', schemaVersion: 1, title: '待补充稿件', summary: '一段合成导读。',
+      markdownSource: '# 原稿', body: markdownPreview('# 原稿'), languageCode: 'zh-CN', rightsBasis: '作者原创内容；发布方确认拥有公开发布权限。',
+      authorDisplayName: '合成作者', reprintPermission: 'NOT_ALLOWED', adaptationPermission: 'NOT_ALLOWED', details: { sourceMode: 'ORIGINAL', resourceType: 'ARTICLE' },
+    }
+    const initial: EditableContent = {
+      id: '01JARTICLE00000000000000001', draft, revision: 4, workflowStatus: 'CHANGES_REQUESTED', visibility: 'HIDDEN', recordState: 'ACTIVE', publicationStatus: 'NONE', media: [], reviews: [],
+    }
+    const saved: ManagedContent = {
+      id: initial.id, kind: 'RESOURCE', moduleKey: 'resource.article', workflowStatus: 'DRAFT', publicationStatus: 'NONE', visibility: 'HIDDEN', recordState: 'ACTIVE', title: '已补充稿件', revision: 5,
+    }
+    let finishSave: ((value: ManagedContent) => void) | undefined
+    const onSave = vi.fn(() => new Promise<ManagedContent>((resolve) => { finishSave = resolve }))
+    const onSubmitForReview = vi.fn(async (_content: ManagedContent) => undefined)
+    render(<ContentEditor moduleSet={moduleSet} initial={initial} contentItemId={initial.id} saveLabel="保存候选草稿" onSave={onSave} onSubmitForReview={onSubmitForReview} />)
+
+    const user = userEvent.setup()
+    await user.clear(screen.getByLabelText('标题'))
+    await user.type(screen.getByLabelText('标题'), saved.title)
+    await user.click(screen.getByRole('button', { name: '保存并送审' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce())
+    expect(onSubmitForReview).not.toHaveBeenCalled()
+    finishSave?.(saved)
+    await waitFor(() => expect(onSubmitForReview).toHaveBeenCalledWith(saved))
   })
 })

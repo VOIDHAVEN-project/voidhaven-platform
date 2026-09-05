@@ -11,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class MediaService {
@@ -45,13 +47,20 @@ public class MediaService {
         String assetId = Ids.ulid();
         String key = "content/" + revisionId + "/" + assetId + "." + image.extension();
         storage.put(key, image.mediaType(), image.bytes());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) try { storage.delete(key); } catch (RuntimeException ignored) { }
+                }
+            });
+        }
         try {
             jdbc.update("insert into media_assets (id, storage_key, media_type, size_bytes, width_px, height_px, owner_account_id) values (?, ?, ?, ?, ?, ?, ?)", assetId, key, image.mediaType(), image.bytes().length, image.width(), image.height(), actorId);
             jdbc.update("insert into revision_media (revision_id, media_asset_id, sort_order, alt_text) values (?, ?, ?, ?)", revisionId, assetId, count == null ? 0 : count, altText.trim());
             audit.record(actorId, role, "MEDIA_UPLOADED", "MEDIA_ASSET", assetId, "{}", "{\"revisionId\":\"" + revisionId + "\"}", null, requestId);
-            return new Uploaded(assetId, "/api/v1/public/media/" + assetId, image.mediaType(), image.width(), image.height(), altText.trim());
+            return new Uploaded(assetId, "/api/v1/media/" + assetId + "/preview", image.mediaType(), image.width(), image.height(), altText.trim());
         } catch (RuntimeException error) {
-            try { storage.delete(key); } catch (RuntimeException ignored) { }
+            if (!TransactionSynchronizationManager.isSynchronizationActive()) try { storage.delete(key); } catch (RuntimeException ignored) { }
             throw error;
         }
     }

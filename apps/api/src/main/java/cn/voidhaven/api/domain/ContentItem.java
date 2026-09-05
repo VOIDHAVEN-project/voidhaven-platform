@@ -18,10 +18,12 @@ public class ContentItem {
     @Column(name = "owner_partner_profile_id") private String ownerPartnerProfileId;
     @Column(name = "closed_at") private Instant closedAt;
     @Column(name = "archived_at") private Instant archivedAt;
+    @Column(name = "submitted_at") private Instant submittedAt;
+    @Column(name = "updated_at") private Instant updatedAt;
     @Version private Long version;
     protected ContentItem() { }
     public ContentItem(String id, ContentKind kind, WorkflowStatus workflowStatus, Visibility visibility, RecordState recordState) {
-        this.id = id; this.kind = kind; this.workflowStatus = workflowStatus; this.visibility = visibility; this.recordState = recordState;
+        this.id = id; this.kind = kind; this.workflowStatus = workflowStatus; this.visibility = visibility; this.recordState = recordState; this.updatedAt = Instant.now();
     }
     public String getId() { return id; }
     public ContentKind getKind() { return kind; }
@@ -35,20 +37,23 @@ public class ContentItem {
     public String getOwnerPartnerProfileId() { return ownerPartnerProfileId; }
     public Long getVersion() { return version; }
     public Instant getClosedAt() { return closedAt; }
+    public Instant getSubmittedAt() { return submittedAt; }
     public void setCurrentRevision(ContentRevision value) { currentRevision = value; }
     public void setPublishedRevision(ContentRevision value) { publishedRevision = value; }
     public void setOwnerPartnerProfileId(String value) { ownerPartnerProfileId = value; }
     public void setModuleKey(String value) { moduleKey = value; }
-    public void beginCandidateRevision() { workflowStatus = WorkflowStatus.DRAFT; }
-    public void submit() { workflowStatus = WorkflowStatus.PENDING_REVIEW; }
-    public void approve() { workflowStatus = WorkflowStatus.APPROVED; }
-    public void reject() { workflowStatus = WorkflowStatus.REJECTED; }
-    public void requestChanges() { workflowStatus = WorkflowStatus.CHANGES_REQUESTED; }
-    public void publish() { workflowStatus = WorkflowStatus.PUBLISHED; publicationStatus = PublicationStatus.ACTIVE; closedAt = null; visibility = Visibility.PUBLIC; recordState = RecordState.ACTIVE; publishedRevision = currentRevision; }
-    public void closePublic(Instant when) { publicationStatus = PublicationStatus.CLOSED; closedAt = when; }
-    public void hide() { visibility = Visibility.HIDDEN; }
-    public void show() { visibility = Visibility.PUBLIC; }
-    public void archive() { recordState = RecordState.ARCHIVED; visibility = Visibility.HIDDEN; archivedAt = Instant.now(); }
-    public void restore() { recordState = RecordState.ACTIVE; visibility = Visibility.HIDDEN; workflowStatus = WorkflowStatus.APPROVED; publicationStatus = PublicationStatus.NONE; archivedAt = null; }
-    public void markDeleted() { recordState = RecordState.DELETED; visibility = Visibility.HIDDEN; }
+    public void beginCandidateRevision() { workflowStatus = WorkflowStatus.DRAFT; submittedAt = null; touch(); }
+    public void submit() { workflowStatus = WorkflowStatus.PENDING_REVIEW; submittedAt = Instant.now(); touch(); }
+    public void approve() { workflowStatus = WorkflowStatus.APPROVED; touch(); }
+    public void reject() { workflowStatus = WorkflowStatus.REJECTED; touch(); }
+    public void requestChanges() { workflowStatus = WorkflowStatus.CHANGES_REQUESTED; touch(); }
+    public void reopenForChanges() { workflowStatus = WorkflowStatus.CHANGES_REQUESTED; touch(); }
+    public void publish() { workflowStatus = WorkflowStatus.PUBLISHED; publicationStatus = PublicationStatus.ACTIVE; closedAt = null; visibility = Visibility.PUBLIC; recordState = RecordState.ACTIVE; publishedRevision = currentRevision; touch(); }
+    public void closePublic(Instant when) { publicationStatus = PublicationStatus.CLOSED; closedAt = when; touch(); }
+    public void hide() { visibility = Visibility.HIDDEN; touch(); }
+    public void show() { visibility = Visibility.PUBLIC; touch(); }
+    public void archive() { recordState = RecordState.ARCHIVED; visibility = Visibility.HIDDEN; archivedAt = Instant.now(); touch(); }
+    public void restore() { recordState = RecordState.ACTIVE; visibility = Visibility.HIDDEN; workflowStatus = WorkflowStatus.APPROVED; publicationStatus = PublicationStatus.NONE; archivedAt = null; touch(); }
+    public void markDeleted() { recordState = RecordState.DELETED; visibility = Visibility.HIDDEN; touch(); }
+    public void touch() { updatedAt = Instant.now(); }
 }
