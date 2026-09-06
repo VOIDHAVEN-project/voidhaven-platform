@@ -21,7 +21,7 @@
 
 - 生产冷启动代码：Flyway V8 种子角色；普通 Web 进程不执行引导。授权操作者通过单独的 `production,bootstrap-admin` 无 Web 命令创建首个待激活超级管理员，激活链接只输出到当前终端。该链路仍待候选冷启动复验。
 - Actuator readiness 探针显式启用，且 readiness 组包含 `db`；`/healthz` 改为真实探测数据库，避免恒 UP。
-- V9 将应用表转换为 utf8mb4，JDBC URL 使用 `characterEncoding=utf8mb4`；数据库默认字符集由基础设施预先配置，迁移不要求 `ALTER DATABASE` 权限。
+- V9 将应用表转换为 MySQL `utf8mb4`；JDBC 使用 Java 编码名 `characterEncoding=UTF-8`。数据库默认字符集由基础设施预先配置，迁移不要求 `ALTER DATABASE` 权限。
 - 乐观锁映射为 409 `CONTENT_VERSION_CONFLICT`；其他数据库完整性错误使用独立 `DATA_INTEGRITY_CONFLICT`；`revise()` 使用悲观锁，编辑器对版本冲突停止自动保存并引导重新加载。
 - 前端门面：`lang=zh-CN`、默认标题/description/OG、动态标题、`robots.txt`、动态 sitemap、全局 ErrorBoundary。
 - 本地验收路由仅在本地镜像构建时编入；管理 API 默认「本地验收操作」审计原因已移除。
