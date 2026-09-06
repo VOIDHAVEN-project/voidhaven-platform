@@ -1,0 +1,29 @@
+{
+  "releaseId": "v0.1.0-pretest.1",
+  "status": "PRETEST_ONLY",
+  "sourceCommit": "af20036452b819d1fef906bb5f8516a3e618f7ca",
+  "branch": "codex/release-v0.1.0-pretest.1",
+  "flyway": "V1-V10",
+  "buildCreated": "2026-09-06T05:09:42Z",
+  "images": {
+    "api": {
+      "tag": "voidhaven-api:0.1.0-pretest.1-af20036452b819d1fef906bb5f8516a3e618f7ca",
+      "id": "sha256:b873ccaaf307b5e94088c22e12b8b1965d13ab6bc2ba57f962f20280b269ff30"
+    },
+    "web": {
+      "tag": "voidhaven-web:0.1.0-pretest.1-af20036452b819d1fef906bb5f8516a3e618f7ca",
+      "id": "sha256:c84a65a40d309a4f4cf6fb1ea5ac4cdbba29065d91a5f53dd4a8019df03720f3"
+    }
+  },
+  "tools": {
+    "node": "v24.12.0",
+    "npm": "9.9.4",
+    "java": "17.0.18",
+    "docker": "29.6.2",
+    "mysql": "8.4",
+    "minio": "RELEASE.2025-04-22T22-12-26Z"
+  },
+  "evidenceDirectory": "docs/evidence/releases/v0.1.0-pretest.1",
+  "signed": false,
+  "remotePublished": false
+}
