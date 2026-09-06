@@ -76,6 +76,7 @@ Push-Location $repoRoot
 try {
   Assert-CleanSource
   Invoke-Step 'Docker engine' { docker info --format '{{.ServerVersion}}' }
+  Invoke-Step 'Locked Node dependency install' { npm ci }
   Invoke-Step 'Formatting' { npm run format:check }
   Invoke-Step 'Web, tests, build and OpenAPI' { npm run verify:web }
   Push-Location (Join-Path $repoRoot 'apps\api')
