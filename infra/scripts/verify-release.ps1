@@ -120,8 +120,8 @@ try {
     # Docker-level healthcheck, so wait for the real gateway endpoint before testing.
     $health = Wait-ForHttpJson -Uri "http://127.0.0.1:$HttpPort/healthz"
     if ($health.status -ne 'UP') { throw 'Gateway health check did not report UP.' }
-    $home = Wait-ForHttpJson -Uri "http://127.0.0.1:$HttpPort/api/v1/public/home" -TimeoutSeconds 30
-    if ($null -eq $home.data) { throw 'Public home API did not return the expected envelope.' }
+    $publicHomeResponse = Wait-ForHttpJson -Uri "http://127.0.0.1:$HttpPort/api/v1/public/home" -TimeoutSeconds 30
+    if ($null -eq $publicHomeResponse.data) { throw 'Public home API did not return the expected envelope.' }
     Invoke-Step 'Playwright browser workflows' { npm run web:e2e }
   } catch {
     docker compose --project-name $projectName --env-file $localEnv -f infra\compose\compose.local.yml ps
