@@ -117,7 +117,12 @@ public class ContentManagementService {
 
     @Transactional
     public Managed revise(String id, Draft draft, String ownerProfileId, Long expectedVersion, String actorId, String role, String requestId) {
-        ContentItem item = ownerProfileId == null ? find(id) : owned(id, ownerProfileId);
+        // Locked (not find()/owned()): two concurrent edits of a PUBLISHED item both
+        // increment revision_number from the same value, so without serializing here the
+        // second saveAndFlush() would race the first and hit the
+        // UNIQUE (content_item_id, revision_number) constraint instead of the intended
+        // CONTENT_VERSION_CONFLICT response.
+        ContentItem item = lockedOwned(id, ownerProfileId);
         if (expectedVersion == null || !Objects.equals(item.getVersion(), expectedVersion)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "内容已被其他操作更新，请刷新后再编辑。");
         require(item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_EDITABLE");
         require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED || item.getWorkflowStatus() == WorkflowStatus.PUBLISHED, "CONTENT_NOT_EDITABLE");
@@ -376,6 +381,11 @@ public class ContentManagementService {
     private Managed managed(ContentItem item) { String moduleKey = item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey(); List<ReviewRecord> history = reviews(item.getId()); return new Managed(item.getId(), item.getKind(), moduleKey, item.getWorkflowStatus(), item.getPublicationStatus(), item.getVisibility(), item.getRecordState(), item.getCurrentRevision().getTitle(), item.getVersion() == null ? 0 : item.getVersion(), item.getOwnerPartnerProfileId(), item.getSubmittedAt(), history.isEmpty() ? null : history.get(0)); }
     private ContentItem find(String id) { return items.findWithCurrentRevisionById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); }
     private ContentItem owned(String id, String profileId) { ContentItem item = find(id); if (!Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"); return item; }
+    private ContentItem lockedOwned(String id, String profileId) {
+        ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
+        if (profileId != null && !Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。");
+        return item;
+    }
     private String moduleFromKind(String kind) { try { return modules.legacyModuleKey(ContentKind.valueOf(kind)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CONTENT_KIND", "内容类型无效。"); } }
     private Timestamp parseDeadlineAt(JsonNode details) { String value = text(details, "deadlineAt"); if (blank(value)) return null; try { return Timestamp.from(Instant.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE", "截止时间格式无效。 "); } }
     private Date parseDeadlineDate(JsonNode details) { String value = text(details, "deadlineDate"); if (blank(value)) return null; try { return Date.valueOf(LocalDate.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE", "截止日期格式无效。 "); } }

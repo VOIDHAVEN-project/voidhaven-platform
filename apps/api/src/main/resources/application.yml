@@ -6,7 +6,7 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
-    url: ${VOIDHAVEN_DB_URL:jdbc:mysql://localhost:3306/voidhaven?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    url: ${VOIDHAVEN_DB_URL:jdbc:mysql://localhost:3306/voidhaven?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai}
     username: ${VOIDHAVEN_DB_USERNAME:voidhaven_app}
     password: ${VOIDHAVEN_DB_PASSWORD:change-me-local-only}
   jpa:
@@ -17,6 +17,14 @@ spring:
       hibernate.jdbc.time_zone: Asia/Shanghai
   flyway:
     enabled: true
+  session:
+    # Persist sessions in MySQL so a single-instance restart/redeploy does not
+    # invalidate every logged-in admin/partner. Still not a multi-replica solution
+    # on its own (see docs/runbooks/release-and-rollback.md for the remaining blockers).
+    store-type: jdbc
+    timeout: 8h
+    jdbc:
+      initialize-schema: never
   jackson:
     default-property-inclusion: non_null
 server:
@@ -39,6 +47,16 @@ management:
   endpoint:
     health:
       show-details: never
+      # Docker Compose is not auto-detected as a Kubernetes environment, so the
+      # liveness/readiness health groups are not registered unless explicitly enabled here.
+      # compose.candidate.yml's healthcheck depends on /actuator/health/readiness existing.
+      probes:
+        enabled: true
+      group:
+        readiness:
+          # The default readiness group only includes readinessState; without "db" it never
+          # reflects a real database outage, so it would always report UP.
+          include: readinessState,db
 voidhaven:
   cookie-secure: ${VOIDHAVEN_COOKIE_SECURE:false}
   public-base-url: ${VOIDHAVEN_PUBLIC_BASE_URL:http://localhost:8080}

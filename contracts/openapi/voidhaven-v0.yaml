@@ -9,25 +9,58 @@ paths:
     get:
       summary: 首页三栏投影
       responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/HomeEnvelope' } } } } }
+  /public/sitemap.xml:
+    get:
+      summary: 公开内容站点地图；只包含当前公开且来源合规的稳定详情 URL
+      responses:
+        '200':
+          description: XML sitemap
+          content: { application/xml: { schema: { type: string } } }
   /public/content-modules:
     get:
       summary: 当前公开内容模块定义、显示名称与可筛选字段
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ContentModuleSetEnvelope' } } } } }
+      responses:
+        {
+          '200':
+            { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ContentModuleSetEnvelope' } } } },
+        }
   /public/content:
     get:
       summary: 按可演进模块键读取公开内容；模块键由内容模块定义提供
-      parameters: [{ name: module, in: query, required: true, schema: { type: string, maxLength: 64 } }, { name: filterKey, in: query, required: false, schema: { type: string, maxLength: 64 } }, { name: filterValue, in: query, required: false, schema: { type: string, maxLength: 512 } }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } }, '400': { description: 模块不存在或已停用 } }
+      parameters:
+        [
+          { name: module, in: query, required: true, schema: { type: string, maxLength: 64 } },
+          { name: filterKey, in: query, required: false, schema: { type: string, maxLength: 64 } },
+          { name: filterValue, in: query, required: false, schema: { type: string, maxLength: 512 } },
+          { $ref: '#/components/parameters/PageSize' },
+          { $ref: '#/components/parameters/CsCursor' },
+          { $ref: '#/components/parameters/SearchQuery' },
+        ]
+      responses:
+        {
+          '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } },
+          '400': { description: 模块不存在或已停用 },
+        }
   /public/content/{id}:
     get:
       summary: 按稳定不透明 ID 读取公开详情；不依赖内容模块或标题
       parameters: [{ $ref: '#/components/parameters/Id' }]
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicContentEnvelope' } } } }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
+      responses:
+        {
+          '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicContentEnvelope' } } } },
+          '404': { $ref: '#/components/responses/HiddenNotFound' },
+        }
   /public/competitions:
     get:
       summary: 公开竞赛列表（服务端筛选与 Cursor 分页）
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
+      parameters:
+        [
+          { $ref: '#/components/parameters/PageSize' },
+          { $ref: '#/components/parameters/CsCursor' },
+          { $ref: '#/components/parameters/SearchQuery' },
+        ]
+      responses:
+        { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/competitions/{id}:
     get:
       summary: 公开竞赛详情
@@ -36,17 +69,39 @@ paths:
   /public/resources:
     get:
       summary: 公开学习资源列表（服务端筛选与 Cursor 分页）
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
+      parameters:
+        [
+          { $ref: '#/components/parameters/PageSize' },
+          { $ref: '#/components/parameters/CsCursor' },
+          { $ref: '#/components/parameters/SearchQuery' },
+        ]
+      responses:
+        { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/resources/{id}:
-    get: { summary: 公开学习资源详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+    get:
+      {
+        summary: 公开学习资源详情,
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } },
+      }
   /public/recruitments:
     get:
       summary: 公开团队招募列表（服务端筛选与 Cursor 分页）
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/CsCursor' }, { $ref: '#/components/parameters/SearchQuery' }]
-      responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
+      parameters:
+        [
+          { $ref: '#/components/parameters/PageSize' },
+          { $ref: '#/components/parameters/CsCursor' },
+          { $ref: '#/components/parameters/SearchQuery' },
+        ]
+      responses:
+        { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/recruitments/{id}:
-    get: { summary: 公开团队招募详情, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+    get:
+      {
+        summary: 公开团队招募详情,
+        parameters: [{ $ref: '#/components/parameters/Id' }],
+        responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } },
+      }
   /public/media/{id}:
     get:
       summary: 仅当媒体仍关联于公开、活跃内容时读取处理后的图片；响应不缓存
@@ -97,7 +152,11 @@ paths:
                 altText: { type: string, minLength: 1, maxLength: 240 }
                 file: { type: string, format: binary, description: 实际文件类型必须为 JPEG、PNG 或 WebP；服务端重编码后仅保存 JPEG/PNG。 }
       responses:
-        '200': { description: 图片已安全处理并关联候选修订, content: { application/json: { schema: { $ref: '#/components/schemas/MediaEnvelope' } } } }
+        '200':
+          {
+            description: 图片已安全处理并关联候选修订,
+            content: { application/json: { schema: { $ref: '#/components/schemas/MediaEnvelope' } } },
+          }
         '400': { description: 类型、尺寸、大小或图片说明不合规 }
         '403': { description: 未认证或不具备合作方/管理员资格 }
         '404': { $ref: '#/components/responses/HiddenNotFound' }
@@ -110,26 +169,106 @@ paths:
         '200': { description: 受控预览图片，Cache-Control 为 no-store, content: { image/jpeg: {}, image/png: {} } }
         '404': { $ref: '#/components/responses/HiddenNotFound' }
   /partner/dashboard:
-    get: { summary: 合作方自己的配额和分页内容工作台, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/ModuleFilter' }], responses: { '200': { description: 成功 }, '403': { description: 无有效合作方档案 } } }
+    get:
+      {
+        summary: 合作方自己的配额和分页内容工作台,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { $ref: '#/components/parameters/StatusFilter' },
+            { $ref: '#/components/parameters/ModuleFilter' },
+          ],
+        responses: { '200': { description: 成功 }, '403': { description: 无有效合作方档案 } },
+      }
   /partner/content-items:
-    get: { summary: 合作方自己的分页内容, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/ModuleFilter' }], responses: { '200': { description: 成功 }, '403': { description: 权限不足 } } }
-    post: { summary: 创建草稿, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '201': { description: 已创建 } } }
+    get:
+      {
+        summary: 合作方自己的分页内容,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { $ref: '#/components/parameters/StatusFilter' },
+            { $ref: '#/components/parameters/ModuleFilter' },
+          ],
+        responses: { '200': { description: 成功 }, '403': { description: 权限不足 } },
+      }
+    post:
+      { summary: 创建草稿, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '201': { description: 已创建 } } }
   /partner/content-items/{id}:
     get:
       summary: 合作方读取自己的可编辑候选修订及已关联媒体
       parameters: [{ $ref: '#/components/parameters/Id' }]
-      responses: { '200': { description: 可编辑草稿, content: { application/json: { schema: { $ref: '#/components/schemas/EditableContentEnvelope' } } } }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
+      responses:
+        {
+          '200':
+            {
+              description: 可编辑草稿,
+              content: { application/json: { schema: { $ref: '#/components/schemas/EditableContentEnvelope' } } },
+            },
+          '404': { $ref: '#/components/responses/HiddenNotFound' },
+        }
     patch:
       summary: 合作方创建候选修订
-      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentDraft' } } } }
-      responses: { '200': { description: 已创建候选修订 }, '404': { $ref: '#/components/responses/HiddenNotFound' }, '409': { description: 版本或状态冲突 } }
+      responses:
+        {
+          '200': { description: 已创建候选修订 },
+          '404': { $ref: '#/components/responses/HiddenNotFound' },
+          '409': { description: 版本或状态冲突 },
+        }
   /partner/content-items/{id}/submit-review:
-    post: { summary: 合作方送审自己的草稿, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已送审 }, '404': { $ref: '#/components/responses/HiddenNotFound' } } }
+    post:
+      {
+        summary: 合作方送审自己的草稿,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已送审 }, '404': { $ref: '#/components/responses/HiddenNotFound' } },
+      }
   /admin/review-queue:
-    get: { summary: 管理员分页审核队列, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { $ref: '#/components/parameters/ModuleFilter' }], responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ManagedContentPageEnvelope' } } } }, '403': { description: 权限不足 } } }
+    get:
+      {
+        summary: 管理员分页审核队列,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { $ref: '#/components/parameters/ModuleFilter' },
+          ],
+        responses:
+          {
+            '200':
+              { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ManagedContentPageEnvelope' } } } },
+            '403': { description: 权限不足 },
+          },
+      }
   /admin/content-items:
-    get: { summary: 管理员分页内容列表, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/ModuleFilter' }], responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ManagedContentPageEnvelope' } } } } } }
+    get:
+      {
+        summary: 管理员分页内容列表,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { $ref: '#/components/parameters/StatusFilter' },
+            { $ref: '#/components/parameters/ModuleFilter' },
+          ],
+        responses:
+          {
+            '200':
+              { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ManagedContentPageEnvelope' } } } },
+          },
+      }
     post:
       summary: 管理员创建或代录草稿
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
@@ -139,25 +278,55 @@ paths:
     get:
       summary: 管理员读取一个可编辑候选修订
       parameters: [{ $ref: '#/components/parameters/Id' }]
-      responses: { '200': { description: 可编辑草稿, content: { application/json: { schema: { $ref: '#/components/schemas/EditableContentEnvelope' } } } }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
+      responses:
+        {
+          '200':
+            {
+              description: 可编辑草稿,
+              content: { application/json: { schema: { $ref: '#/components/schemas/EditableContentEnvelope' } } },
+            },
+          '404': { $ref: '#/components/responses/HiddenNotFound' },
+        }
     patch:
       summary: 管理员创建候选修订
-      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentDraft' } } } }
       responses: { '200': { description: 已创建候选修订 }, '409': { description: 版本冲突 } }
   /admin/content-items/{id}/submit-review:
-    post: { summary: 管理员送审草稿, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已送审 } } }
+    post:
+      {
+        summary: 管理员送审草稿,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已送审 } },
+      }
   /admin/reviews/{id}/decision:
     post:
       summary: 管理员审核通过、退回或拒绝
-      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReviewDecision' } } } }
       responses: { '200': { description: 已记录审核决定 } }
   /admin/content-items/{id}/publication-readiness:
     get:
       summary: 发布前检查状态、媒体、来源和合作方活跃配额
       parameters: [{ $ref: '#/components/parameters/Id' }]
-      responses: { '200': { description: 就绪状态与稳定阻断码, content: { application/json: { schema: { $ref: '#/components/schemas/PublicationReadinessEnvelope' } } } } }
+      responses:
+        {
+          '200':
+            {
+              description: 就绪状态与稳定阻断码,
+              content: { application/json: { schema: { $ref: '#/components/schemas/PublicationReadinessEnvelope' } } },
+            },
+        }
   /admin/content-items/{id}/reopen:
     post:
       summary: 超级管理员将已拒绝稿件重开为待修改
@@ -165,17 +334,53 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
       responses: { '200': { description: 已重开 }, '403': { description: 仅超级管理员 }, '409': { description: 当前状态不可重开 } }
   /admin/content-items/{id}/publish:
-    post: { summary: 发布已通过内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已发布 }, '409': { description: 状态或配额冲突 } } }
+    post:
+      {
+        summary: 发布已通过内容,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已发布 }, '409': { description: 状态或配额冲突 } },
+      }
   /admin/content-items/{id}/hide:
-    post: { summary: 隐藏内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已隐藏 } } }
+    post:
+      {
+        summary: 隐藏内容,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已隐藏 } },
+      }
   /admin/content-items/{id}/show:
-    post: { summary: 重新公开已隐藏的已发布内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已重新公开 } } }
+    post:
+      {
+        summary: 重新公开已隐藏的已发布内容,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已重新公开 } },
+      }
   /admin/content-items/{id}/archive:
-    post: { summary: 归档内容, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已归档 } } }
+    post:
+      {
+        summary: 归档内容,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已归档 } },
+      }
   /admin/content-items/{id}/restore:
-    post: { summary: 恢复归档内容为隐藏状态, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: 已恢复 } } }
+    post:
+      {
+        summary: 恢复归档内容为隐藏状态,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        responses: { '200': { description: 已恢复 } },
+      }
   /admin/partner-applications:
-    get: { summary: 分页查询合作方申请，默认仅待处理且不返回私密联系方式, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } }], responses: { '200': { description: 成功 } } }
+    get:
+      {
+        summary: 分页查询合作方申请，默认仅待处理且不返回私密联系方式,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } },
+          ],
+        responses: { '200': { description: 成功 } },
+      }
   /admin/partner-applications/{id}/approve:
     post:
       summary: 批准申请并一次性返回待交付的激活凭据
@@ -186,10 +391,22 @@ paths:
     post:
       summary: 拒绝合作方申请；匿名申请不支持退回修改
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerApplicationDecision' } } } }
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerApplicationDecision' } } } }
       responses: { '200': { description: 审核状态已更新 }, '409': { description: 申请已处理 } }
   /admin/submissions:
-    get: { summary: 分页查询公开投稿、反馈和版权请求，默认仅待处理且不返回私密联系方式, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } }], responses: { '200': { description: 成功 } } }
+    get:
+      {
+        summary: 分页查询公开投稿、反馈和版权请求，默认仅待处理且不返回私密联系方式,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } },
+          ],
+        responses: { '200': { description: 成功 } },
+      }
   /admin/submissions/{id}/decision:
     post:
       summary: 审核公开投稿、反馈或版权请求
@@ -197,7 +414,17 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublicInputDecision' } } } }
       responses: { '200': { description: 审核状态已更新 }, '409': { description: 请求已处理 } }
   /admin/partner-profiles:
-    get: { summary: 分页合作方档案、账号资格与当前配额, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }], responses: { '200': { description: 成功 } } }
+    get:
+      {
+        summary: 分页合作方档案、账号资格与当前配额,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+          ],
+        responses: { '200': { description: 成功 } },
+      }
   /admin/partner-profiles/{id}/content-quota:
     patch:
       summary: 设置 0–5 条公开活跃内容配额
@@ -211,15 +438,58 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OwnershipTransfer' } } } }
       responses: { '200': { description: 已转交 } }
   /admin/accounts:
-    get: { summary: 超级管理员分页查询受控账号, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }], responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } } }
+    get:
+      {
+        summary: 超级管理员分页查询受控账号,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+          ],
+        responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } },
+      }
   /admin/accounts/{id}/suspend:
-    post: { summary: 超级管理员停用账号；其下一次受限请求立即失效, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }, responses: { '200': { description: 已停用 }, '403': { description: 仅超级管理员 } } }
+    post:
+      {
+        summary: 超级管理员停用账号；其下一次受限请求立即失效,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
+        responses: { '200': { description: 已停用 }, '403': { description: 仅超级管理员 } },
+      }
   /admin/accounts/{id}/reactivate:
-    post: { summary: 超级管理员恢复已停用账号, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }, responses: { '200': { description: 已恢复 }, '409': { description: 已撤销账号不可恢复 } } }
+    post:
+      {
+        summary: 超级管理员恢复已停用账号,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
+        responses: { '200': { description: 已恢复 }, '409': { description: 已撤销账号不可恢复 } },
+      }
   /admin/accounts/{id}/revoke:
-    post: { summary: 超级管理员永久撤销账号, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }, responses: { '200': { description: 已撤销 }, '409': { description: 撤销不可恢复 } } }
+    post:
+      {
+        summary: 超级管理员永久撤销账号,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
+        responses: { '200': { description: 已撤销 }, '409': { description: 撤销不可恢复 } },
+      }
   /admin/audit-logs:
-    get: { summary: 按操作人、对象、动作和时间分页查询最小审计摘要, parameters: [{ $ref: '#/components/parameters/ManagementCursor' }, { $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/SearchQuery' }, { name: action, in: query, schema: { type: string, maxLength: 100 } }, { name: actorAccountId, in: query, schema: { type: string, minLength: 26, maxLength: 26 } }, { name: objectType, in: query, schema: { type: string, maxLength: 64 } }, { name: from, in: query, schema: { type: string, format: date-time } }, { name: to, in: query, schema: { type: string, format: date-time } }], responses: { '200': { description: 成功，不含密码、令牌、私密正文或联系方式 }, '400': { description: 时间范围无效 } } }
+    get:
+      {
+        summary: 按操作人、对象、动作和时间分页查询最小审计摘要,
+        parameters:
+          [
+            { $ref: '#/components/parameters/ManagementCursor' },
+            { $ref: '#/components/parameters/PageSize' },
+            { $ref: '#/components/parameters/SearchQuery' },
+            { name: action, in: query, schema: { type: string, maxLength: 100 } },
+            { name: actorAccountId, in: query, schema: { type: string, minLength: 26, maxLength: 26 } },
+            { name: objectType, in: query, schema: { type: string, maxLength: 64 } },
+            { name: from, in: query, schema: { type: string, format: date-time } },
+            { name: to, in: query, schema: { type: string, format: date-time } },
+          ],
+        responses: { '200': { description: 成功，不含密码、令牌、私密正文或联系方式 }, '400': { description: 时间范围无效 } },
+      }
 components:
   parameters:
     Id: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
@@ -229,8 +499,10 @@ components:
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
     CsCursor: { name: cursor, in: query, schema: { type: string, description: 上一页最后一条不透明 ID } }
     SearchQuery: { name: q, in: query, schema: { type: string, maxLength: 240 } }
-    ManagementCursor: { name: cursor, in: query, schema: { type: string, minLength: 26, maxLength: 26, description: 上一页最后一条管理记录的不透明 ID } }
-    StatusFilter: { name: status, in: query, schema: { type: string, enum: [DRAFT, PENDING_REVIEW, APPROVED, CHANGES_REQUESTED, REJECTED, PUBLISHED] } }
+    ManagementCursor:
+      { name: cursor, in: query, schema: { type: string, minLength: 26, maxLength: 26, description: 上一页最后一条管理记录的不透明 ID } }
+    StatusFilter:
+      { name: status, in: query, schema: { type: string, enum: [DRAFT, PENDING_REVIEW, APPROVED, CHANGES_REQUESTED, REJECTED, PUBLISHED] } }
     ModuleFilter: { name: module, in: query, schema: { type: string, maxLength: 64 } }
   responses:
     HiddenNotFound: { description: 不存在、隐藏、待审或无权限时统一返回 404 }
@@ -264,7 +536,26 @@ components:
             nextCursor: { type: [string, 'null'] }
     PublicContent:
       type: object
-      required: [id, kind, moduleKey, schemaVersion, title, summary, body, languageCode, languageLabel, sourceName, rightsBasis, authorDisplayName, reprintPermission, adaptationPermission, details, revision, media]
+      required:
+        [
+          id,
+          kind,
+          moduleKey,
+          schemaVersion,
+          title,
+          summary,
+          body,
+          languageCode,
+          languageLabel,
+          sourceName,
+          rightsBasis,
+          authorDisplayName,
+          reprintPermission,
+          adaptationPermission,
+          details,
+          revision,
+          media,
+        ]
       properties:
         id: { type: string }
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
@@ -290,7 +581,12 @@ components:
       required: [id, url, mediaType, width, height, altText]
       properties:
         id: { type: string, minLength: 26, maxLength: 26 }
-        url: { type: string, pattern: '^/api/v1/(public/media/[A-Za-z0-9]+|media/[A-Za-z0-9]+/preview)$', description: 公开投影只返回 public/media；候选修订只返回受控 preview。 }
+        url:
+          {
+            type: string,
+            pattern: '^/api/v1/(public/media/[A-Za-z0-9]+|media/[A-Za-z0-9]+/preview)$',
+            description: 公开投影只返回 public/media；候选修订只返回受控 preview。,
+          }
         mediaType: { type: string, enum: [image/jpeg, image/png] }
         width: { type: integer, minimum: 1 }
         height: { type: integer, minimum: 1 }
@@ -316,7 +612,21 @@ components:
             description: 仅服务端允许的 paragraph、heading、quote、list、code、rule、image 块；任何 HTML、脚本、远程图片或未声明属性均被拒绝。
     ContentDraft:
       type: object
-      required: [moduleKey, schemaVersion, title, summary, body, markdownSource, languageCode, rightsBasis, authorDisplayName, reprintPermission, adaptationPermission, details]
+      required:
+        [
+          moduleKey,
+          schemaVersion,
+          title,
+          summary,
+          body,
+          markdownSource,
+          languageCode,
+          rightsBasis,
+          authorDisplayName,
+          reprintPermission,
+          adaptationPermission,
+          details,
+        ]
       properties:
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
         moduleKey: { type: string, maxLength: 64 }

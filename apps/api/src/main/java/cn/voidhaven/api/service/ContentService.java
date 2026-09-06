@@ -68,6 +68,22 @@ public class ContentService {
         return items.findPublicById(id).filter(this::hasPublicSource).map(item -> toPublic(item, true))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"));
     }
+    public record SitemapEntry(String id, ContentKind kind) { }
+
+    /**
+     * All items a search engine should be allowed to reach: same visibility rule as the
+     * public detail endpoint (hasPublicSource), so nothing listed here 404s when crawled.
+     */
+    public List<SitemapEntry> publicSitemapEntries() {
+        List<SitemapEntry> result = new ArrayList<>();
+        for (ContentKind kind : ContentKind.values()) {
+            for (ContentItem item : items.findPublicByKind(kind, PageRequest.of(0, 2000))) {
+                if (hasPublicSource(item)) result.add(new SitemapEntry(item.getId(), kind));
+            }
+        }
+        return result;
+    }
+
     public Map<String, Object> home() {
         Map<String, Object> result = new LinkedHashMap<>(); result.put("competitions", listPublic(ContentKind.COMPETITION, 4)); result.put("resources", listPublic(ContentKind.RESOURCE, 4)); result.put("recruitments", listPublic(ContentKind.RECRUITMENT, 4)); return result;
     }

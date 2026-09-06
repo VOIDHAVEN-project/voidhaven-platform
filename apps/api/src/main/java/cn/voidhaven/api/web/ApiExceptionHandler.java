@@ -4,7 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.*;
@@ -33,6 +35,17 @@ public class ApiExceptionHandler {
         Map<String, String> fields = new LinkedHashMap<>();
         exception.getConstraintViolations().forEach(error -> fields.put(error.getPropertyPath().toString(), "填写内容不符合要求。"));
         return response(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "请检查填写内容后重试。", fields, request);
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException exception, HttpServletRequest request) {
+        return response(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "内容已被其他操作更新，请刷新后再编辑。", Map.of(), request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException exception, HttpServletRequest request) {
+        log.warn("Data integrity violation requestId={} method={} path={}", requestId(request), request.getMethod(), request.getRequestURI(), exception);
+        return response(HttpStatus.CONFLICT, "DATA_INTEGRITY_CONFLICT", "数据状态发生冲突，请刷新后重试；如问题持续，请向管理员提供 requestId。", Map.of(), request);
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)
