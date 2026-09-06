@@ -6,6 +6,13 @@ COPY . .
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
+ARG VOIDHAVEN_RELEASE_VERSION
+ARG VOIDHAVEN_GIT_SHA
+ARG VOIDHAVEN_BUILD_CREATED
 COPY --from=build /workspace/dist /usr/share/nginx/html
 COPY nginx.candidate.conf /etc/nginx/conf.d/default.conf
+LABEL org.opencontainers.image.version=$VOIDHAVEN_RELEASE_VERSION \
+      org.opencontainers.image.revision=$VOIDHAVEN_GIT_SHA \
+      org.opencontainers.image.created=$VOIDHAVEN_BUILD_CREATED \
+      org.opencontainers.image.source="local:voidhaven-v0"
 EXPOSE 8080

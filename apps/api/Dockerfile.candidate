@@ -4,12 +4,19 @@ COPY . .
 RUN --mount=type=cache,target=/root/.m2 chmod +x mvnw && ./mvnw -q -DskipTests clean package
 
 FROM eclipse-temurin:17-jre
+ARG VOIDHAVEN_RELEASE_VERSION
+ARG VOIDHAVEN_GIT_SHA
+ARG VOIDHAVEN_BUILD_CREATED
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 voidhaven
 COPY --from=build /workspace/target/api-*.jar /app/api.jar
+LABEL org.opencontainers.image.version=$VOIDHAVEN_RELEASE_VERSION \
+      org.opencontainers.image.revision=$VOIDHAVEN_GIT_SHA \
+      org.opencontainers.image.created=$VOIDHAVEN_BUILD_CREATED \
+      org.opencontainers.image.source="local:voidhaven-v0"
 USER 10001
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "/app/api.jar"]

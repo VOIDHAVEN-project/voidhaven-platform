@@ -1,27 +1,43 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
 services:
   api:
+    image: voidhaven-api:${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}-${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
     build:
       context: ../../apps/api
       dockerfile: Dockerfile.candidate
+      args:
+        VOIDHAVEN_RELEASE_VERSION: ${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}
+        VOIDHAVEN_GIT_SHA: ${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
+        VOIDHAVEN_BUILD_CREATED: ${VOIDHAVEN_BUILD_CREATED:?Set the UTC OCI build timestamp}
+    restart: unless-stopped
+    logging: *default-logging
     environment:
       SPRING_PROFILES_ACTIVE: production
       VOIDHAVEN_DB_URL: ${VOIDHAVEN_DB_URL:?Set an externally managed MySQL JDBC URL}
       VOIDHAVEN_DB_USERNAME: ${VOIDHAVEN_DB_USERNAME:?Set the application database user}
       VOIDHAVEN_DB_PASSWORD: ${VOIDHAVEN_DB_PASSWORD:?Inject the application database password}
       VOIDHAVEN_PUBLIC_BASE_URL: ${VOIDHAVEN_PUBLIC_BASE_URL:?Set the canonical HTTPS base URL}
-      VOIDHAVEN_COOKIE_SECURE: "true"
+      VOIDHAVEN_COOKIE_SECURE: 'true'
       VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:?Inject a high-entropy public-write rate-limit secret}
       VOIDHAVEN_MEDIA_ENDPOINT: ${VOIDHAVEN_MEDIA_ENDPOINT:?Inject an HTTPS S3-compatible endpoint}
       VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:?Inject the least-privilege media access key}
       VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:?Inject the least-privilege media secret}
       VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:?Set the private media bucket}
-      VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED: "false"
+      VOIDHAVEN_MEDIA_REGION: ${VOIDHAVEN_MEDIA_REGION:-ap-guangzhou}
+      VOIDHAVEN_MEDIA_FORCE_PATH_STYLE: ${VOIDHAVEN_MEDIA_FORCE_PATH_STYLE:-false}
+      VOIDHAVEN_TRUSTED_PROXY_NETWORKS: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:?Set the CLB/private proxy CIDRs}
+      VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED: 'false'
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     healthcheck:
-      test: [CMD-SHELL, "curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q UP"]
+      test: [CMD-SHELL, 'curl --fail --silent http://localhost:8081/actuator/health/readiness | grep -q UP']
       interval: 15s
       timeout: 5s
       retries: 6
@@ -30,15 +46,22 @@ services:
         limits: { cpus: '1.0', memory: 768M }
 
   web:
+    image: voidhaven-web:${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}-${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
     build:
       context: ../../apps/web
       dockerfile: Dockerfile.candidate
+      args:
+        VOIDHAVEN_RELEASE_VERSION: ${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}
+        VOIDHAVEN_GIT_SHA: ${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
+        VOIDHAVEN_BUILD_CREATED: ${VOIDHAVEN_BUILD_CREATED:?Set the UTC OCI build timestamp}
+    restart: unless-stopped
+    logging: *default-logging
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     healthcheck:
-      test: [CMD-SHELL, "wget -q -O - http://localhost:8080/ >/dev/null"]
+      test: [CMD-SHELL, 'wget -q -O - http://localhost:8080/ >/dev/null']
       interval: 15s
       timeout: 5s
       retries: 6
@@ -48,13 +71,20 @@ services:
 
   nginx:
     image: nginxinc/nginx-unprivileged:1.29-alpine
-    ports: ["${VOIDHAVEN_HTTP_PORT:?Set the externally exposed candidate port}:8080"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports: ['${VOIDHAVEN_HTTP_PORT:?Set the externally exposed candidate port}:8080']
     volumes:
       - ../nginx/candidate.conf:/etc/nginx/conf.d/default.conf:ro
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O - http://localhost:8080/healthz >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 6
     depends_on:
       api: { condition: service_healthy }
       web: { condition: service_healthy }
