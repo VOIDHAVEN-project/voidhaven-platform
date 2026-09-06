@@ -42,7 +42,7 @@ function Assert-NoSensitiveTrackedFiles {
   if ($LASTEXITCODE -eq 0 -and $matches.Count -gt 0) { throw "发现疑似敏感日志：$($matches -join '; ')" }
   if ($LASTEXITCODE -gt 1) { throw '敏感日志扫描执行失败。' }
 
-  $invalidJdbcEncoding = @(git grep -n -F 'characterEncoding=utf8mb4' -- ':!docs/evidence/releases/**')
+  $invalidJdbcEncoding = @(git grep -n -F 'characterEncoding=utf8mb4' -- ':!docs/evidence/releases/**' ':!infra/scripts/verify-release.ps1')
   if ($LASTEXITCODE -eq 0 -and $invalidJdbcEncoding.Count -gt 0) {
     throw "JDBC characterEncoding 必须使用 Java 编码名 UTF-8，而不是 MySQL 字符集名 utf8mb4：$($invalidJdbcEncoding -join '; ')"
   }
