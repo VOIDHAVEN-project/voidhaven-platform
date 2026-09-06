@@ -43,6 +43,21 @@ function Assert-NoSensitiveTrackedFiles {
   if ($LASTEXITCODE -gt 1) { throw '敏感日志扫描执行失败。' }
 }
 
+function Wait-ForHttpJson([string] $Uri, [int] $TimeoutSeconds = 90) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastError = $null
+  do {
+    try {
+      return Invoke-RestMethod -Uri $Uri -TimeoutSec 10
+    } catch {
+      $lastError = $_.Exception.Message
+      Start-Sleep -Seconds 2
+    }
+  } while ((Get-Date) -lt $deadline)
+
+  throw "等待 $Uri 就绪超时（$TimeoutSeconds 秒）：$lastError"
+}
+
 New-Item -ItemType Directory -Force -Path $verificationRoot | Out-Null
 $secretSuffix = [Guid]::NewGuid().ToString('N')
 @"
@@ -95,11 +110,17 @@ try {
 
   try {
     Invoke-Step 'Isolated local cold start' { docker compose --project-name $projectName --env-file $localEnv -f infra\compose\compose.local.yml up --build --detach --wait }
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$HttpPort/healthz" -TimeoutSec 15
+    # Compose can only wait for declared container health. The local API image has no
+    # Docker-level healthcheck, so wait for the real gateway endpoint before testing.
+    $health = Wait-ForHttpJson -Uri "http://127.0.0.1:$HttpPort/healthz"
     if ($health.status -ne 'UP') { throw 'Gateway health check did not report UP.' }
-    $home = Invoke-RestMethod -Uri "http://127.0.0.1:$HttpPort/api/v1/public/home" -TimeoutSec 15
+    $home = Wait-ForHttpJson -Uri "http://127.0.0.1:$HttpPort/api/v1/public/home" -TimeoutSeconds 30
     if ($null -eq $home.data) { throw 'Public home API did not return the expected envelope.' }
     Invoke-Step 'Playwright browser workflows' { npm run web:e2e }
+  } catch {
+    docker compose --project-name $projectName --env-file $localEnv -f infra\compose\compose.local.yml ps
+    docker compose --project-name $projectName --env-file $localEnv -f infra\compose\compose.local.yml logs --no-color --tail 200 api nginx
+    throw
   } finally {
     docker compose --project-name $projectName --env-file $localEnv -f infra\compose\compose.local.yml down --volumes --remove-orphans
   }
