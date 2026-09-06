@@ -12,26 +12,40 @@ import { SignInPage } from './pages/SignInPage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { ActivationPage } from './pages/ActivationPage'
 
-function LegacyContentRedirect() { const { id = '' } = useParams(); return <Navigate to={`/content/${id}`} replace /> }
+function LegacyContentRedirect() {
+  const { id = '' } = useParams()
+  return <Navigate to={`/content/${id}`} replace />
+}
 export default function App() {
-  return <BrowserRouter><Routes>
-    <Route element={<SiteLayout />}>
-      <Route index element={<HomePage />} />
-      <Route path="competitions" element={<ContentListPage kind="COMPETITION" />} />
-      <Route path="competitions/:id" element={<LegacyContentRedirect />} />
-      <Route path="resources" element={<ContentListPage kind="RESOURCE" />} />
-      <Route path="resources/:id" element={<LegacyContentRedirect />} />
-      <Route path="recruitments" element={<ContentListPage kind="RECRUITMENT" />} />
-      <Route path="recruitments/:id" element={<LegacyContentRedirect />} />
-      <Route path="content/:id" element={<ContentDetailPage />} />
-      <Route path="feedback" element={<FeedbackPage />} />
-      <Route path="local-fixtures/source" element={<FixtureSourcePage />} />
-      <Route path="join" element={<JoinPage />} />
-      <Route path="about" element={<AboutPage />} />
-    </Route>
-    <Route path="/auth/sign-in" element={<SignInPage />} />
-    <Route path="/auth/activate" element={<ActivationPage />} />
-    <Route path="/workspace/*" element={<WorkspacePage />} />
-    <Route path="*" element={<NotFoundPage />} />
-  </Routes></BrowserRouter>
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<SiteLayout />}>
+          <Route index element={<HomePage />} />
+          <Route path="competitions" element={<ContentListPage kind="COMPETITION" />} />
+          <Route path="competitions/:id" element={<LegacyContentRedirect />} />
+          <Route path="resources" element={<ContentListPage kind="RESOURCE" />} />
+          <Route path="resources/:id" element={<LegacyContentRedirect />} />
+          <Route path="recruitments" element={<ContentListPage kind="RECRUITMENT" />} />
+          <Route path="recruitments/:id" element={<LegacyContentRedirect />} />
+          <Route path="content/:id" element={<ContentDetailPage />} />
+          <Route path="feedback" element={<FeedbackPage />} />
+          {/* Local Compose (apps/web/Dockerfile) bakes VITE_LOCAL_FIXTURE_SOURCES_ENABLED=true
+          at build time so this route works for local acceptance verification. The candidate
+          production image (apps/web/Dockerfile.candidate) never sets it, so this route -
+          and the fact that a local-only page exists at all - is compiled out of that bundle
+          entirely rather than merely hidden behind a runtime check. */}
+          {import.meta.env.VITE_LOCAL_FIXTURE_SOURCES_ENABLED === 'true' ? (
+            <Route path="local-fixtures/source" element={<FixtureSourcePage />} />
+          ) : null}
+          <Route path="join" element={<JoinPage />} />
+          <Route path="about" element={<AboutPage />} />
+        </Route>
+        <Route path="/auth/sign-in" element={<SignInPage />} />
+        <Route path="/auth/activate" element={<ActivationPage />} />
+        <Route path="/workspace/*" element={<WorkspacePage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
