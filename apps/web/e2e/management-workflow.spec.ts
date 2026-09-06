@@ -2,7 +2,9 @@ import { expect, test } from 'playwright/test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const evidenceDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs/evidence')
+const evidenceDirectory = process.env.VOIDHAVEN_E2E_EVIDENCE_DIR
+  ? path.resolve(process.env.VOIDHAVEN_E2E_EVIDENCE_DIR)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../docs/evidence')
 
 const adminLogin = process.env.VOIDHAVEN_E2E_ADMIN_LOGIN
 const adminPassword = process.env.VOIDHAVEN_E2E_ADMIN_PASSWORD
@@ -26,7 +28,7 @@ async function signOut(page: import('playwright').Page) {
 async function protectedPost(page: import('playwright').Page, path: string, data: unknown) {
   const csrfResponse = await page.request.get('/api/v1/auth/csrf')
   expect(csrfResponse.ok()).toBeTruthy()
-  const csrf = await csrfResponse.json() as { data: { headerName: string; token: string } }
+  const csrf = (await csrfResponse.json()) as { data: { headerName: string; token: string } }
   return page.request.post(path, {
     headers: { [csrf.data.headerName]: csrf.data.token, 'Idempotency-Key': crypto.randomUUID() },
     data,
@@ -52,7 +54,7 @@ test('合作方上传送审、管理员查看原文、退回、通过、配额�
 
   const dashboardResponse = await page.request.get('/api/v1/partner/dashboard?pageSize=20')
   expect(dashboardResponse.ok()).toBeTruthy()
-  const dashboard = await dashboardResponse.json() as { data: { contentItems: { items: { id: string; title: string }[] } } }
+  const dashboard = (await dashboardResponse.json()) as { data: { contentItems: { items: { id: string; title: string }[] } } }
   const contentId = dashboard.data.contentItems.items.find((item) => item.title === title)?.id
   expect(contentId).toBeTruthy()
 
@@ -65,7 +67,7 @@ test('合作方上传送审、管理员查看原文、退回、通过、配额�
   await expect(page.locator('.editor-save-state')).toContainText('已保存', { timeout: 15_000 })
 
   const editableResponse = await page.request.get(`/api/v1/partner/content-items/${contentId}`)
-  const editable = await editableResponse.json() as { data: { media: { id: string }[] } }
+  const editable = (await editableResponse.json()) as { data: { media: { id: string }[] } }
   const mediaId = editable.data.media[0]?.id
   expect(mediaId).toBeTruthy()
   await page.getByRole('button', { name: '保存并送审' }).click()
@@ -93,7 +95,9 @@ test('合作方上传送审、管理员查看原文、退回、通过、配额�
   await expect(page.getByRole('heading', { name: '编辑候选修订' })).toBeVisible()
   const returnedMarkdown = page.getByLabel('Markdown 正文')
   await expect(returnedMarkdown).toHaveValue(/管理员必须先看到这一段/)
-  await returnedMarkdown.fill(`# 完整原文\n\n管理员必须先看到这一段，再作出审核决定。\n\n${revisedSentence}\n\n![本地合成审核证据图](media:${mediaId})`)
+  await returnedMarkdown.fill(
+    `# 完整原文\n\n管理员必须先看到这一段，再作出审核决定。\n\n${revisedSentence}\n\n![本地合成审核证据图](media:${mediaId})`,
+  )
   await page.getByRole('button', { name: '保存并送审' }).click()
   await expect(page.getByText(`“${title}”已保存并送入审核队列。`)).toBeVisible()
   await signOut(page)
@@ -147,7 +151,7 @@ test('超级管理员停用合作方后已有会话立即失效，并可恢复�
   await signIn(page, adminLogin, adminPassword)
   const accountsResponse = await page.request.get('/api/v1/admin/accounts?pageSize=50')
   expect(accountsResponse.ok()).toBeTruthy()
-  const accounts = await accountsResponse.json() as { data: { items: { id: string; loginId: string; qualificationStatus: string }[] } }
+  const accounts = (await accountsResponse.json()) as { data: { items: { id: string; loginId: string; qualificationStatus: string }[] } }
   const partner = accounts.data.items.find((account) => account.loginId === partnerLogin)
   expect(partner?.qualificationStatus).toBe('ACTIVE')
 
@@ -156,7 +160,9 @@ test('超级管理员停用合作方后已有会话立即失效，并可恢复�
   let suspended = false
   try {
     await signIn(partnerPage, partnerLogin, partnerPassword)
-    const suspendedResponse = await protectedPost(page, `/api/v1/admin/accounts/${partner!.id}/suspend`, { reason: '本地合成账号即时失效验收' })
+    const suspendedResponse = await protectedPost(page, `/api/v1/admin/accounts/${partner!.id}/suspend`, {
+      reason: '本地合成账号即时失效验收',
+    })
     expect(suspendedResponse.ok()).toBeTruthy()
     suspended = true
 
@@ -166,7 +172,9 @@ test('超级管理员停用合作方后已有会话立即失效，并可恢复�
     await expect(partnerPage.getByText('当前没有有效的受控会话。')).toBeVisible()
   } finally {
     if (suspended) {
-      const reactivatedResponse = await protectedPost(page, `/api/v1/admin/accounts/${partner!.id}/reactivate`, { reason: '结束本地合成账号即时失效验收并恢复账号' })
+      const reactivatedResponse = await protectedPost(page, `/api/v1/admin/accounts/${partner!.id}/reactivate`, {
+        reason: '结束本地合成账号即时失效验收并恢复账号',
+      })
       expect(reactivatedResponse.ok()).toBeTruthy()
     }
     await partnerContext.close()
