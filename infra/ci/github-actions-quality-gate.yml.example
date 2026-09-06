@@ -1,0 +1,49 @@
+# Inactive template only. Copy to .github/workflows after remote CI is explicitly approved.
+name: quality-gate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run verify:web
+
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: apps/api/pom.xml
+      - name: Unit and integration tests
+        run: ./mvnw -B clean verify
+      - name: Dependency vulnerability scan
+        run: >-
+          ./mvnw -B org.owasp:dependency-check-maven:12.1.0:check
+          -DfailBuildOnCVSS=7
+          -DskipProvidedScope=true
+          -DskipRuntimeScope=false
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate local and candidate Compose files
+        run: |
+          docker compose -f infra/compose/compose.local.yml config --quiet
+          docker compose --env-file .env.candidate.example -f infra/compose/compose.candidate.yml config --quiet

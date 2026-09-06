@@ -8,9 +8,11 @@
   "scripts": {
     "build": "npm run web:build",
     "contract:lint": "redocly lint --config contracts/openapi/redocly.yaml contracts/openapi/voidhaven-v0.yaml",
+    "format": "prettier --write apps/web/src/App.tsx apps/web/src/components/ContentEditor.tsx apps/web/src/components/ErrorBoundary.tsx apps/web/src/lib/api.ts apps/web/src/lib/useDocumentTitle.ts apps/web/src/main.tsx apps/web/src/pages/ContentDetailPage.tsx apps/web/src/pages/ContentListPage.tsx apps/web/src/pages/HomePage.tsx apps/web/e2e/management-workflow.spec.ts apps/web/e2e/smoke.spec.ts apps/web/index.html contracts/openapi/voidhaven-v0.yaml infra/compose/compose.candidate.yml infra/compose/compose.local.yml",
+    "format:check": "prettier --check apps/web/src/App.tsx apps/web/src/components/ContentEditor.tsx apps/web/src/components/ErrorBoundary.tsx apps/web/src/lib/api.ts apps/web/src/lib/useDocumentTitle.ts apps/web/src/main.tsx apps/web/src/pages/ContentDetailPage.tsx apps/web/src/pages/ContentListPage.tsx apps/web/src/pages/HomePage.tsx apps/web/e2e/management-workflow.spec.ts apps/web/e2e/smoke.spec.ts apps/web/index.html contracts/openapi/voidhaven-v0.yaml infra/compose/compose.candidate.yml infra/compose/compose.local.yml",
     "lint": "npm run web:lint",
     "test": "npm run web:test",
-    "verify:web": "npm run lint && npm run test && npm run build && npm run contract:lint",
+    "verify:web": "npm run format:check && npm run lint && npm run test && npm run build && npm run contract:lint",
     "web:dev": "npm --workspace web run dev",
     "web:build": "npm --workspace web run build",
     "web:lint": "npm --workspace web run lint",
@@ -21,6 +23,7 @@
     "node": ">=24"
   },
   "devDependencies": {
-    "@redocly/cli": "2.51.1"
+    "@redocly/cli": "2.51.1",
+    "prettier": "3.6.2"
   }
 }

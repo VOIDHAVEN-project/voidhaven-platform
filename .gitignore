@@ -1,5 +1,6 @@
 # Java / Maven
 apps/api/target/
+apps/api/cp.txt
 
 # Node / Vite / Playwright
 **/node_modules/
@@ -16,6 +17,7 @@ docs/evidence/playwright-report/
 !.env.example
 !.env.candidate.example
 infra/compose/runtime/
+.verification/
 *.log
 hs_err_pid*.log
 replay_pid*.log
