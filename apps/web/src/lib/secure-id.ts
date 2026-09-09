@@ -8,7 +8,9 @@ function formatUuid(bytes: Uint8Array) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-export function createIdempotencyKey(source: SecureRandomSource | undefined = globalThis.crypto as unknown as SecureRandomSource) {
+export function createIdempotencyKey(
+  source: SecureRandomSource | undefined = globalThis.crypto as unknown as SecureRandomSource,
+) {
   if (typeof source?.randomUUID === 'function') return source.randomUUID.call(source)
   if (typeof source?.getRandomValues !== 'function') {
     throw new Error('当前浏览器不支持安全随机数，无法安全提交。请升级浏览器或改用 HTTPS 后重试。')

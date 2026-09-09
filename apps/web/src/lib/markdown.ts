@@ -4,7 +4,8 @@ const imagePattern = /^!\[([^\]]{1,240})]\(media:([A-Za-z0-9]{26})\)$/
 const headingPattern = /^(#{1,4})\s+(.+)$/
 const orderedPattern = /^\d+[.)]\s+(.+)$/
 const unorderedPattern = /^[-*+]\s+(.+)$/
-const inlinePattern = /\[([^\]]{1,500})]\((https:\/\/[^)\s]+)\)|\*\*([^*]{1,1000})\*\*|`([^`]{1,1000})`|\*([^*]{1,1000})\*/g
+const inlinePattern =
+  /\[([^\]]{1,500})]\((https:\/\/[^)\s]+)\)|\*\*([^*]{1,1000})\*\*|`([^`]{1,1000})`|\*([^*]{1,1000})\*/g
 
 function inline(text: string): Inline[] {
   const output: Inline[] = []
@@ -23,46 +24,82 @@ function inline(text: string): Inline[] {
 }
 
 function startsBlock(value: string) {
-  return value.startsWith('```') || value.startsWith('> ') || headingPattern.test(value) ||
-    imagePattern.test(value.trim()) || orderedPattern.test(value) || unorderedPattern.test(value) ||
-    value.trim() === '---' || value.trim() === '***'
+  return (
+    value.startsWith('```') ||
+    value.startsWith('> ') ||
+    headingPattern.test(value) ||
+    imagePattern.test(value.trim()) ||
+    orderedPattern.test(value) ||
+    unorderedPattern.test(value) ||
+    value.trim() === '---' ||
+    value.trim() === '***'
+  )
 }
 
 export function markdownPreview(source: string): DocumentBody {
   const lines = source.replace(/\r\n?/g, '\n').split('\n')
   const blocks: ContentBlock[] = []
-  for (let index = 0; index < lines.length;) {
+  for (let index = 0; index < lines.length; ) {
     const line = lines[index]
-    if (!line.trim()) { index += 1; continue }
+    if (!line.trim()) {
+      index += 1
+      continue
+    }
     if (line.startsWith('```')) {
-      const language = line.slice(3).trim(); const code: string[] = []; index += 1
+      const language = line.slice(3).trim()
+      const code: string[] = []
+      index += 1
       while (index < lines.length && !lines[index].startsWith('```')) code.push(lines[index++])
       if (index < lines.length) index += 1
-      blocks.push({ type: 'code', language, text: code.join('\n') }); continue
+      blocks.push({ type: 'code', language, text: code.join('\n') })
+      continue
     }
     const picture = imagePattern.exec(line.trim())
-    if (picture) { blocks.push({ type: 'image', alt: picture[1], mediaId: picture[2] }); index += 1; continue }
+    if (picture) {
+      blocks.push({ type: 'image', alt: picture[1], mediaId: picture[2] })
+      index += 1
+      continue
+    }
     const title = headingPattern.exec(line)
-    if (title) { blocks.push({ type: 'heading', level: title[1].length, inlines: inline(title[2]) }); index += 1; continue }
-    if (line.trim() === '---' || line.trim() === '***') { blocks.push({ type: 'rule' }); index += 1; continue }
+    if (title) {
+      blocks.push({ type: 'heading', level: title[1].length, inlines: inline(title[2]) })
+      index += 1
+      continue
+    }
+    if (line.trim() === '---' || line.trim() === '***') {
+      blocks.push({ type: 'rule' })
+      index += 1
+      continue
+    }
     if (line.startsWith('> ')) {
       const quote: string[] = []
       while (index < lines.length && lines[index].startsWith('> ')) quote.push(lines[index++].slice(2))
-      blocks.push({ type: 'quote', inlines: inline(quote.join('\n')) }); continue
+      blocks.push({ type: 'quote', inlines: inline(quote.join('\n')) })
+      continue
     }
-    const isOrdered = Boolean(orderedPattern.exec(line)); const isUnordered = Boolean(unorderedPattern.exec(line))
+    const isOrdered = Boolean(orderedPattern.exec(line))
+    const isUnordered = Boolean(unorderedPattern.exec(line))
     if (isOrdered || isUnordered) {
       const items: Inline[][] = []
       while (index < lines.length) {
         const match = (isOrdered ? orderedPattern : unorderedPattern).exec(lines[index])
         if (!match) break
-        items.push(inline(match[1])); index += 1
+        items.push(inline(match[1]))
+        index += 1
       }
-      blocks.push({ type: 'list', ordered: isOrdered, items }); continue
+      blocks.push({ type: 'list', ordered: isOrdered, items })
+      continue
     }
-    const paragraph = [line]; index += 1
-    while (index < lines.length && lines[index].trim() && !startsBlock(lines[index])) paragraph.push(lines[index++])
+    const paragraph = [line]
+    index += 1
+    while (index < lines.length && lines[index].trim() && !startsBlock(lines[index]))
+      paragraph.push(lines[index++])
     blocks.push({ type: 'paragraph', inlines: inline(paragraph.join('\n')) })
   }
-  return { version: 2, blocks: blocks.length ? blocks : [{ type: 'paragraph', inlines: [{ type: 'text', text: '开始写作吧。' }] }] }
+  return {
+    version: 2,
+    blocks: blocks.length
+      ? blocks
+      : [{ type: 'paragraph', inlines: [{ type: 'text', text: '开始写作吧。' }] }],
+  }
 }

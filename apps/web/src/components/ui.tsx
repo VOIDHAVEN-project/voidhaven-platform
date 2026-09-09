@@ -3,9 +3,12 @@ import { AlertCircle, Archive, Check, LoaderCircle, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiFailure } from '../lib/api'
 export type NoticeValue = { tone: 'success' | 'error'; text: string } | null
-export const message = (error: unknown) => error instanceof ApiFailure && error.retryAfterSeconds
-  ? `${error.message} 建议等待 ${Math.ceil(error.retryAfterSeconds / 60)} 分钟后重试。`
-  : error instanceof Error ? error.message : '操作未完成，请稍后重试。'
+export const message = (error: unknown) =>
+  error instanceof ApiFailure && error.retryAfterSeconds
+    ? `${error.message} 建议等待 ${Math.ceil(error.retryAfterSeconds / 60)} 分钟后重试。`
+    : error instanceof Error
+      ? error.message
+      : '操作未完成，请稍后重试。'
 export function Notice({ value }: { value: NoticeValue }) {
   return value ? (
     <p className={`notice ${value.tone}`} role={value.tone === 'error' ? 'alert' : 'status'}>

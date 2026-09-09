@@ -74,7 +74,9 @@ export function SignInPage() {
       setNotice({
         tone: 'error',
         text:
-          err instanceof ApiFailure && err.status === 401 ? `账号或密码不正确，请检查后重试。${err.requestId ? `（请求编号：${err.requestId}）` : ''}` : message(err),
+          err instanceof ApiFailure && err.status === 401
+            ? `账号或密码不正确，请检查后重试。${err.requestId ? `（请求编号：${err.requestId}）` : ''}`
+            : message(err),
       })
     } finally {
       setBusy(false)
@@ -171,8 +173,8 @@ export function ActivationPage() {
                 新密码
                 <span className="password-field">
                   <input
-                  name="password"
-                  aria-label="新密码"
+                    name="password"
+                    aria-label="新密码"
                     type={show ? 'text' : 'password'}
                     autoComplete="new-password"
                     minLength={12}

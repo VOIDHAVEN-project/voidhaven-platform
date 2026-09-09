@@ -30,13 +30,16 @@ export function FeedbackPage() {
     try {
       const key = idempotencyKey.current ?? createIdempotencyKey()
       idempotencyKey.current = key
-      await api.submit({
-        submissionType: type,
-        title,
-        message: text,
-        linkUrl: String(data.get('linkUrl')).trim() || undefined,
-        imageDescription: String(data.get('imageDescription')).trim() || undefined,
-      }, key)
+      await api.submit(
+        {
+          submissionType: type,
+          title,
+          message: text,
+          linkUrl: String(data.get('linkUrl')).trim() || undefined,
+          imageDescription: String(data.get('imageDescription')).trim() || undefined,
+        },
+        key,
+      )
       form.reset()
       idempotencyKey.current = null
       setNotice({
@@ -62,7 +65,14 @@ export function FeedbackPage() {
         <p>提供一条线索，指出一处遗漏，或告诉我们哪里可以更好。</p>
       </header>
       <div className="public-form-layout">
-        <form className="paper-form" onSubmit={submit} onChange={() => { idempotencyKey.current = null; setFieldErrors({}) }}>
+        <form
+          className="paper-form"
+          onSubmit={submit}
+          onChange={() => {
+            idempotencyKey.current = null
+            setFieldErrors({})
+          }}
+        >
           <fieldset disabled={busy}>
             <legend className="sr-only">投稿 / 反馈</legend>
             <div className="form-section-number">
@@ -184,11 +194,14 @@ export function JoinPage() {
     try {
       const key = idempotencyKey.current ?? createIdempotencyKey()
       idempotencyKey.current = key
-      await api.partnerApply({
-        displayName,
-        introduction,
-        portfolioUrl: String(data.get('portfolioUrl')).trim() || undefined,
-      }, key)
+      await api.partnerApply(
+        {
+          displayName,
+          introduction,
+          portfolioUrl: String(data.get('portfolioUrl')).trim() || undefined,
+        },
+        key,
+      )
       form.reset()
       idempotencyKey.current = null
       setNotice({
@@ -222,14 +235,23 @@ export function JoinPage() {
         ))}
       </div>
       <div className="public-form-layout">
-        <form className="paper-form" onSubmit={submit} onChange={() => { idempotencyKey.current = null; setFieldErrors({}) }}>
+        <form
+          className="paper-form"
+          onSubmit={submit}
+          onChange={() => {
+            idempotencyKey.current = null
+            setFieldErrors({})
+          }}
+        >
           <h2>申请成为合作方</h2>
           <fieldset disabled={busy}>
             <legend className="sr-only">合作方申请信息</legend>
             <label>
               展示名称
               <input name="displayName" required maxLength={120} placeholder="团队或项目名称" />
-              {fieldErrors.displayName ? <small className="field-error">{fieldErrors.displayName}</small> : null}
+              {fieldErrors.displayName ? (
+                <small className="field-error">{fieldErrors.displayName}</small>
+              ) : null}
             </label>
             <label>
               你想维护什么内容？
@@ -240,12 +262,16 @@ export function JoinPage() {
                 rows={7}
                 placeholder="说明内容领域、更新方式和公开来源。"
               />
-              {fieldErrors.introduction ? <small className="field-error">{fieldErrors.introduction}</small> : null}
+              {fieldErrors.introduction ? (
+                <small className="field-error">{fieldErrors.introduction}</small>
+              ) : null}
             </label>
             <label>
               公开作品链接 <small>可选</small>
               <input name="portfolioUrl" type="url" maxLength={2048} placeholder="https://" />
-              {fieldErrors.portfolioUrl ? <small className="field-error">{fieldErrors.portfolioUrl}</small> : null}
+              {fieldErrors.portfolioUrl ? (
+                <small className="field-error">{fieldErrors.portfolioUrl}</small>
+              ) : null}
             </label>
             <p className="field-help">请勿填写不必要的私人联系方式。账号与首次激活由管理员受控交付。</p>
             <button className="button primary" disabled={busy}>

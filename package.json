@@ -1,5 +1,5 @@
 {
-  "name": "voidhaven-v0",
+  "name": "voidhaven-platform",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
@@ -8,8 +8,8 @@
   "scripts": {
     "build": "npm run web:build",
     "contract:lint": "redocly lint --config contracts/openapi/redocly.yaml contracts/openapi/voidhaven-v0.yaml",
-    "format": "prettier --write apps/web/src/App.tsx apps/web/src/components/ContentEditor.tsx apps/web/src/components/ErrorBoundary.tsx apps/web/src/lib/api.ts apps/web/src/lib/useDocumentTitle.ts apps/web/src/main.tsx apps/web/src/pages/ContentDetailPage.tsx apps/web/src/pages/ContentListPage.tsx apps/web/src/pages/HomePage.tsx apps/web/e2e/management-workflow.spec.ts apps/web/e2e/smoke.spec.ts apps/web/index.html contracts/openapi/voidhaven-v0.yaml infra/compose/compose.candidate.yml infra/compose/compose.local.yml",
-    "format:check": "prettier --check apps/web/src/App.tsx apps/web/src/components/ContentEditor.tsx apps/web/src/components/ErrorBoundary.tsx apps/web/src/lib/api.ts apps/web/src/lib/useDocumentTitle.ts apps/web/src/main.tsx apps/web/src/pages/ContentDetailPage.tsx apps/web/src/pages/ContentListPage.tsx apps/web/src/pages/HomePage.tsx apps/web/e2e/management-workflow.spec.ts apps/web/e2e/smoke.spec.ts apps/web/index.html contracts/openapi/voidhaven-v0.yaml infra/compose/compose.candidate.yml infra/compose/compose.local.yml",
+    "format": "prettier --write \"apps/web/**/*.{ts,tsx,css,md,json,html}\" \"contracts/openapi/**/*.yaml\" \"infra/**/*.{yml,yaml}\" \".github/**/*.{yml,yaml,md}\"",
+    "format:check": "prettier --check \"apps/web/**/*.{ts,tsx,css,md,json,html}\" \"contracts/openapi/**/*.yaml\" \"infra/**/*.{yml,yaml}\" \".github/**/*.{yml,yaml,md}\"",
     "lint": "npm run web:lint",
     "test": "npm run web:test",
     "verify:web": "npm run format:check && npm run lint && npm run test && npm run build && npm run contract:lint",
@@ -17,10 +17,11 @@
     "web:build": "npm --workspace web run build",
     "web:lint": "npm --workspace web run lint",
     "web:test": "npm --workspace web run test",
-    "web:e2e": "npm --workspace web run e2e"
+    "web:e2e": "npm --workspace web run test:e2e"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15",
+    "npm": ">=10"
   },
   "devDependencies": {
     "@redocly/cli": "2.51.1",

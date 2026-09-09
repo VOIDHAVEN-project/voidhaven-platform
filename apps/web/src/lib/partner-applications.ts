@@ -5,7 +5,10 @@ export const partnerApplicationStatusOptions = [
   { value: 'ALL', label: '全部状态' },
 ] as const
 
-export type PartnerApplicationState = Exclude<(typeof partnerApplicationStatusOptions)[number]['value'], 'ALL'>
+export type PartnerApplicationState = Exclude<
+  (typeof partnerApplicationStatusOptions)[number]['value'],
+  'ALL'
+>
 
 export function isReviewablePartnerApplication(state: PartnerApplicationState) {
   return state === 'PENDING_REVIEW'

@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -179,9 +171,15 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
           <button className="button primary">搜索</button>
         </form>
         <div className="search-shortcuts" aria-label="直接浏览分类">
-          <Link to="/competitions" onClick={onClose}>竞赛</Link>
-          <Link to="/recruitments" onClick={onClose}>团队招募</Link>
-          <Link to="/resources" onClick={onClose}>学习资源</Link>
+          <Link to="/competitions" onClick={onClose}>
+            竞赛
+          </Link>
+          <Link to="/recruitments" onClick={onClose}>
+            团队招募
+          </Link>
+          <Link to="/resources" onClick={onClose}>
+            学习资源
+          </Link>
           <span>Esc 关闭</span>
         </div>
       </div>
@@ -285,7 +283,9 @@ export function PublicShell() {
   )
   return (
     <div className="public-shell public-site-shell">
-      <a className="skip" href="#main-content">跳至正文</a>
+      <a className="skip" href="#main-content">
+        跳至正文
+      </a>
       <header className="public-header">
         <div className="public-header-inner">
           <Brand />
@@ -296,7 +296,9 @@ export function PublicShell() {
               <span>搜索竞赛、招募与资源</span>
               <kbd>Ctrl K</kbd>
             </button>
-            <div className="header-theme"><ThemeButton /></div>
+            <div className="header-theme">
+              <ThemeButton />
+            </div>
             <Link className="workspace-entry" to="/auth/sign-in">
               受控工作台 <ArrowUpRight size={14} />
             </Link>
@@ -313,7 +315,13 @@ export function PublicShell() {
       </header>
       <MobileDrawer open={menu} onClose={closeMenu} closeAt={1180}>
         <Brand />
-        <button className="drawer-search" onClick={() => { closeMenu(); openSearch() }}>
+        <button
+          className="drawer-search"
+          onClick={() => {
+            closeMenu()
+            openSearch()
+          }}
+        >
           <Search size={17} /> 搜索公开内容
         </button>
         {nav(closeMenu)}
@@ -331,23 +339,36 @@ export function PublicShell() {
         </main>
         <footer className="public-footer expanded-footer">
           <div className="footer-statement">
-            <strong>Small discoveries.<br /><em>Meaningful beginnings.</em></strong>
+            <strong>
+              Small discoveries.
+              <br />
+              <em>Meaningful beginnings.</em>
+            </strong>
             <p>为求索者整理可靠的竞赛、招募与学习资源。官方规则以来源链接为准。</p>
           </div>
           <nav className="footer-links" aria-label="页脚导航">
-            <FooterColumn title="浏览" links={[
-              { label: '竞赛', path: '/competitions' },
-              { label: '团队招募', path: '/recruitments' },
-              { label: '学习资源', path: '/resources' },
-            ]} />
-            <FooterColumn title="参与" links={[
-              { label: '投稿 / 反馈', path: '/feedback' },
-              { label: '加入我们', path: '/join' },
-            ]} />
-            <FooterColumn title="了解" links={[
-              { label: '关于 VOIDHAVEN', path: '/about' },
-              { label: '受控工作台', path: '/auth/sign-in' },
-            ]} />
+            <FooterColumn
+              title="浏览"
+              links={[
+                { label: '竞赛', path: '/competitions' },
+                { label: '团队招募', path: '/recruitments' },
+                { label: '学习资源', path: '/resources' },
+              ]}
+            />
+            <FooterColumn
+              title="参与"
+              links={[
+                { label: '投稿 / 反馈', path: '/feedback' },
+                { label: '加入我们', path: '/join' },
+              ]}
+            />
+            <FooterColumn
+              title="了解"
+              links={[
+                { label: '关于 VOIDHAVEN', path: '/about' },
+                { label: '受控工作台', path: '/auth/sign-in' },
+              ]}
+            />
           </nav>
           <div className="footer-bottom">
             <span>© {new Date().getFullYear()} VOIDHAVEN</span>

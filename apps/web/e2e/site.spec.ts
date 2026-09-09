@@ -134,9 +134,13 @@ test('HTTP 非安全上下文使用安全随机兼容层，招募别名可直接
   await page.getByLabel('标题', { exact: true }).fill('安全随机测试')
   await page.getByLabel('内容', { exact: true }).fill('验证公开投稿。')
   await page.getByRole('button', { name: '提交审核' }).click()
-  const keys = state.writes.filter((write) => write.path.startsWith('/public/')).map((write) => write.headers['idempotency-key'])
+  const keys = state.writes
+    .filter((write) => write.path.startsWith('/public/'))
+    .map((write) => write.headers['idempotency-key'])
   expect(keys).toHaveLength(2)
-  expect(keys.every((key) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(key))).toBeTruthy()
+  expect(
+    keys.every((key) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(key)),
+  ).toBeTruthy()
   await page.goto('/recruitment')
   await expect(page).toHaveURL(/\/recruitments$/)
   await expect(page.getByRole('heading', { name: /团队招募/ })).toBeVisible()
@@ -148,7 +152,11 @@ test('错误边界在 SPA 导航后复位，硬刷新可恢复原页面', async 
   let broken = true
   await page.route('**/api/v1/public/home', async (route) => {
     if (broken) {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {}, requestId: 'recoverable-test' }) })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: {}, requestId: 'recoverable-test' }),
+      })
     } else {
       await route.fallback()
     }
@@ -219,7 +227,9 @@ test('候选修订保留富文本与隐藏字段，冲突不丢输入', async ({
   await expect(editor).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await editor.getByLabel('标题', { exact: true }).fill('修改后的标题')
-  await editor.getByLabel('选择图片').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: Buffer.from('not-a-real-png') })
+  await editor
+    .getByLabel('选择图片')
+    .setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: Buffer.from('not-a-real-png') })
   await editor.getByLabel('图片说明').fill('隔离图片说明')
   await editor.getByRole('button', { name: '上传并插入' }).click()
   await expect(editor.getByLabel('Markdown 原文')).toHaveValue(/media:01HZX9Z8NQ2J3K4M5P6R7S8T9U/)
@@ -244,54 +254,70 @@ test('候选修订保留富文本与隐藏字段，冲突不丢输入', async ({
 test('独立编辑页桌面分栏、小屏单栏与大正文输入保持流畅', async ({ page }) => {
   test.setTimeout(60000)
   await mockApi(page, 'PARTNER')
-  for (const viewport of [{ width: 1440, height: 1000 }, { width: 3828, height: 1962 }]) {
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 3828, height: 1962 },
+  ]) {
     await page.setViewportSize(viewport)
     await page.goto(`/workspace/content/${id}/edit`)
     const editor = page.getByRole('form', { name: '内容编辑器' })
     await expect(editor).toBeVisible()
     await expect(editor.getByRole('button', { name: '分屏' })).toHaveAttribute('aria-pressed', 'true')
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy()
-    const columns = await editor.locator('.markdown-workbench').evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    ).toBeTruthy()
+    const columns = await editor
+      .locator('.markdown-workbench')
+      .evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length)
     expect(columns).toBe(2)
   }
 
   const textarea = page.getByLabel('Markdown 原文')
   const large = '# 性能验证\n\n' + '连续输入保持流畅。'.repeat(15000)
   await textarea.fill(large)
-  const sampleTyping = () => textarea.evaluate(async (input) => {
-    const samples: number[] = []
-    const longTasks: number[] = []
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
-    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    const baseline = input.value
-    for (let warm = 0; warm < 12; warm += 1) {
-      setter.call(input, input.value + '预')
+  const sampleTyping = () =>
+    textarea.evaluate(async (input) => {
+      const samples: number[] = []
+      const longTasks: number[] = []
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+      const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const baseline = input.value
+      for (let warm = 0; warm < 12; warm += 1) {
+        setter.call(input, input.value + '预')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await frame()
+      }
+      setter.call(input, baseline)
       input.dispatchEvent(new Event('input', { bubbles: true }))
       await frame()
-    }
-    setter.call(input, baseline)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await frame()
-    await frame()
-    const observer = 'PerformanceObserver' in window ? new PerformanceObserver((list) => {
-      longTasks.push(...list.getEntries().map((entry) => entry.duration))
-    }) : null
-    try { observer?.observe({ type: 'longtask', buffered: true }) } catch { /* browser may omit longtask */ }
-    for (let index = 0; index < 24; index += 1) {
-      const started = performance.now()
-      setter.call(input, input.value + '字')
+      await frame()
+      const observer =
+        'PerformanceObserver' in window
+          ? new PerformanceObserver((list) => {
+              longTasks.push(...list.getEntries().map((entry) => entry.duration))
+            })
+          : null
+      try {
+        observer?.observe({ type: 'longtask', buffered: true })
+      } catch {
+        /* browser may omit longtask */
+      }
+      for (let index = 0; index < 24; index += 1) {
+        const started = performance.now()
+        setter.call(input, input.value + '字')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await frame()
+        samples.push(performance.now() - started)
+      }
+      observer?.disconnect()
+      setter.call(input, baseline)
       input.dispatchEvent(new Event('input', { bubbles: true }))
       await frame()
-      samples.push(performance.now() - started)
-    }
-    observer?.disconnect()
-    setter.call(input, baseline)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await frame()
-    return { samples: samples.sort((a, b) => a - b), longTasks }
-  })
+      return { samples: samples.sort((a, b) => a - b), longTasks }
+    })
   let performance = await sampleTyping()
-  if (performance.samples[Math.floor(performance.samples.length * 0.95)] >= 50) performance = await sampleTyping()
+  if (performance.samples[Math.floor(performance.samples.length * 0.95)] >= 50)
+    performance = await sampleTyping()
   const p95 = performance.samples[Math.floor(performance.samples.length * 0.95)]
   await expect(textarea).toHaveValue(large)
   expect(p95).toBeLessThan(50)
@@ -307,7 +333,9 @@ test('独立编辑页桌面分栏、小屏单栏与大正文输入保持流畅',
   await mobileEditor.getByRole('button', { name: '阅读预览' }).click()
   await expect(mobileEditor.getByLabel('前端预览')).toBeVisible()
   await expect(mobileEditor.getByLabel('Markdown 原文')).toHaveCount(0)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy()
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBeTruthy()
 })
 test('管理员新建沿用现有接口契约', async ({ page }) => {
   const state = await mockApi(page)
@@ -359,7 +387,9 @@ test('PENDING_REVIEW 申请失败保留输入，批准后刷新并只在当前�
   await expect(page.getByRole('status').filter({ hasText: '申请处理结果已保存' })).toBeVisible()
   await expect(page.locator('.application-row')).toHaveCount(0)
   expect(state.partnerApplicationState).toBe('APPROVED')
-  expect(state.writes.find((write) => write.path.endsWith('/partner-applications/application-1/approve'))?.body).toEqual({ loginId: 'isolated-partner', reason: '隔离审批原因' })
+  expect(
+    state.writes.find((write) => write.path.endsWith('/partner-applications/application-1/approve'))?.body,
+  ).toEqual({ loginId: 'isolated-partner', reason: '隔离审批原因' })
   await page.reload()
   await expect(page.locator('.token-card')).toHaveCount(0)
   await page.getByRole('link', { name: '合作方与归属' }).click()
@@ -381,13 +411,19 @@ test('合作方申请筛选使用后端状态，拒绝后刷新列表', async ({
   await page.goto('/workspace?section=applications')
   const status = page.getByLabel('状态')
   await expect(status).toHaveValue('PENDING_REVIEW')
-  expect(await status.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).toEqual(['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'ALL'])
+  expect(
+    await status
+      .locator('option')
+      .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value)),
+  ).toEqual(['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'ALL'])
   await page.getByLabel('审核原因').fill('不符合当前合作范围')
   await page.getByRole('button', { name: '拒绝', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: '申请处理结果已保存' })).toBeVisible()
   await expect(page.locator('.application-row')).toHaveCount(0)
   expect(state.partnerApplicationState).toBe('REJECTED')
-  expect(state.writes.find((write) => write.path.endsWith('/partner-applications/application-1/decision'))?.body).toEqual({ decision: 'REJECT', reason: '不符合当前合作范围' })
+  expect(
+    state.writes.find((write) => write.path.endsWith('/partner-applications/application-1/decision'))?.body,
+  ).toEqual({ decision: 'REJECT', reason: '不符合当前合作范围' })
   await status.selectOption('ALL')
   await page.getByRole('button', { name: '应用筛选' }).click()
   await expect(page.locator('.application-row')).toHaveCount(1)
@@ -400,13 +436,21 @@ test('合作方申请审核表单在桌面和移动端均无横向溢出', async
   await page.goto('/workspace?section=applications')
   const row = page.locator('.application-row')
   await expect(row).toBeVisible()
-  expect(await row.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBeGreaterThan(1)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  expect(
+    await row.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+  ).toBeGreaterThan(1)
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBe(true)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await expect(page.getByLabel('受控登录名')).toBeVisible()
-  expect(await row.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  expect(
+    await row.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+  ).toBe(1)
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBe(true)
 })
 
 test('动态模块、公开输入、超级管理员账号与审计', async ({ page }) => {
@@ -437,14 +481,30 @@ test('五种宽度、双主题、抽屉焦点与低动效', async ({ page }) => 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   for (const width of [1440, 1280, 1024, 768, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    for (const [mode, label] of [['light', '浅色'], ['dark', '深色']]) {
+    for (const [mode, label] of [
+      ['light', '浅色'],
+      ['dark', '深色'],
+    ]) {
       await page.goto('/auth/sign-in')
       await page.getByRole('button', { name: label, exact: true }).click()
-      for (const route of ['/', '/resources', '/content/' + id, '/feedback', '/join', '/about', '/auth/sign-in', '/auth/activate', '/workspace?section=content', '/missing-page']) {
+      for (const route of [
+        '/',
+        '/resources',
+        '/content/' + id,
+        '/feedback',
+        '/join',
+        '/about',
+        '/auth/sign-in',
+        '/auth/activate',
+        '/workspace?section=content',
+        '/missing-page',
+      ]) {
         await page.goto(route)
         await expect(page.locator('body')).not.toBeEmpty()
         await expect(page.locator('html')).toHaveAttribute('data-theme', mode)
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBeTruthy()
       }
     }
     await page.goto('/')
@@ -517,5 +577,7 @@ test('宽屏首页密度、中文字号与页脚网格', async ({ page }) => {
   }
   await page.goto('/competitions')
   await expect(page.locator('.public-disclaimer')).toBeVisible()
-  expect(await page.locator('.public-disclaimer').evaluate((node) => node.getBoundingClientRect().height)).toBeLessThan(64)
+  expect(
+    await page.locator('.public-disclaimer').evaluate((node) => node.getBoundingClientRect().height),
+  ).toBeLessThan(64)
 })

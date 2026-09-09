@@ -19,12 +19,7 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
-import {
-  api,
-  type Identity,
-  type ManagedContent,
-  type ProvisionedPartner,
-} from '../lib/api'
+import { api, type Identity, type ManagedContent, type ProvisionedPartner } from '../lib/api'
 import { useCollapsed, usePageTitle, useResource } from '../lib/hooks'
 import { ThemeButton } from '../components/theme'
 import { MobileDrawer } from '../components/shell'
@@ -42,7 +37,13 @@ import {
   type NoticeValue,
 } from '../components/ui'
 import { safeUrl } from '../components/document'
-import { AccountsPanel, ApplicationsPanel, AuditPanel, ReviewWorkspace, SubmissionsPanel } from '../components/workspace-panels'
+import {
+  AccountsPanel,
+  ApplicationsPanel,
+  AuditPanel,
+  ReviewWorkspace,
+  SubmissionsPanel,
+} from '../components/workspace-panels'
 type Confirmation = {
   title: string
   description: string
@@ -50,7 +51,7 @@ type Confirmation = {
   run: (reason: string) => Promise<void>
 }
 function itemsOf<T>(value: { items: T[] } | T[] | null | undefined): T[] {
-  return Array.isArray(value) ? value : value?.items ?? []
+  return Array.isArray(value) ? value : (value?.items ?? [])
 }
 export function Workspace() {
   usePageTitle('受控工作台')
@@ -120,7 +121,11 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
         { id: 'overview', label: '概览', icon: LayoutDashboard },
         { id: 'content', label: '我的内容', icon: FileText },
       ]
-  const section = editorRoute ? 'content' : nav.some((item) => item.id === params.get('section')) ? params.get('section')! : 'overview'
+  const section = editorRoute
+    ? 'content'
+    : nav.some((item) => item.id === params.get('section'))
+      ? params.get('section')!
+      : 'overview'
   const allowNavigation = (event?: MouseEvent) => {
     if (!editorDirty || window.confirm('有尚未保存的修改。确定离开编辑器吗？')) return true
     event?.preventDefault()
@@ -150,7 +155,9 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
             title={label}
             aria-label={label}
             className={section === id ? 'active' : ''}
-            onClick={(event) => { if (allowNavigation(event)) setMenu(false) }}
+            onClick={(event) => {
+              if (allowNavigation(event)) setMenu(false)
+            }}
           >
             <Icon size={16} />
             <span>{label}</span>
@@ -159,7 +166,14 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
       </nav>
       <div className="sidebar-bottom">
         <ThemeButton />
-        <Link className="workspace-entry" to="/" title="返回公开首页" onClick={(event) => { allowNavigation(event) }}>
+        <Link
+          className="workspace-entry"
+          to="/"
+          title="返回公开首页"
+          onClick={(event) => {
+            allowNavigation(event)
+          }}
+        >
           <ArrowUpRight size={16} />
           <span>公开首页</span>
         </Link>
@@ -175,9 +189,9 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
           aria-label="退出会话"
           title="退出会话"
           disabled={signingOut}
-           onClick={async () => {
-             if (signingOut) return
-             if (!allowNavigation()) return
+          onClick={async () => {
+            if (signingOut) return
+            if (!allowNavigation()) return
             setSigningOut(true)
             try {
               await api.signOut()
@@ -240,7 +254,11 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
         </header>
         <Notice value={notice} />
         {editorRoute ? (
-          <WorkspaceEditorPage identity={identity} contentId={editEditor?.params.contentId} onDirtyChange={setEditorDirty} />
+          <WorkspaceEditorPage
+            identity={identity}
+            contentId={editEditor?.params.contentId}
+            onDirtyChange={setEditorDirty}
+          />
         ) : isAdmin ? (
           section === 'reviews' ? (
             <ReviewWorkspace itemId={params.get('item') ?? undefined} isSuperAdmin={isSuperAdmin} />
@@ -267,65 +285,122 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
   )
 }
 
-function WorkspaceEditorPage({ identity, contentId, onDirtyChange }: { identity: Identity; contentId?: string; onDirtyChange: (dirty: boolean) => void }) {
+function WorkspaceEditorPage({
+  identity,
+  contentId,
+  onDirtyChange,
+}: {
+  identity: Identity
+  contentId?: string
+  onDirtyChange: (dirty: boolean) => void
+}) {
   const isAdmin = identity.roles.includes('ADMIN') || identity.roles.includes('SUPER_ADMIN')
   const isPartner = identity.roles.includes('PARTNER')
   const navigate = useNavigate()
   const savedMessage = useRef('')
-  const close = () => navigate('/workspace?section=content', {
-    replace: true,
-    state: savedMessage.current ? { workspaceNotice: savedMessage.current } : null,
-  })
-  if (!isAdmin && !isPartner) return <EmptyState title="当前账号没有编辑权限" text="请联系管理员核对账号角色。" />
+  const close = () =>
+    navigate('/workspace?section=content', {
+      replace: true,
+      state: savedMessage.current ? { workspaceNotice: savedMessage.current } : null,
+    })
+  if (!isAdmin && !isPartner)
+    return <EmptyState title="当前账号没有编辑权限" text="请联系管理员核对账号角色。" />
   if (contentId) {
-    return <LoadedWorkspaceEditor contentId={contentId} isAdmin={isAdmin} close={close} savedMessage={savedMessage} onDirtyChange={onDirtyChange} />
+    return (
+      <LoadedWorkspaceEditor
+        contentId={contentId}
+        isAdmin={isAdmin}
+        close={close}
+        savedMessage={savedMessage}
+        onDirtyChange={onDirtyChange}
+      />
+    )
   }
-  return <ContentEditor
-    onClose={close}
-    onDirtyChange={onDirtyChange}
-    onSave={async (draft) => {
-      const result = isAdmin ? await api.adminCreate(draft) : await api.partnerCreate(draft)
-      savedMessage.current = `“${result.title}”已保存，可从列表继续处理。`
-    }}
-    onSaveAndSubmit={!isAdmin ? async (draft) => {
-      const result = await api.partnerCreate(draft)
-      await api.partnerSubmit(result.id)
-      savedMessage.current = `“${result.title}”已保存并送审。`
-    } : undefined}
-  />
+  return (
+    <ContentEditor
+      onClose={close}
+      onDirtyChange={onDirtyChange}
+      onSave={async (draft) => {
+        const result = isAdmin ? await api.adminCreate(draft) : await api.partnerCreate(draft)
+        savedMessage.current = `“${result.title}”已保存，可从列表继续处理。`
+      }}
+      onSaveAndSubmit={
+        !isAdmin
+          ? async (draft) => {
+              const result = await api.partnerCreate(draft)
+              await api.partnerSubmit(result.id)
+              savedMessage.current = `“${result.title}”已保存并送审。`
+            }
+          : undefined
+      }
+    />
+  )
 }
 
-function LoadedWorkspaceEditor({ contentId, isAdmin, close, savedMessage, onDirtyChange }: {
+function LoadedWorkspaceEditor({
+  contentId,
+  isAdmin,
+  close,
+  savedMessage,
+  onDirtyChange,
+}: {
   contentId: string
   isAdmin: boolean
   close: () => void
   savedMessage: React.MutableRefObject<string>
   onDirtyChange: (dirty: boolean) => void
 }) {
-  const loader = useCallback(() => isAdmin ? api.adminContent(contentId) : api.partnerContent(contentId), [contentId, isAdmin])
+  const loader = useCallback(
+    () => (isAdmin ? api.adminContent(contentId) : api.partnerContent(contentId)),
+    [contentId, isAdmin],
+  )
   const state = useResource(loader)
-  if (state.loading) return <section className="content-editor-page"><LoadingRows /></section>
-  if (state.error || !state.data) return <section className="content-editor-page"><ErrorState error={state.error || '内容不存在或无法编辑。'} retry={state.reload} /></section>
+  if (state.loading)
+    return (
+      <section className="content-editor-page">
+        <LoadingRows />
+      </section>
+    )
+  if (state.error || !state.data)
+    return (
+      <section className="content-editor-page">
+        <ErrorState error={state.error || '内容不存在或无法编辑。'} retry={state.reload} />
+      </section>
+    )
   const editing = state.data
-  return <ContentEditor
-    editing={editing}
-    onClose={close}
-    onDirtyChange={onDirtyChange}
-    onSave={async (draft) => {
-      const result = isAdmin
-        ? await api.adminRevise(editing.id, editing.revision, draft)
-        : await api.partnerRevise(editing.id, editing.revision, draft)
-      savedMessage.current = `“${result.title}”已保存。`
-    }}
-    onSaveAndSubmit={!isAdmin ? async (draft) => {
-      const result = await api.partnerRevise(editing.id, editing.revision, draft)
-      await api.partnerSubmit(result.id)
-      savedMessage.current = `“${result.title}”已保存并送审。`
-    } : undefined}
-  />
+  return (
+    <ContentEditor
+      editing={editing}
+      onClose={close}
+      onDirtyChange={onDirtyChange}
+      onSave={async (draft) => {
+        const result = isAdmin
+          ? await api.adminRevise(editing.id, editing.revision, draft)
+          : await api.partnerRevise(editing.id, editing.revision, draft)
+        savedMessage.current = `“${result.title}”已保存。`
+      }}
+      onSaveAndSubmit={
+        !isAdmin
+          ? async (draft) => {
+              const result = await api.partnerRevise(editing.id, editing.revision, draft)
+              await api.partnerSubmit(result.id)
+              savedMessage.current = `“${result.title}”已保存并送审。`
+            }
+          : undefined
+      }
+    />
+  )
 }
 type Action =
-  'submit' | 'approve' | 'changes' | 'reject' | 'publish' | 'hide' | 'show' | 'archive' | 'restore'
+  | 'submit'
+  | 'approve'
+  | 'changes'
+  | 'reject'
+  | 'publish'
+  | 'hide'
+  | 'show'
+  | 'archive'
+  | 'restore'
 const actionLabel: Record<Action, string> = {
   submit: '送审',
   approve: '通过审核',
@@ -340,7 +415,12 @@ const actionLabel: Record<Action, string> = {
 export function availableActions(item: ManagedContent): Action[] {
   if (item.recordState === 'ARCHIVED') return ['restore']
   if (['DRAFT', 'CHANGES_REQUESTED'].includes(item.workflowStatus)) return ['submit']
-  if (item.workflowStatus === 'PENDING_REVIEW' || item.workflowStatus === 'APPROVED' || item.workflowStatus === 'REJECTED') return []
+  if (
+    item.workflowStatus === 'PENDING_REVIEW' ||
+    item.workflowStatus === 'APPROVED' ||
+    item.workflowStatus === 'REJECTED'
+  )
+    return []
   if (item.workflowStatus === 'PUBLISHED')
     return item.visibility === 'PUBLIC' ? ['hide', 'archive'] : ['show', 'archive']
   return []
@@ -399,9 +479,12 @@ function ContentRows({
               </div>
               <h3>{item.title}</h3>
               <p>
-                模块：{item.moduleKey || statusText[item.kind]} · 可见性：{statusText[item.visibility] ?? item.visibility} · 修订 {item.revision}
+                模块：{item.moduleKey || statusText[item.kind]} · 可见性：
+                {statusText[item.visibility] ?? item.visibility} · 修订 {item.revision}
               </p>
-              {item.latestReview?.reason ? <p className="review-note">最近审核意见：{item.latestReview.reason}</p> : null}
+              {item.latestReview?.reason ? (
+                <p className="review-note">最近审核意见：{item.latestReview.reason}</p>
+              ) : null}
             </div>
             <div className="row-actions">{actions(item)}</div>
           </article>
@@ -477,14 +560,26 @@ function AdminContent({ section }: { section: string }) {
           ? items.map((value) => (value.id === item.id ? item : value))
           : [item, ...items],
       }
-    }
-    )
+    })
   const actions = (item: ManagedContent) => (
     <>
-      {['PENDING_REVIEW', 'APPROVED', 'REJECTED'].includes(item.workflowStatus) ? <Link className="button primary" to={`/workspace?section=reviews&item=${encodeURIComponent(item.id)}`}>{item.workflowStatus === 'PENDING_REVIEW' ? '查看原文并审核' : item.workflowStatus === 'APPROVED' ? '发布检查' : '查看拒绝记录'}</Link> : null}
+      {['PENDING_REVIEW', 'APPROVED', 'REJECTED'].includes(item.workflowStatus) ? (
+        <Link
+          className="button primary"
+          to={`/workspace?section=reviews&item=${encodeURIComponent(item.id)}`}
+        >
+          {item.workflowStatus === 'PENDING_REVIEW'
+            ? '查看原文并审核'
+            : item.workflowStatus === 'APPROVED'
+              ? '发布检查'
+              : '查看拒绝记录'}
+        </Link>
+      ) : null}
       {item.recordState !== 'ARCHIVED' &&
         ['DRAFT', 'CHANGES_REQUESTED', 'PUBLISHED'].includes(item.workflowStatus) && (
-          <Link className="button ghost" to={`/workspace/content/${encodeURIComponent(item.id)}/edit`}>编辑</Link>
+          <Link className="button ghost" to={`/workspace/content/${encodeURIComponent(item.id)}/edit`}>
+            编辑
+          </Link>
         )}
       {availableActions(item).map((action) => (
         <button
@@ -537,10 +632,44 @@ function AdminContent({ section }: { section: string }) {
             }
           />
           <p className="panel-help">先整理内容，再核对来源。公开发布前，每份内容都经过审核。</p>
-          <form className="workspace-filter" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setFilters({ query: String(data.get('q') ?? '').trim(), status: String(data.get('status') ?? ''), module: String(data.get('module') ?? '') }) }}>
-            <label>搜索<input name="q" placeholder="标题或关键词" /></label>
-            <label>状态<select name="status"><option value="">全部状态</option><option value="DRAFT">草稿</option><option value="PENDING_REVIEW">待审核</option><option value="APPROVED">待发布</option><option value="CHANGES_REQUESTED">待修改</option><option value="REJECTED">已拒绝</option><option value="PUBLISHED">已发布</option></select></label>
-            <label>模块<select name="module"><option value="">全部模块</option><option value="competition">竞赛</option><option value="recruitment">团队招募</option><option value="resource">学习资源</option><option value="resource.article">文章 / 经验</option></select></label>
+          <form
+            className="workspace-filter"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const data = new FormData(event.currentTarget)
+              setFilters({
+                query: String(data.get('q') ?? '').trim(),
+                status: String(data.get('status') ?? ''),
+                module: String(data.get('module') ?? ''),
+              })
+            }}
+          >
+            <label>
+              搜索
+              <input name="q" placeholder="标题或关键词" />
+            </label>
+            <label>
+              状态
+              <select name="status">
+                <option value="">全部状态</option>
+                <option value="DRAFT">草稿</option>
+                <option value="PENDING_REVIEW">待审核</option>
+                <option value="APPROVED">待发布</option>
+                <option value="CHANGES_REQUESTED">待修改</option>
+                <option value="REJECTED">已拒绝</option>
+                <option value="PUBLISHED">已发布</option>
+              </select>
+            </label>
+            <label>
+              模块
+              <select name="module">
+                <option value="">全部模块</option>
+                <option value="competition">竞赛</option>
+                <option value="recruitment">团队招募</option>
+                <option value="resource">学习资源</option>
+                <option value="resource.article">文章 / 经验</option>
+              </select>
+            </label>
             <button className="button ghost">应用筛选</button>
           </form>
           <Notice value={notice} />
@@ -551,7 +680,20 @@ function AdminContent({ section }: { section: string }) {
           ) : (
             <ContentRows items={itemsOf(state.data)} actions={actions} />
           )}
-          {state.data?.nextCursor ? <button className="button ghost load-more" onClick={async () => { const next = await api.adminContentItems({ ...filters, cursor: state.data?.nextCursor ?? undefined }); state.setData((current) => ({ ...next, items: [...itemsOf(current), ...next.items] })) }}>加载更多</button> : null}
+          {state.data?.nextCursor ? (
+            <button
+              className="button ghost load-more"
+              onClick={async () => {
+                const next = await api.adminContentItems({
+                  ...filters,
+                  cursor: state.data?.nextCursor ?? undefined,
+                })
+                state.setData((current) => ({ ...next, items: [...itemsOf(current), ...next.items] }))
+              }}
+            >
+              加载更多
+            </button>
+          ) : null}
         </section>
       )}
       <ConfirmationView value={confirmation} close={() => setConfirmation(null)} />
@@ -568,7 +710,9 @@ function PartnerContent({ section }: { section: string }) {
     <>
       {item.recordState !== 'ARCHIVED' &&
         ['DRAFT', 'CHANGES_REQUESTED', 'PUBLISHED'].includes(item.workflowStatus) && (
-          <Link className="button ghost" to={`/workspace/content/${encodeURIComponent(item.id)}/edit`}>编辑</Link>
+          <Link className="button ghost" to={`/workspace/content/${encodeURIComponent(item.id)}/edit`}>
+            编辑
+          </Link>
         )}
       {item.recordState !== 'ARCHIVED' && ['DRAFT', 'CHANGES_REQUESTED'].includes(item.workflowStatus) && (
         <button
@@ -628,8 +772,43 @@ function PartnerContent({ section }: { section: string }) {
             草稿与审核中的内容不占用公开配额。
             {state.data && `当前公开配额 ${state.data.publicActiveCount} / ${state.data.quota}。`}
           </p>
-          <form className="workspace-filter" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setFilters({ query: String(data.get('q') ?? '').trim(), status: String(data.get('status') ?? ''), module: String(data.get('module') ?? '') }) }}>
-            <label>搜索<input name="q" placeholder="标题或关键词" /></label><label>状态<select name="status"><option value="">全部状态</option><option value="DRAFT">草稿</option><option value="PENDING_REVIEW">待审核</option><option value="CHANGES_REQUESTED">待修改</option><option value="PUBLISHED">已发布</option></select></label><label>模块<select name="module"><option value="">全部模块</option><option value="competition">竞赛</option><option value="recruitment">团队招募</option><option value="resource">学习资源</option><option value="resource.article">文章 / 经验</option></select></label><button className="button ghost">应用筛选</button>
+          <form
+            className="workspace-filter"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const data = new FormData(event.currentTarget)
+              setFilters({
+                query: String(data.get('q') ?? '').trim(),
+                status: String(data.get('status') ?? ''),
+                module: String(data.get('module') ?? ''),
+              })
+            }}
+          >
+            <label>
+              搜索
+              <input name="q" placeholder="标题或关键词" />
+            </label>
+            <label>
+              状态
+              <select name="status">
+                <option value="">全部状态</option>
+                <option value="DRAFT">草稿</option>
+                <option value="PENDING_REVIEW">待审核</option>
+                <option value="CHANGES_REQUESTED">待修改</option>
+                <option value="PUBLISHED">已发布</option>
+              </select>
+            </label>
+            <label>
+              模块
+              <select name="module">
+                <option value="">全部模块</option>
+                <option value="competition">竞赛</option>
+                <option value="recruitment">团队招募</option>
+                <option value="resource">学习资源</option>
+                <option value="resource.article">文章 / 经验</option>
+              </select>
+            </label>
+            <button className="button ghost">应用筛选</button>
           </form>
           <Notice value={notice} />
           {state.loading ? (
@@ -639,7 +818,30 @@ function PartnerContent({ section }: { section: string }) {
           ) : (
             <ContentRows items={itemsOf(state.data?.contentItems)} actions={actions} />
           )}
-          {state.data?.contentItems.nextCursor ? <button className="button ghost load-more" onClick={async () => { const next = await api.partnerDashboard({ ...filters, cursor: state.data?.contentItems.nextCursor ?? undefined }); state.setData((current) => current ? { ...next, contentItems: { ...next.contentItems, items: [...current.contentItems.items, ...next.contentItems.items] } } : next) }}>加载更多</button> : null}
+          {state.data?.contentItems.nextCursor ? (
+            <button
+              className="button ghost load-more"
+              onClick={async () => {
+                const next = await api.partnerDashboard({
+                  ...filters,
+                  cursor: state.data?.contentItems.nextCursor ?? undefined,
+                })
+                state.setData((current) =>
+                  current
+                    ? {
+                        ...next,
+                        contentItems: {
+                          ...next.contentItems,
+                          items: [...current.contentItems.items, ...next.contentItems.items],
+                        },
+                      }
+                    : next,
+                )
+              }}
+            >
+              加载更多
+            </button>
+          ) : null}
         </section>
       )}
       <ConfirmationView value={confirmation} close={() => setConfirmation(null)} />
@@ -754,7 +956,29 @@ function PartnerOperations() {
         }
       />
       <p className="panel-help">公开且活跃的内容计入配额。调整配额或转交内容时，请说明原因。</p>
-      <form className="workspace-filter" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setFilters({ query: String(data.get('q') ?? '').trim(), status: String(data.get('status') ?? '') }) }}><label>搜索合作方<input name="q" placeholder="展示名或账号" /></label><label>账号资格<select name="status"><option value="">全部状态</option><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option><option value="REVOKED">REVOKED</option></select></label><button className="button ghost">应用筛选</button></form>
+      <form
+        className="workspace-filter"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const data = new FormData(event.currentTarget)
+          setFilters({ query: String(data.get('q') ?? '').trim(), status: String(data.get('status') ?? '') })
+        }}
+      >
+        <label>
+          搜索合作方
+          <input name="q" placeholder="展示名或账号" />
+        </label>
+        <label>
+          账号资格
+          <select name="status">
+            <option value="">全部状态</option>
+            <option value="ACTIVE">ACTIVE</option>
+            <option value="SUSPENDED">SUSPENDED</option>
+            <option value="REVOKED">REVOKED</option>
+          </select>
+        </label>
+        <button className="button ghost">应用筛选</button>
+      </form>
       <Notice value={notice} />
       {state.loading ? (
         <LoadingRows />
@@ -768,7 +992,8 @@ function PartnerOperations() {
                 <span className="avatar">{profile.displayName.slice(0, 1)}</span>
                 <h3>{profile.displayName}</h3>
                 <p>
-                  {profile.active ? '启用' : '停用'} · 账号资格 {profile.qualificationStatus ?? '—'} · 当前公开配额 {profile.contentQuota}
+                  {profile.active ? '启用' : '停用'} · 账号资格 {profile.qualificationStatus ?? '—'} ·
+                  当前公开配额 {profile.contentQuota}
                 </p>
               </div>
               <form
@@ -844,7 +1069,20 @@ function PartnerOperations() {
       ) : (
         <EmptyState title="当前没有合作方档案" text="批准合作申请后，在这里维护配额和内容归属。" />
       )}
-      {state.data?.nextCursor ? <button className="button ghost load-more" onClick={async () => { const next = await api.adminPartnerProfiles({ ...filters, cursor: state.data?.nextCursor ?? undefined }); state.setData((current) => ({ ...next, items: [...itemsOf(current), ...next.items] })) }}>加载更多</button> : null}
+      {state.data?.nextCursor ? (
+        <button
+          className="button ghost load-more"
+          onClick={async () => {
+            const next = await api.adminPartnerProfiles({
+              ...filters,
+              cursor: state.data?.nextCursor ?? undefined,
+            })
+            state.setData((current) => ({ ...next, items: [...itemsOf(current), ...next.items] }))
+          }}
+        >
+          加载更多
+        </button>
+      ) : null}
       <ConfirmationView value={confirmation} close={() => setConfirmation(null)} />
     </section>
   )

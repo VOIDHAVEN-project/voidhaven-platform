@@ -142,27 +142,64 @@ describe('v0 contract protection', () => {
     ])
   })
   it('sends the reviewed revision through If-Match', async () => {
-    const fetcher = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { headerName: 'X-CSRF-TOKEN', token: 'csrf' } })))
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { headerName: 'X-CSRF-TOKEN', token: 'csrf' } })),
+      )
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: { id: 'item', revision: 9 } })))
     await api.adminDecision('item/a', 9, 'CHANGES_REQUESTED', '补充来源')
     expect(fetcher.mock.calls[1][0]).toBe('/api/v1/admin/reviews/item%2Fa/decision')
     expect(fetcher.mock.calls[1][1]?.headers).toMatchObject({ 'If-Match': '9', 'X-CSRF-TOKEN': 'csrf' })
   })
   it('preserves backend diagnostics and retry delay', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ code: 'RATE_LIMITED', message: '稍后重试', requestId: 'req-1', fieldErrors: { title: '标题无效' }, retryable: true }), { status: 429, headers: { 'Retry-After': '900' } }))
-    const error = await request('/public/home').catch((value) => value) as ApiFailure
-    expect(error).toMatchObject({ code: 'RATE_LIMITED', requestId: 'req-1', retryAfterSeconds: 900, fieldErrors: { title: '标题无效' }, retryable: true })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 'RATE_LIMITED',
+          message: '稍后重试',
+          requestId: 'req-1',
+          fieldErrors: { title: '标题无效' },
+          retryable: true,
+        }),
+        { status: 429, headers: { 'Retry-After': '900' } },
+      ),
+    )
+    const error = (await request('/public/home').catch((value) => value)) as ApiFailure
+    expect(error).toMatchObject({
+      code: 'RATE_LIMITED',
+      requestId: 'req-1',
+      retryAfterSeconds: 900,
+      fieldErrors: { title: '标题无效' },
+      retryable: true,
+    })
   })
   it('passes module and one exact field filter to the generic public endpoint', async () => {
-    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: { items: [] } })))
-    await api.listModule('resource.article', { query: '经验', filterKey: 'sourceMode', filterValue: 'ORIGINAL', cursor: 'next' })
-    expect(fetcher.mock.calls[0][0]).toBe('/api/v1/public/content?pageSize=20&module=resource.article&q=%E7%BB%8F%E9%AA%8C&cursor=next&filterKey=sourceMode&filterValue=ORIGINAL')
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { items: [] } })))
+    await api.listModule('resource.article', {
+      query: '经验',
+      filterKey: 'sourceMode',
+      filterValue: 'ORIGINAL',
+      cursor: 'next',
+    })
+    expect(fetcher.mock.calls[0][0]).toBe(
+      '/api/v1/public/content?pageSize=20&module=resource.article&q=%E7%BB%8F%E9%AA%8C&cursor=next&filterKey=sourceMode&filterValue=ORIGINAL',
+    )
   })
   it('creates a safe local preview for markdown and controlled media', () => {
-    expect(markdownPreview('# 标题\n\n正文 **重点**\n\n![图](media:01HZX9Z8NQ2J3K4M5P6R7S8T9U)').blocks).toEqual([
+    expect(
+      markdownPreview('# 标题\n\n正文 **重点**\n\n![图](media:01HZX9Z8NQ2J3K4M5P6R7S8T9U)').blocks,
+    ).toEqual([
       { type: 'heading', level: 1, inlines: [{ type: 'text', text: '标题' }] },
-      { type: 'paragraph', inlines: [{ type: 'text', text: '正文 ' }, { type: 'strong', text: '重点' }] },
+      {
+        type: 'paragraph',
+        inlines: [
+          { type: 'text', text: '正文 ' },
+          { type: 'strong', text: '重点' },
+        ],
+      },
       { type: 'image', alt: '图', mediaId: '01HZX9Z8NQ2J3K4M5P6R7S8T9U' },
     ])
   })
@@ -179,20 +216,26 @@ describe('v0 contract protection', () => {
       reprintPermission: 'NOT_ALLOWED',
       customMetadata: 'keep-me',
     } as AdminDraft
-    const result = prepareDraft(draft, {
-      key: 'resource',
-      label: '资源',
-      legacyKind: 'RESOURCE',
-      active: true,
-      allowsOriginalSource: false,
-      fields: [],
-    }, true)
+    const result = prepareDraft(
+      draft,
+      {
+        key: 'resource',
+        label: '资源',
+        legacyKind: 'RESOURCE',
+        active: true,
+        allowsOriginalSource: false,
+        fields: [],
+      },
+      true,
+    )
     expect(result.body).toEqual(markdownPreview('# 新正文'))
     expect(result.details).toEqual({ hidden: { keep: true } })
     expect(result.customMetadata).toBe('keep-me')
   })
   it('reuses a caller-provided idempotency key for a logical public submission', async () => {
-    const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: { id: 'submission' } })))
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { id: 'submission' } })))
     await api.submit({ submissionType: 'FEEDBACK', title: '标题', message: '正文' }, 'same-attempt')
     expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({ 'Idempotency-Key': 'same-attempt' })
   })

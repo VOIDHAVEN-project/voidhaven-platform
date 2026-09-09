@@ -60,7 +60,18 @@ test('无权限、限流与配额不足不被空状态掩盖', async ({ page }) 
     route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
-        data: { items: [{ ...content, workflowStatus: 'APPROVED', publicationStatus: 'UNPUBLISHED', visibility: 'HIDDEN', recordState: 'ACTIVE' }], nextCursor: null },
+        data: {
+          items: [
+            {
+              ...content,
+              workflowStatus: 'APPROVED',
+              publicationStatus: 'UNPUBLISHED',
+              visibility: 'HIDDEN',
+              recordState: 'ACTIVE',
+            },
+          ],
+          nextCursor: null,
+        },
       }),
     }),
   )

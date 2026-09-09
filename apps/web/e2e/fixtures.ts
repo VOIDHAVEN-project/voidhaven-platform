@@ -20,7 +20,8 @@ export const content = {
       { type: 'future-block', payload: { keep: true } },
     ],
   },
-  markdownSource: '# 隔离测试竞赛\n\n第一段正文\n\n## 丰富的标题\n\n[官方来源](https://example.com)\n\n## 参赛要求\n\n核对资格和提交要求。\n\n## 时间安排\n\n确认截止时间与官方安排。',
+  markdownSource:
+    '# 隔离测试竞赛\n\n第一段正文\n\n## 丰富的标题\n\n[官方来源](https://example.com)\n\n## 参赛要求\n\n核对资格和提交要求。\n\n## 时间安排\n\n确认截止时间与官方安排。',
   languageCode: 'zh-CN',
   languageLabel: '中文',
   sourceName: '测试来源',
@@ -54,16 +55,58 @@ export const modules = {
       ],
     },
     {
-      key: 'recruitment', label: '团队招募', legacyKind: 'RECRUITMENT', active: true, allowsOriginalSource: false, template: '# 招募说明\n\n开始写作。',
+      key: 'recruitment',
+      label: '团队招募',
+      legacyKind: 'RECRUITMENT',
+      active: true,
+      allowsOriginalSource: false,
+      template: '# 招募说明\n\n开始写作。',
       fields: [{ key: 'deadlineDate', label: '截止日期', type: 'date', required: false, filterable: true }],
     },
     {
-      key: 'resource', label: '学习资源', legacyKind: 'RESOURCE', active: true, allowsOriginalSource: false, template: '# 使用说明\n\n开始写作。',
-      fields: [{ key: 'resourceType', label: '资源类型', type: 'select', required: true, filterable: true, options: ['GUIDE', 'COURSE', 'TOOL', 'DOCUMENT', 'ARTICLE'] }, { key: 'audience', label: '适用人群', type: 'text', required: false, filterable: true }],
+      key: 'resource',
+      label: '学习资源',
+      legacyKind: 'RESOURCE',
+      active: true,
+      allowsOriginalSource: false,
+      template: '# 使用说明\n\n开始写作。',
+      fields: [
+        {
+          key: 'resourceType',
+          label: '资源类型',
+          type: 'select',
+          required: true,
+          filterable: true,
+          options: ['GUIDE', 'COURSE', 'TOOL', 'DOCUMENT', 'ARTICLE'],
+        },
+        { key: 'audience', label: '适用人群', type: 'text', required: false, filterable: true },
+      ],
     },
     {
-      key: 'resource.article', label: '文章 / 经验', legacyKind: 'RESOURCE', active: true, allowsOriginalSource: true, template: '# 文章标题\n\n开始写作。',
-      fields: [{ key: 'sourceMode', label: '来源模式', type: 'select', required: true, filterable: true, options: ['ORIGINAL', 'EXTERNAL'] }, { key: 'resourceType', label: '资源类型', type: 'select', required: true, filterable: true, options: ['ARTICLE'] }],
+      key: 'resource.article',
+      label: '文章 / 经验',
+      legacyKind: 'RESOURCE',
+      active: true,
+      allowsOriginalSource: true,
+      template: '# 文章标题\n\n开始写作。',
+      fields: [
+        {
+          key: 'sourceMode',
+          label: '来源模式',
+          type: 'select',
+          required: true,
+          filterable: true,
+          options: ['ORIGINAL', 'EXTERNAL'],
+        },
+        {
+          key: 'resourceType',
+          label: '资源类型',
+          type: 'select',
+          required: true,
+          filterable: true,
+          options: ['ARTICLE'],
+        },
+      ],
     },
   ],
 }
@@ -115,7 +158,10 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
       })
     if (state.fail && path === state.fail) return reply({ code: 'UNAVAILABLE', message: '模拟连接失败' }, 503)
     if (method !== 'GET') {
-      const body = req.postData() && req.headers()['content-type']?.includes('application/json') ? JSON.parse(req.postData()!) : null
+      const body =
+        req.postData() && req.headers()['content-type']?.includes('application/json')
+          ? JSON.parse(req.postData()!)
+          : null
       state.writes.push({ path, method, body, headers: req.headers() })
       if (path === '/auth/session')
         return method === 'DELETE'
@@ -147,7 +193,18 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
       }
       if (path.endsWith('/restore')) state.recordState = 'ACTIVE'
       if (path.endsWith('/reopen')) state.status = 'CHANGES_REQUESTED'
-      if (path === '/media/uploads') return reply({ id: '01HZX9Z8NQ2J3K4M5P6R7S8T9U', url: '/api/v1/media/preview', mediaType: 'image/png', width: 600, height: 400, altText: '测试图片' }, 201)
+      if (path === '/media/uploads')
+        return reply(
+          {
+            id: '01HZX9Z8NQ2J3K4M5P6R7S8T9U',
+            url: '/api/v1/media/preview',
+            mediaType: 'image/png',
+            width: 600,
+            height: 400,
+            altText: '测试图片',
+          },
+          201,
+        )
       if (path.includes('/partner-applications/')) {
         if (path.endsWith('/approve')) {
           state.partnerApplicationState = 'APPROVED'
@@ -181,30 +238,41 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
     if (path.startsWith('/public/content/')) return reply(content)
     if (path === '/public/content-modules') return reply(modules)
     if (path === '/public/content') {
-      const items = [content, { ...content, id: 'DDDDDDDDDDDDDDDDDDDDDDDDDD', title: '同类竞赛一' }, { ...content, id: 'EEEEEEEEEEEEEEEEEEEEEEEEEE', title: '同类竞赛二' }]
+      const items = [
+        content,
+        { ...content, id: 'DDDDDDDDDDDDDDDDDDDDDDDDDD', title: '同类竞赛一' },
+        { ...content, id: 'EEEEEEEEEEEEEEEEEEEEEEEEEE', title: '同类竞赛二' },
+      ]
       return reply({ items, nextCursor: null })
     }
     if (/^\/public\/(competitions|resources|recruitments)$/.test(path)) {
-      const kind = path.endsWith('resources') ? 'RESOURCE' : path.endsWith('recruitments') ? 'RECRUITMENT' : 'COMPETITION'
-      const title = kind === 'RESOURCE' ? '隔离测试资源' : kind === 'RECRUITMENT' ? '隔离测试招募' : '隔离测试竞赛'
+      const kind = path.endsWith('resources')
+        ? 'RESOURCE'
+        : path.endsWith('recruitments')
+          ? 'RECRUITMENT'
+          : 'COMPETITION'
+      const title =
+        kind === 'RESOURCE' ? '隔离测试资源' : kind === 'RECRUITMENT' ? '隔离测试招募' : '隔离测试竞赛'
       const baseItem = {
         ...content,
         kind,
         moduleKey: kind === 'RESOURCE' ? 'resource' : kind === 'RECRUITMENT' ? 'recruitment' : 'competition',
         title,
-        details: kind === 'RESOURCE'
-          ? { resourceType: 'GUIDE', audience: '零基础' }
-          : kind === 'RECRUITMENT'
-            ? { deadlineDate: '2030-09-30', followUpUrl: 'https://example.com/community' }
-            : content.details,
+        details:
+          kind === 'RESOURCE'
+            ? { resourceType: 'GUIDE', audience: '零基础' }
+            : kind === 'RECRUITMENT'
+              ? { deadlineDate: '2030-09-30', followUpUrl: 'https://example.com/community' }
+              : content.details,
       }
-      const items = kind === 'COMPETITION'
-        ? [
-            baseItem,
-            { ...baseItem, id: 'DDDDDDDDDDDDDDDDDDDDDDDDDD', title: '同类竞赛一' },
-            { ...baseItem, id: 'EEEEEEEEEEEEEEEEEEEEEEEEEE', title: '同类竞赛二' },
-          ]
-        : [baseItem]
+      const items =
+        kind === 'COMPETITION'
+          ? [
+              baseItem,
+              { ...baseItem, id: 'DDDDDDDDDDDDDDDDDDDDDDDDDD', title: '同类竞赛一' },
+              { ...baseItem, id: 'EEEEEEEEEEEEEEEEEEEEEEEEEE', title: '同类竞赛二' },
+            ]
+          : [baseItem]
       return reply({
         items: url.searchParams.get('q') === '不存在' ? [] : items,
         nextCursor: url.searchParams.get('cursor') ? undefined : 'next-test-cursor',
@@ -212,7 +280,8 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
     }
     if (path === '/content-modules') return reply(modules)
     if (path === '/admin/content-items') return reply({ items: [managed()], nextCursor: null })
-    if (path === '/admin/review-queue') return reply({ items: state.status === 'PENDING_REVIEW' ? [managed()] : [], nextCursor: null })
+    if (path === '/admin/review-queue')
+      return reply({ items: state.status === 'PENDING_REVIEW' ? [managed()] : [], nextCursor: null })
     if (path.endsWith('/publication-readiness')) return reply({ ready: true, blockers: [] })
     if (path === '/partner/dashboard')
       return reply({
@@ -221,25 +290,77 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
         publicActiveCount: state.visibility === 'PUBLIC' ? 1 : 0,
         contentItems: { items: [managed()], nextCursor: null },
       })
-    if (path.includes('/content-items/')) return reply({ ...managed(), draft: content, media: [], reviews: [] })
+    if (path.includes('/content-items/'))
+      return reply({ ...managed(), draft: content, media: [], reviews: [] })
     if (path === '/admin/partner-applications') {
       const requestedStatus = url.searchParams.get('status') || 'PENDING_REVIEW'
       const visible = requestedStatus === 'ALL' || requestedStatus === state.partnerApplicationState
-      return reply({ items: visible ? [
-        {
-          id: 'application-1',
-          displayName: '测试合作方',
-          introduction: '模拟申请，不提交真实记录。',
-          portfolioUrl: 'https://example.com',
-          state: state.partnerApplicationState,
-        },
-      ] : [], nextCursor: null })
+      return reply({
+        items: visible
+          ? [
+              {
+                id: 'application-1',
+                displayName: '测试合作方',
+                introduction: '模拟申请，不提交真实记录。',
+                portfolioUrl: 'https://example.com',
+                state: state.partnerApplicationState,
+              },
+            ]
+          : [],
+        nextCursor: null,
+      })
     }
     if (path === '/admin/partner-profiles')
-      return reply({ items: [{ id: 'partner-1', accountId: 'account-1', displayName: '测试合作方', contentQuota: state.quota, active: true, qualificationStatus: 'ACTIVE' }], nextCursor: null })
-    if (path === '/admin/submissions') return reply({ items: [{ id: 'submission-1', submissionType: 'FEEDBACK', title: '测试反馈', message: '模拟公开输入', linkUrl: null, imageDescription: null, state: 'PENDING' }], nextCursor: null })
-    if (path === '/admin/accounts') return reply({ items: [{ id: 'account-2', loginId: 'other-admin', qualificationStatus: 'ACTIVE', roles: ['ADMIN'] }], nextCursor: null })
-    if (path === '/admin/audit-logs') return reply({ items: [{ id: 'audit-1', createdAt: '2030-01-01T10:00:00Z', actorAccountId: 'account-1', actorRole: 'ADMIN', action: 'CONTENT_UPDATED', objectType: 'CONTENT', objectId: id, reason: '测试', requestId: 'isolated-test' }], nextCursor: null })
+      return reply({
+        items: [
+          {
+            id: 'partner-1',
+            accountId: 'account-1',
+            displayName: '测试合作方',
+            contentQuota: state.quota,
+            active: true,
+            qualificationStatus: 'ACTIVE',
+          },
+        ],
+        nextCursor: null,
+      })
+    if (path === '/admin/submissions')
+      return reply({
+        items: [
+          {
+            id: 'submission-1',
+            submissionType: 'FEEDBACK',
+            title: '测试反馈',
+            message: '模拟公开输入',
+            linkUrl: null,
+            imageDescription: null,
+            state: 'PENDING',
+          },
+        ],
+        nextCursor: null,
+      })
+    if (path === '/admin/accounts')
+      return reply({
+        items: [{ id: 'account-2', loginId: 'other-admin', qualificationStatus: 'ACTIVE', roles: ['ADMIN'] }],
+        nextCursor: null,
+      })
+    if (path === '/admin/audit-logs')
+      return reply({
+        items: [
+          {
+            id: 'audit-1',
+            createdAt: '2030-01-01T10:00:00Z',
+            actorAccountId: 'account-1',
+            actorRole: 'ADMIN',
+            action: 'CONTENT_UPDATED',
+            objectType: 'CONTENT',
+            objectId: id,
+            reason: '测试',
+            requestId: 'isolated-test',
+          },
+        ],
+        nextCursor: null,
+      })
     return reply({ code: 'UNEXPECTED_TEST_REQUEST', message: path }, 500)
   })
   return state
