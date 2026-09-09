@@ -118,6 +118,7 @@ jobs:
             .release/*.tar.gz
             .release/*.sha256
           if-no-files-found: error
+          include-hidden-files: true
       - name: Collect failure logs
         if: failure()
         run: docker compose --project-name voidhavenrelease --env-file .verification/release-ci.env -f infra/compose/compose.local.yml logs --no-color --tail 200 || true
