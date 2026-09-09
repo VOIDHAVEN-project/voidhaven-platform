@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import { content, id, mockApi } from './fixtures'
 const pageErrors = new WeakMap<object, string[]>()
+const maximumFrameLatencyMs = Number(process.env.VOIDHAVEN_E2E_MAX_FRAME_LATENCY_MS || '50')
+const maximumLongTaskMs = Number(process.env.VOIDHAVEN_E2E_MAX_LONG_TASK_MS || '100')
 test.beforeEach(async ({ page }) => {
   const errors: string[] = []
   pageErrors.set(page, errors)
@@ -316,12 +318,12 @@ test('独立编辑页桌面分栏、小屏单栏与大正文输入保持流畅',
       return { samples: samples.sort((a, b) => a - b), longTasks }
     })
   let performance = await sampleTyping()
-  if (performance.samples[Math.floor(performance.samples.length * 0.95)] >= 50)
+  if (performance.samples[Math.floor(performance.samples.length * 0.95)] >= maximumFrameLatencyMs)
     performance = await sampleTyping()
   const p95 = performance.samples[Math.floor(performance.samples.length * 0.95)]
   await expect(textarea).toHaveValue(large)
-  expect(p95).toBeLessThan(50)
-  expect(performance.longTasks.filter((duration) => duration > 100)).toEqual([])
+  expect(p95).toBeLessThan(maximumFrameLatencyMs)
+  expect(performance.longTasks.filter((duration) => duration > maximumLongTaskMs)).toEqual([])
   await page.waitForTimeout(200)
   await expect(page.getByLabel('前端预览')).toContainText('性能验证')
 

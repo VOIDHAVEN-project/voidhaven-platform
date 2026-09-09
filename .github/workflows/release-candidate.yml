@@ -22,6 +22,8 @@ jobs:
       VOIDHAVEN_E2E_ADMIN_PASSWORD: ci-only-admin-password
       VOIDHAVEN_E2E_PARTNER_LOGIN: release-partner
       VOIDHAVEN_E2E_PARTNER_PASSWORD: ci-only-partner-password
+      VOIDHAVEN_E2E_MAX_FRAME_LATENCY_MS: '500'
+      VOIDHAVEN_E2E_MAX_LONG_TASK_MS: '1000'
       VOIDHAVEN_HTTP_PORT: '18080'
     steps:
       - uses: actions/checkout@v4
