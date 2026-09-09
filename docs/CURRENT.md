@@ -3,10 +3,11 @@
 | 字段 | 当前值 |
 | --- | --- |
 | 正式工作区 | `D:\Projects\voidhaven-platform` |
-| 当前迁移分支 | `migration/release04-baseline` |
+| 当前主分支 | `main`（保留 `migration/release04-baseline` 作为迁移审计指针） |
 | 产品基线 | 2026-09-07 线上 Release 04 的实际 API 与 Memoir Web 工作副本 |
 | Git 历史 | 继承 `D:\voidhaven\v0`，当前迁移基点 `dc4b820` |
 | 规范基线 | S-01～S-08、DR-001～DR-004，来源提交 `5057138` |
+| 基线标签 | `baseline-20260907-release04`（annotated tag） |
 | 本地实验仓库 | `D:\Projects\voidhaven-lab`，独立 Git 历史，无部署流程 |
 | 本地归档 | `D:\Projects\_archive\voidhaven\2026-09-09`，观察至 2026-10-09 |
 | 外部状态 | 组织仓库、个人镜像和个人 lab 尚待远程创建；未部署、未绑定域名 |
