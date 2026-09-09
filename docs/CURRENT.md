@@ -7,7 +7,17 @@
 | 产品基线 | 2026-09-07 线上 Release 04 的实际 API 与 Memoir Web 工作副本 |
 | Git 历史 | 继承 `D:\voidhaven\v0`，当前迁移基点 `dc4b820` |
 | 规范基线 | S-01～S-08、DR-001～DR-004，来源提交 `5057138` |
+| 本地实验仓库 | `D:\Projects\voidhaven-lab`，独立 Git 历史，无部署流程 |
+| 本地归档 | `D:\Projects\_archive\voidhaven\2026-09-09`，观察至 2026-10-09 |
 | 外部状态 | 组织仓库、个人镜像和个人 lab 尚待远程创建；未部署、未绑定域名 |
+
+## 已完成验证
+
+- Web：格式、lint、19 项单元测试和生产构建通过。
+- 浏览器：22 项中 21 项通过；唯一真实 API 链路因本机未启动后端服务而未执行成功。
+- API：Maven Verify 通过，50 项测试中 49 项通过、1 项 Testcontainers 测试因本机无 Docker 跳过。
+- 契约与仓库：OpenAPI lint、敏感信息/仓库边界检查通过。
+- 归档：五个 Git bundle 可验证，Release 01～04 发布包与原 SHA-256 一致。
 
 ## 当前目标
 

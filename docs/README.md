@@ -10,4 +10,6 @@
 - `releases/`：后续版本说明；机器可验证证据放入对应版本目录或 GitHub Release。
 - `references/`：历史来源、旧模块卡和迁移出处，仅作参考。
 
+旧工作目录、对应提交和 30 天归档状态见 `references/legacy-location-inventory.md`。
+
 规范、代码、契约和运行手册必须通过同一个 PR 保持一致。`D:\Projects\docs` 与 `D:\voidhaven\docs` 已转为历史来源，不再作为当前真源。
