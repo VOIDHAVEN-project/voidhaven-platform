@@ -60,7 +60,7 @@ jobs:
           chmod +x mvnw
           ./mvnw -B verify
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Create isolated local environment
         shell: bash
         run: |
