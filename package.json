@@ -13,11 +13,11 @@
     "lint": "npm run web:lint",
     "test": "npm run web:test",
     "verify:web": "npm run format:check && npm run lint && npm run test && npm run build && npm run contract:lint",
-    "web:dev": "npm --workspace web run dev",
-    "web:build": "npm --workspace web run build",
-    "web:lint": "npm --workspace web run lint",
-    "web:test": "npm --workspace web run test",
-    "web:e2e": "npm --workspace web run test:e2e"
+    "web:dev": "npm --workspace apps/web run dev",
+    "web:build": "npm --workspace apps/web run build",
+    "web:lint": "npm --workspace apps/web run lint",
+    "web:test": "npm --workspace apps/web run test",
+    "web:e2e": "npm --workspace apps/web run test:e2e"
   },
   "engines": {
     "node": ">=24.15",
