@@ -17,7 +17,7 @@
 - 浏览器：22 项中 21 项通过；唯一真实 API 链路因本机未启动后端服务而未执行成功。
 - API：Maven Verify 通过，50 项测试中 49 项通过、1 项 Testcontainers 测试因本机无 Docker 跳过。
 - 契约与仓库：OpenAPI lint、敏感信息/仓库边界检查通过。
-- 归档：五个 Git bundle 可验证，Release 01～04 发布包与原 SHA-256 一致。
+- 归档：六个 Git bundle 可验证，非 Git 目录已生成清单，Release 01～04 发布包与原 SHA-256 一致。
 
 ## 当前目标
 

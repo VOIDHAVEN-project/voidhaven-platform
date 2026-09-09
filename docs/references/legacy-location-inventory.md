@@ -6,6 +6,7 @@
 | --- | --- | --- | --- | --- |
 | `D:\voidhaven\v0` | v0 API、Web 与基础设施 | `dc4b820` | 产品仓库 Git 历史 | 冻结，2026-10-09 后复核 |
 | `D:\Projects\docs` | 产品规范与决策 | `5057138` | `docs/` | 冻结，2026-10-09 后复核 |
+| `D:\voidhaven\docs` | 产品规范与决策的相同 Git 副本 | `5057138` | `docs/` | 冻结，2026-10-09 后复核 |
 | `D:\Projects\voidhaven` | 早期前端 | `0069e1f` | 仅作历史参考 | 冻结，2026-10-09 后复核 |
 | `D:\Projects\voidhaven-project\voidhaven-frontend` | 原型前端 | `03cea65` + 未提交 `fixtures.ts` | 实验/历史参考 | 已保存 bundle、补丁和文件副本 |
 | `D:\Projects\voidhaven-phase1` | 第一阶段工作树 | detached `75f6577` | 仅作历史参考 | 冻结，2026-10-09 后复核 |
@@ -15,7 +16,7 @@
 
 `D:\Projects\_archive\voidhaven\2026-09-09`
 
-归档包含五个 Git bundle、原型未提交改动、Release 01～04 发布包、Release 04 证据及 SHA-256 清单。所有 bundle 均已通过 `git bundle verify`，四个历史发布包均与原校验文件一致。
+归档包含六个 Git bundle、非 Git 目录清单、原型未提交改动、Release 01～04 发布包、Release 04 证据及 SHA-256 清单。所有 bundle 均已通过 `git bundle verify`，四个历史发布包均与原校验文件一致。
 
 ## 使用规则
 
