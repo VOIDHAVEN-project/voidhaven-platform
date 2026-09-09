@@ -2,14 +2,24 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VOIDHAVEN · 校内竞赛与学习资源发现平台</title>
-    <meta name="description" content="VOIDHAVEN 是面向本校学生的竞赛、学习资源与团队招募发现平台，集中呈现带来源、可核验的信息。" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="VOIDHAVEN" />
-    <meta property="og:title" content="VOIDHAVEN · 校内竞赛与学习资源发现平台" />
-    <meta property="og:description" content="VOIDHAVEN 是面向本校学生的竞赛、学习资源与团队招募发现平台，集中呈现带来源、可核验的信息。" />
+    <meta name="theme-color" content="#f8f7f5" />
+    <meta name="description" content="竞赛、学习资源与团队招募，一处浏览。我们整理线索，不替代官方规则。" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="icon" href="/favicon.svg" />
+    <title>VOIDHAVEN — 求索者的公开目录</title>
+    <script>
+      try {
+        var t = localStorage.getItem('voidhaven-theme')
+        var d = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.dataset.theme = d ? 'dark' : 'light'
+        document.documentElement.style.colorScheme = d ? 'dark' : 'light'
+      } catch (e) {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

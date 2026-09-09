@@ -1,20 +1,20 @@
-import { defineConfig, devices } from 'playwright/test'
-
+import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
-  timeout: 45_000,
-  expect: { timeout: 10_000 },
+  timeout: 30000,
   fullyParallel: false,
-  reporter: [['list'], ['html', { outputFolder: '../../docs/evidence/playwright-report', open: 'never' }]],
-  outputDir: '../../docs/evidence/playwright-artifacts',
+  workers: 1,
+  reporter: [['list']],
+  outputDir: 'test-results',
   use: {
-    baseURL: process.env.VOIDHAVEN_E2E_BASE_URL ?? 'http://127.0.0.1:8080',
-    trace: 'retain-on-failure',
+    baseURL: 'http://127.0.0.1:4173',
+    viewport: { width: 1440, height: 1000 },
     screenshot: 'only-on-failure',
-    video: 'off',
+    trace: 'retain-on-failure',
   },
-  projects: [
-    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 7'] } },
-  ],
+  webServer: {
+    command: 'npm run dev -- --host 127.0.0.1',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: true,
+  },
 })

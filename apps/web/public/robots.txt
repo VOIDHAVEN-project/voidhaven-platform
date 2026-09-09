@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /workspace/
-Disallow: /auth/
-
-Sitemap: /api/v1/public/sitemap.xml
