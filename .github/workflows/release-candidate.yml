@@ -59,7 +59,6 @@ jobs:
       - name: API verify
         working-directory: apps/api
         run: |
-          chmod +x mvnw
           ./mvnw -B verify
       - name: Install Chromium
         run: npx playwright install chromium
