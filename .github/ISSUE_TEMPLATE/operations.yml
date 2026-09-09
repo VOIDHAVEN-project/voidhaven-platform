@@ -1,0 +1,30 @@
+name: 运维与发布
+description: 发布、备份、恢复、监控或安全操作
+title: '[Ops] '
+labels: ['type:ops']
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: 目标与影响范围
+    validations:
+      required: true
+  - type: textarea
+    id: preconditions
+    attributes:
+      label: 前置条件
+      description: 包含审批、维护窗口、备份和责任人；不得填写 Secret。
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: 验证与监控
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: 回滚方案
+    validations:
+      required: true

@@ -1,0 +1,29 @@
+name: 功能需求
+description: 提议正式产品能力或体验改进
+title: '[Feature] '
+labels: ['type:feature']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题与目标
+      description: 说明用户、场景以及需要解决的问题。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收条件
+      description: 列出可验证的完成标准。
+    validations:
+      required: true
+  - type: checkboxes
+    id: impacts
+    attributes:
+      label: 影响范围
+      options:
+        - label: API 或 OpenAPI
+        - label: 数据库或迁移
+        - label: 权限、隐私或真实数据
+        - label: 部署、备份或回滚
+        - label: 需要 ADR

@@ -1,0 +1,115 @@
+name: release-candidate
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: SemVer without leading v, for example 0.2.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+    env:
+      VOIDHAVEN_E2E_BASE_URL: http://127.0.0.1:18080
+      VOIDHAVEN_E2E_ADMIN_LOGIN: release-admin
+      VOIDHAVEN_E2E_ADMIN_PASSWORD: ci-only-admin-password
+      VOIDHAVEN_E2E_PARTNER_LOGIN: release-partner
+      VOIDHAVEN_E2E_PARTNER_PASSWORD: ci-only-partner-password
+      VOIDHAVEN_HTTP_PORT: '18080'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: apps/api/pom.xml
+      - name: Resolve release identity
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version='${{ inputs.release_version }}'
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(pretest|rc)\.[0-9]+)?$ ]]
+          echo "VOIDHAVEN_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "VOIDHAVEN_GIT_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "VOIDHAVEN_BUILD_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "VOIDHAVEN_API_IMAGE=voidhaven-api:$version-$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "VOIDHAVEN_WEB_IMAGE=voidhaven-web:$version-$GITHUB_SHA" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run verify:web
+      - name: API verify
+        working-directory: apps/api
+        run: |
+          chmod +x mvnw
+          ./mvnw -B verify
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Create isolated local environment
+        shell: bash
+        run: |
+          mkdir -p .verification
+          cat > .verification/release-ci.env <<'EOF'
+          VOIDHAVEN_DB_USERNAME=voidhaven_app
+          VOIDHAVEN_DB_PASSWORD=ci-only-db-password
+          VOIDHAVEN_BOOTSTRAP_ADMIN_LOGIN=release-admin
+          VOIDHAVEN_BOOTSTRAP_ADMIN_PASSWORD=ci-only-admin-password
+          VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN=release-partner
+          VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD=ci-only-partner-password
+          VOIDHAVEN_RATE_LIMIT_SECRET=ci-only-rate-secret
+          VOIDHAVEN_MEDIA_ACCESS_KEY=release-media
+          VOIDHAVEN_MEDIA_SECRET_KEY=ci-only-media-secret
+          VOIDHAVEN_MEDIA_BUCKET=voidhaven-media
+          EOF
+      - name: Full-stack cold start
+        run: docker compose --project-name voidhavenrelease --env-file .verification/release-ci.env -f infra/compose/compose.local.yml up --build --detach --wait
+      - name: Health and browser workflows
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:18080/healthz
+          npm run web:e2e
+      - name: Build candidate images
+        env:
+          VOIDHAVEN_DB_URL: jdbc:mysql://db.example.invalid:3306/voidhaven
+          VOIDHAVEN_DB_USERNAME: ci-user
+          VOIDHAVEN_DB_PASSWORD: ci-only-not-a-secret
+          VOIDHAVEN_PUBLIC_BASE_URL: https://candidate.example.invalid
+          VOIDHAVEN_RATE_LIMIT_SECRET: ci-only-not-a-secret
+          VOIDHAVEN_MEDIA_ENDPOINT: https://media.example.invalid
+          VOIDHAVEN_MEDIA_ACCESS_KEY: ci-only
+          VOIDHAVEN_MEDIA_SECRET_KEY: ci-only-not-a-secret
+          VOIDHAVEN_MEDIA_BUCKET: voidhaven-ci
+          VOIDHAVEN_TRUSTED_PROXY_NETWORKS: 172.29.20.0/24
+          VOIDHAVEN_HTTP_PORT: '18081'
+        run: docker compose -f infra/compose/compose.candidate.yml build api web
+      - name: Package clean source
+        shell: pwsh
+        run: ./infra/scripts/package-release.ps1 -ReleaseVersion $env:VOIDHAVEN_RELEASE_VERSION -GitSha $env:VOIDHAVEN_GIT_SHA
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voidhaven-${{ env.VOIDHAVEN_RELEASE_VERSION }}-${{ github.sha }}
+          path: |
+            .release/*.tar.gz
+            .release/*.sha256
+          if-no-files-found: error
+      - name: Collect failure logs
+        if: failure()
+        run: docker compose --project-name voidhavenrelease --env-file .verification/release-ci.env -f infra/compose/compose.local.yml logs --no-color --tail 200 || true
+      - name: Remove isolated stack
+        if: always()
+        run: docker compose --project-name voidhavenrelease --env-file .verification/release-ci.env -f infra/compose/compose.local.yml down --volumes --remove-orphans || true
