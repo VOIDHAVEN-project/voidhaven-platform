@@ -18,8 +18,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Arrays;
 
 /**
- * Explicit, one-shot operator command for creating the first production administrator.
- * This component is never active in the normal production web process, so activation
+ * Explicit, one-shot operator command for creating the first administrator in an approved
+ * production or isolated test-server environment. This component is never active in the normal web process, so activation
  * credentials cannot leak into ordinary application or aggregated startup logs.
  */
 @Component
@@ -51,8 +51,8 @@ public class BootstrapAdminCommand implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (Arrays.stream(environment.getActiveProfiles()).noneMatch("production"::equals)) {
-            throw new IllegalStateException("bootstrap-admin must run together with the production profile");
+        if (!isApprovedEnvironment(environment.getActiveProfiles())) {
+            throw new IllegalStateException("bootstrap-admin must run together with the production or test-server profile");
         }
         if (adminLogin == null || adminLogin.isBlank()) {
             throw new IllegalStateException("VOIDHAVEN_BOOTSTRAP_ADMIN_LOGIN is required");
@@ -68,8 +68,9 @@ public class BootstrapAdminCommand implements ApplicationRunner {
             account.addRole(superAdminRole);
             accounts.saveAndFlush(account);
             String issued = activations.issue(account.getId());
+            String syntheticRequestId = Ids.ulid();
             audit.record("SYSTEM", "SYSTEM", "PRODUCTION_BOOTSTRAP_ADMIN_CREATED", "ACCOUNT", account.getId(),
-                    "{}", "{\"qualificationStatus\":\"PENDING\"}", null, null);
+                    "{}", "{\"qualificationStatus\":\"PENDING\"}", null, syntheticRequestId);
             return issued;
         });
         if (token == null) throw new IllegalStateException("Bootstrap transaction did not issue an activation token");
@@ -80,5 +81,9 @@ public class BootstrapAdminCommand implements ApplicationRunner {
         // into application logging or evidence files.
         System.out.println("One-time activation URL (valid for 24 hours; do not record it):");
         System.out.println(base + "/auth/activate?token=" + token);
+    }
+
+    static boolean isApprovedEnvironment(String[] profiles) {
+        return Arrays.stream(profiles).anyMatch(profile -> "production".equals(profile) || "test-server".equals(profile));
     }
 }
