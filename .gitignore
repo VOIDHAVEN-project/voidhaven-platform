@@ -18,6 +18,7 @@ docs/evidence/playwright-report/
 !.env.candidate.example
 infra/compose/runtime/
 .verification/
+.release/
 *.log
 hs_err_pid*.log
 replay_pid*.log
@@ -28,3 +29,6 @@ replay_pid*.log
 *.iml
 Thumbs.db
 Desktop.ini
+
+# Versioned environment templates under infra/env
+!infra/env/.env.*.example

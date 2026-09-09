@@ -1,0 +1,12 @@
+voidhaven:
+  cookie-secure: false
+  local-fixture-sources-enabled: false
+  trust-proxy-headers: true
+  trusted-proxy-networks: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:172.29.20.0/24}
+
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: false

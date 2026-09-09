@@ -81,12 +81,18 @@ services:
         condition: service_completed_successfully
 
   web:
-    build: ../../apps/web
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        VOIDHAVEN_RELEASE_VERSION: local
+        VOIDHAVEN_SOURCE_REVISION: local
+        VOIDHAVEN_BUILD_CREATED: '1970-01-01T00:00:00Z'
     restart: unless-stopped
     logging: *default-logging
 
   nginx:
-    image: nginx:1.29-alpine
+    image: nginxinc/nginx-unprivileged:1.29-alpine
     restart: unless-stopped
     logging: *default-logging
     ports:

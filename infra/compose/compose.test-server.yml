@@ -1,0 +1,194 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MYSQL_DATABASE: voidhaven
+      MYSQL_USER: ${VOIDHAVEN_DB_USERNAME:?Set the application database user}
+      MYSQL_PASSWORD: ${VOIDHAVEN_DB_PASSWORD:?Set the application database password}
+      MYSQL_ROOT_PASSWORD: ${VOIDHAVEN_DB_ROOT_PASSWORD:?Set the database root password}
+    command: [mysqld, --character-set-server=utf8mb4, --collation-server=utf8mb4_0900_ai_ci]
+    expose: ['3306']
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 0.75
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    logging: *default-logging
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${VOIDHAVEN_MEDIA_ACCESS_KEY:?Set the MinIO access key}
+      MINIO_ROOT_PASSWORD: ${VOIDHAVEN_MEDIA_SECRET_KEY:?Set the MinIO secret key}
+    expose: ['9000', '9001']
+    volumes:
+      - minio-data:/data
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, 'curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    mem_limit: 512m
+    cpus: 0.35
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    logging: *default-logging
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+      VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:?Set the MinIO access key}
+      VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:?Set the MinIO secret key}
+      VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:-voidhaven-media}
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${VOIDHAVEN_MEDIA_ACCESS_KEY}" "$${VOIDHAVEN_MEDIA_SECRET_KEY}"
+        mc mb --ignore-existing "local/$${VOIDHAVEN_MEDIA_BUCKET}"
+        mc anonymous set none "local/$${VOIDHAVEN_MEDIA_BUCKET}"
+    networks: [data]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  api:
+    image: ${VOIDHAVEN_API_IMAGE:?Set the versioned API image}
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+      args:
+        VOIDHAVEN_RELEASE_VERSION: ${VOIDHAVEN_RELEASE_VERSION:?Set the release version}
+        VOIDHAVEN_SOURCE_REVISION: ${VOIDHAVEN_GIT_SHA:?Set the Git SHA}
+        VOIDHAVEN_BUILD_CREATED: ${VOIDHAVEN_BUILD_CREATED:?Set the UTC build time}
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      SPRING_PROFILES_ACTIVE: test-server
+      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/config/
+      SERVER_PORT: '8081'
+      SERVER_SERVLET_SESSION_COOKIE_SECURE: 'false'
+      VOIDHAVEN_COOKIE_SECURE: 'false'
+      VOIDHAVEN_LOCAL_FIXTURE_SOURCES_ENABLED: 'false'
+      VOIDHAVEN_TRUST_PROXY_HEADERS: 'true'
+      VOIDHAVEN_TRUSTED_PROXY_NETWORKS: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:-172.29.20.0/24}
+      VOIDHAVEN_PUBLIC_BASE_URL: ${VOIDHAVEN_PUBLIC_BASE_URL:?Set the public HTTP base URL}
+      VOIDHAVEN_DB_URL: jdbc:mysql://mysql:3306/voidhaven?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      VOIDHAVEN_DB_USERNAME: ${VOIDHAVEN_DB_USERNAME:?Set the application database user}
+      VOIDHAVEN_DB_PASSWORD: ${VOIDHAVEN_DB_PASSWORD:?Set the application database password}
+      VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:?Set the rate-limit secret}
+      VOIDHAVEN_MEDIA_ENDPOINT: http://minio:9000
+      VOIDHAVEN_MEDIA_ACCESS_KEY: ${VOIDHAVEN_MEDIA_ACCESS_KEY:?Set the MinIO access key}
+      VOIDHAVEN_MEDIA_SECRET_KEY: ${VOIDHAVEN_MEDIA_SECRET_KEY:?Set the MinIO secret key}
+      VOIDHAVEN_MEDIA_BUCKET: ${VOIDHAVEN_MEDIA_BUCKET:-voidhaven-media}
+      VOIDHAVEN_MEDIA_REGION: ${VOIDHAVEN_MEDIA_REGION:-us-east-1}
+      VOIDHAVEN_MEDIA_FORCE_PATH_STYLE: 'true'
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70.0
+    expose: ['8081']
+    volumes:
+      - ../config/application-test-server.yml:/config/application-test-server.yml:ro
+    networks: [edge, data]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD-SHELL, 'curl --fail --silent http://127.0.0.1:8081/actuator/health/readiness | grep -q UP']
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+    mem_limit: 1g
+    cpus: 0.75
+
+  web:
+    image: ${VOIDHAVEN_WEB_IMAGE:?Set the versioned Memoir web image}
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        VOIDHAVEN_RELEASE_VERSION: ${VOIDHAVEN_RELEASE_VERSION:?Set the release version}
+        VOIDHAVEN_SOURCE_REVISION: ${VOIDHAVEN_GIT_SHA:?Set the Git SHA}
+        VOIDHAVEN_BUILD_CREATED: ${VOIDHAVEN_BUILD_CREATED:?Set the UTC build time}
+    restart: unless-stopped
+    logging: *default-logging
+    expose: ['8080']
+    networks: [edge]
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O - http://127.0.0.1:8080/ >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    mem_limit: 96m
+    cpus: 0.20
+
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.29-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    ports: ['80:8080']
+    volumes:
+      - ../nginx/test-server/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [edge]
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O - http://127.0.0.1:8080/healthz >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    mem_limit: 96m
+    cpus: 0.20
+
+networks:
+  edge:
+    name: voidhaven-test-edge
+    ipam:
+      config:
+        - subnet: 172.29.20.0/24
+  data:
+    name: voidhaven-test-data
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.21.0/24
+
+volumes:
+  mysql-data:
+    name: voidhaven-test-mysql-data
+  minio-data:
+    name: voidhaven-test-minio-data

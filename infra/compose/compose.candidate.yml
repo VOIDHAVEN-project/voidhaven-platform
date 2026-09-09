@@ -48,11 +48,11 @@ services:
   web:
     image: voidhaven-web:${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}-${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
     build:
-      context: ../../apps/web
-      dockerfile: Dockerfile.candidate
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
       args:
         VOIDHAVEN_RELEASE_VERSION: ${VOIDHAVEN_RELEASE_VERSION:?Set the candidate release version}
-        VOIDHAVEN_GIT_SHA: ${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
+        VOIDHAVEN_SOURCE_REVISION: ${VOIDHAVEN_GIT_SHA:?Set the full candidate Git SHA}
         VOIDHAVEN_BUILD_CREATED: ${VOIDHAVEN_BUILD_CREATED:?Set the UTC OCI build timestamp}
     restart: unless-stopped
     logging: *default-logging

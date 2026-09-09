@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidatePattern('^0\.1\.0-(pretest|rc)\.\d+$')]
+  [ValidatePattern('^\d+\.\d+\.\d+(-(pretest|rc)\.\d+)?$')]
   [string] $ReleaseVersion,
 
   [Parameter(Mandatory = $true)]
@@ -144,7 +144,7 @@ try {
   $configurationFiles = @(
     'apps/api/src/main/resources/application-production.yml',
     'apps/api/Dockerfile.candidate',
-    'apps/web/Dockerfile.candidate',
+    'infra/docker/Dockerfile.web',
     'infra/compose/compose.candidate.yml',
     'infra/nginx/candidate.conf'
   )
