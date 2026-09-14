@@ -1,28 +1,86 @@
 package cn.voidhaven.api.service;
 
 import cn.voidhaven.api.domain.Account;
+import cn.voidhaven.api.domain.Role;
 import cn.voidhaven.api.persistence.AccountRepository;
+import cn.voidhaven.api.persistence.RoleRepository;
+import cn.voidhaven.api.support.Ids;
+import cn.voidhaven.api.support.LoginIds;
+import cn.voidhaven.api.support.PageResult;
 import cn.voidhaven.api.web.ApiException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import cn.voidhaven.api.support.PageResult;
 
 @Service
 public class AccountAdministrationService {
     public record AccountStatus(String id, String loginId, String qualificationStatus, List<String> roles) { }
+    public record CreatedAccount(String id, String loginId, String qualificationStatus, List<String> roles,
+                                 String activationToken, Instant activationExpiresAt) { }
+    public record IssuedActivationLink(String id, String loginId, String qualificationStatus, List<String> roles,
+                                       String activationToken, Instant activationExpiresAt) { }
 
     private static final Set<String> NON_ACTIVE_STATUSES = Set.of("SUSPENDED", "REVOKED");
+    private static final Set<String> QUALIFICATION_STATUSES = Set.of("PENDING", "ACTIVE", "SUSPENDED", "REVOKED");
     private final AccountRepository accounts;
+    private final RoleRepository roles;
+    private final ActivationService activations;
+    private final AccountLockService locks;
     private final AuditService audit;
 
-    public AccountAdministrationService(AccountRepository accounts, AuditService audit) {
+    public AccountAdministrationService(AccountRepository accounts, RoleRepository roles, ActivationService activations,
+                                        AccountLockService locks, AuditService audit) {
         this.accounts = accounts;
+        this.roles = roles;
+        this.activations = activations;
+        this.locks = locks;
         this.audit = audit;
+    }
+
+    @Transactional
+    public CreatedAccount createAdmin(String loginId, String reason, String actorId, String role, String requestId) {
+        locks.requireActiveActor(actorId);
+        String normalizedLogin = LoginIds.normalize(loginId);
+        String normalizedReason = requireReason(reason);
+        if (accounts.findByLoginId(normalizedLogin).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "LOGIN_ID_ALREADY_EXISTS", "该受控登录名已被使用。");
+        }
+        Role adminRole = roles.findByCode("ADMIN").orElseGet(() -> roles.save(new Role("ADMIN")));
+        Account account = new Account(Ids.ulid(), normalizedLogin, "!ACTIVATION_REQUIRED!", "PENDING");
+        account.addRole(adminRole);
+        try {
+            accounts.saveAndFlush(account);
+        } catch (DataIntegrityViolationException error) {
+            throw new ApiException(HttpStatus.CONFLICT, "LOGIN_ID_ALREADY_EXISTS", "该受控登录名已被使用。");
+        }
+        ActivationService.IssuedActivation issued = activations.issueLocked(account);
+        audit.record(actorId, role, "ADMIN_ACCOUNT_CREATED", "ACCOUNT", account.getId(),
+                "{}", "{\"qualificationStatus\":\"PENDING\",\"roles\":[\"ADMIN\"]}", normalizedReason, requestId);
+        audit.record(actorId, role, "ACTIVATION_ISSUED", "ACCOUNT", account.getId(),
+                "{}", "{\"qualificationStatus\":\"PENDING\"}", normalizedReason, requestId);
+        AccountStatus view = view(account);
+        return new CreatedAccount(view.id(), view.loginId(), view.qualificationStatus(), view.roles(), issued.token(), issued.expiresAt());
+    }
+
+    @Transactional
+    public IssuedActivationLink reissueActivation(String accountId, String reason, String actorId, String role, String requestId) {
+        locks.requireActiveActor(actorId);
+        Account account = locks.lockTarget(accountId);
+        if (!account.isPending()) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_NOT_PENDING", "只有待激活账号可以重新签发激活链接。");
+        }
+        String normalizedReason = requireReason(reason);
+        ActivationService.IssuedActivation issued = activations.issueLocked(account);
+        audit.record(actorId, role, "ACTIVATION_REISSUED", "ACCOUNT", account.getId(),
+                "{}", "{\"qualificationStatus\":\"PENDING\"}", normalizedReason, requestId);
+        AccountStatus view = view(account);
+        return new IssuedActivationLink(view.id(), view.loginId(), view.qualificationStatus(), view.roles(), issued.token(), issued.expiresAt());
     }
 
     @Transactional
@@ -30,11 +88,7 @@ public class AccountAdministrationService {
         if (!NON_ACTIVE_STATUSES.contains(status)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ACCOUNT_QUALIFICATION_INVALID", "账号资格只能调整为已停用或已撤销。");
         }
-        if (accountId.equals(actorId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_SELF_DISABLE_FORBIDDEN", "不能通过当前会话停用或撤销自身账号。");
-        }
-        Account account = accounts.findById(accountId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ACCOUNT_NOT_FOUND", "账号不存在。"));
+        Account account = requireMutableTarget(accountId, actorId);
         String before = account.getQualificationStatus();
         if (status.equals(before)) return view(account);
         account.changeQualificationStatus(status);
@@ -50,11 +104,13 @@ public class AccountAdministrationService {
     }
 
     @Transactional(readOnly = true)
-    public PageResult<AccountStatus> page(String cursor, String query, int requestedSize) {
+    public PageResult<AccountStatus> page(String cursor, String query, String status, int requestedSize) {
         int pageSize = Math.max(1, Math.min(requestedSize, 50));
         String normalized = query == null ? "" : query.trim().toLowerCase();
+        String requiredStatus = normalizeStatus(status);
         List<AccountStatus> values = accounts.findAll().stream().map(this::view)
                 .filter(value -> cursor == null || cursor.isBlank() || value.id().compareTo(cursor) < 0)
+                .filter(value -> requiredStatus == null || requiredStatus.equals(value.qualificationStatus()))
                 .filter(value -> normalized.isBlank() || value.loginId().toLowerCase().contains(normalized) || value.qualificationStatus().toLowerCase().contains(normalized))
                 .sorted(Comparator.comparing(AccountStatus::id).reversed()).limit(pageSize + 1L).toList();
         return PageResult.from(values, pageSize, AccountStatus::id);
@@ -72,8 +128,13 @@ public class AccountAdministrationService {
 
     @Transactional
     public AccountStatus reactivate(String accountId, String reason, String actorId, String role, String requestId) {
-        Account account = requireTarget(accountId, actorId);
-        if (!"SUSPENDED".equals(account.getQualificationStatus())) throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_NOT_REACTIVATABLE", "只有已停用账号可以恢复；已撤销账号不可恢复。");
+        Account account = requireMutableTarget(accountId, actorId);
+        if ("REVOKED".equals(account.getQualificationStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_REVOKED_FINAL", "已撤销账号不可再次变更资格。");
+        }
+        if (!"SUSPENDED".equals(account.getQualificationStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_NOT_REACTIVATABLE", "只有已停用账号可以恢复；已撤销账号不可恢复。");
+        }
         String normalizedReason = requireReason(reason);
         account.reactivate();
         audit.record(actorId, role, "ACCOUNT_REACTIVATED", "ACCOUNT", accountId,
@@ -82,7 +143,7 @@ public class AccountAdministrationService {
     }
 
     private AccountStatus transition(String accountId, String target, String reason, String actorId, String role, String requestId) {
-        Account account = requireTarget(accountId, actorId);
+        Account account = requireMutableTarget(accountId, actorId);
         String before = account.getQualificationStatus();
         if (target.equals(before)) return view(account);
         if ("REVOKED".equals(before)) throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_REVOKED_FINAL", "已撤销账号不可再次变更资格。");
@@ -94,14 +155,28 @@ public class AccountAdministrationService {
         return view(account);
     }
 
-    private Account requireTarget(String accountId, String actorId) {
+    private Account requireMutableTarget(String accountId, String actorId) {
+        locks.requireActiveActor(actorId);
         if (accountId.equals(actorId)) throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_SELF_DISABLE_FORBIDDEN", "不能通过当前会话停用、恢复或撤销自身账号。");
-        return accounts.findById(accountId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ACCOUNT_NOT_FOUND", "账号不存在。"));
+        Account account = locks.lockTarget(accountId);
+        if (account.hasRole("SUPER_ADMIN")) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACCOUNT_SUPER_ADMIN_IMMUTABLE", "不能停用、恢复或撤销超级管理员账号。");
+        }
+        return account;
     }
 
     private String requireReason(String reason) {
         String normalized = reason == null ? "" : reason.trim();
         if (normalized.isBlank()) throw new ApiException(HttpStatus.BAD_REQUEST, "ACTION_REASON_REQUIRED", "请填写操作原因。");
+        return normalized;
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) return null;
+        String normalized = status.trim();
+        if (!QUALIFICATION_STATUSES.contains(normalized)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ACCOUNT_STATUS_INVALID", "账号资格状态筛选无效。");
+        }
         return normalized;
     }
 

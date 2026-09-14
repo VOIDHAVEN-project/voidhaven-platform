@@ -13,7 +13,13 @@ import java.util.*;
 @Service
 public class ContentService {
     private final ContentItemRepository items; private final ObjectMapper mapper; private final ContentSourcePolicy sources; private final MediaReadService media; private final ContentLanguagePolicy languages; private final ContentModuleRegistry modules; private final JdbcTemplate jdbc;
+    private ContentActionService actions;
+    private ContentVerificationService verifications;
     public ContentService(ContentItemRepository items, ObjectMapper mapper, ContentSourcePolicy sources, MediaReadService media, ContentLanguagePolicy languages, ContentModuleRegistry modules, JdbcTemplate jdbc) { this.items = items; this.mapper = mapper; this.sources = sources; this.media = media; this.languages = languages; this.modules = modules; this.jdbc = jdbc; }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setActions(ContentActionService actions) { this.actions = actions; }
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setVerifications(ContentVerificationService verifications) { this.verifications = verifications; }
     public record PublicPage(List<PublicContentDto> items, String nextCursor) { }
     public List<PublicContentDto> listPublic(ContentKind kind, int size) { return listPublicPage(kind, size, null, null).items(); }
     public PublicPage listPublicPage(ContentKind kind, int size, String cursor, String query) {
@@ -68,6 +74,13 @@ public class ContentService {
         return items.findPublicById(id).filter(this::hasPublicSource).map(item -> toPublic(item, true))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"));
     }
+    public PublicPage related(String id) {
+        publicDetail(id);
+        List<String> ids = jdbc.queryForList("select distinct related_id from (select rel.target_content_item_id related_id from content_items source join revision_content_relations rel on rel.revision_id = source.published_revision_id where source.id = ? union select source.id related_id from content_items source join revision_content_relations rel on rel.revision_id = source.published_revision_id where rel.target_content_item_id = ?) related", String.class, id, id);
+        if (ids.isEmpty()) return new PublicPage(List.of(), null);
+        List<PublicContentDto> values = items.findPublicByIds(ids).stream().filter(this::hasPublicSource).map(item -> toPublic(item, false)).toList();
+        return new PublicPage(values, null);
+    }
     public record SitemapEntry(String id, ContentKind kind) { }
 
     /**
@@ -85,11 +98,22 @@ public class ContentService {
     }
 
     public Map<String, Object> home() {
-        Map<String, Object> result = new LinkedHashMap<>(); result.put("competitions", listPublic(ContentKind.COMPETITION, 4)); result.put("resources", listPublic(ContentKind.RESOURCE, 4)); result.put("recruitments", listPublic(ContentKind.RECRUITMENT, 4)); return result;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("competitions", homepageSlot("FOCUS", ContentKind.COMPETITION));
+        result.put("resources", homepageSlot("RESOURCE", ContentKind.RESOURCE));
+        result.put("recruitments", homepageSlot("RECRUITMENT", ContentKind.RECRUITMENT));
+        return result;
+    }
+    private List<PublicContentDto> homepageSlot(String slot, ContentKind fallbackKind) {
+        List<String> ids = jdbc.queryForList("select hp.content_item_id from homepage_placements hp join content_items c on c.id = hp.content_item_id where hp.slot = ? and hp.active = true and (hp.starts_at is null or hp.starts_at <= current_timestamp(6)) and (hp.ends_at is null or hp.ends_at > current_timestamp(6)) and c.visibility = 'PUBLIC' and c.record_state = 'ACTIVE' and c.published_revision_id is not null order by hp.sort_order asc, hp.id asc limit 4", String.class, slot);
+        if (ids.isEmpty()) return listPublic(fallbackKind, 4);
+        Map<String, ContentItem> byId = new LinkedHashMap<>();
+        for (ContentItem item : items.findPublicByIds(ids)) byId.put(item.getId(), item);
+        return ids.stream().map(byId::get).filter(Objects::nonNull).filter(this::hasPublicSource).map(item -> toPublic(item, false)).toList();
     }
     private PublicContentDto toPublic(ContentItem item, boolean includeMedia) {
         ContentRevision r = item.getPublishedRevision();
-        try { return new PublicContentDto(item.getId(), item.getKind(), moduleKey(item), r.getSchemaVersion(), r.getTitle(), r.getSummary(), mapper.readTree(r.getBodyJson()), r.getLanguageCode(), languages.label(r.getLanguageCode()), r.getOriginalTitle(), r.getSourceName(), r.getSourceUrl(), r.getRightsBasis(), r.getAuthorDisplayName(), r.getReprintPermission(), r.getAdaptationPermission(), mapper.readTree(r.getMetadataJson() == null ? r.getDetailsJson() : r.getMetadataJson()), item.getVersion() == null ? 0 : item.getVersion(), includeMedia ? media.forPublishedRevision(r.getId()) : List.of()); }
+        try { return new PublicContentDto(item.getId(), item.getKind(), moduleKey(item), r.getSchemaVersion(), r.getTitle(), r.getSummary(), mapper.readTree(r.getBodyJson()), r.getLanguageCode(), languages.label(r.getLanguageCode()), r.getOriginalTitle(), r.getSourceName(), r.getSourceUrl(), r.getRightsBasis(), r.getAuthorDisplayName(), r.getReprintPermission(), r.getAdaptationPermission(), mapper.readTree(r.getMetadataJson() == null ? r.getDetailsJson() : r.getMetadataJson()), item.getVersion() == null ? 0 : item.getVersion(), includeMedia ? media.forPublishedRevision(r.getId()) : List.of(), item.getOperationalStatus(), includeMedia && actions != null ? actions.publicActions(item.getId()) : List.of(), includeMedia && verifications != null ? verifications.latestPublic(item.getId()) : null); }
         catch (Exception e) { throw new IllegalStateException("Invalid persisted content document", e); }
     }
     private boolean hasPublicSource(ContentItem item) {

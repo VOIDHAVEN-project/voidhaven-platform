@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.*;
@@ -39,6 +40,10 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException exception, HttpServletRequest request) {
+        String persistent = exception.getPersistentClassName();
+        if (persistent != null && persistent.endsWith(".Account")) {
+            return response(HttpStatus.CONFLICT, "ACCOUNT_VERSION_CONFLICT", "账号状态已被其他操作更新，请刷新后重试。", Map.of(), request);
+        }
         return response(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "内容已被其他操作更新，请刷新后再编辑。", Map.of(), request);
     }
 
@@ -53,6 +58,11 @@ public class ApiExceptionHandler {
         String code = "Idempotency-Key".equalsIgnoreCase(exception.getHeaderName()) ? "IDEMPOTENCY_KEY_REQUIRED" : "REQUEST_HEADER_REQUIRED";
         String message = "IDEMPOTENCY_KEY_REQUIRED".equals(code) ? "请携带有效的幂等请求标识后重试。" : "请求缺少必要的安全标识。";
         return response(HttpStatus.BAD_REQUEST, code, message, Map.of(), request);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+        return response(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "当前账号无权执行该操作。", Map.of(), request);
     }
 
     @ExceptionHandler(Exception.class)

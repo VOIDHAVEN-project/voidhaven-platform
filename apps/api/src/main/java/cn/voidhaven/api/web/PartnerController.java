@@ -5,6 +5,7 @@ import cn.voidhaven.api.persistence.AccountRepository;
 import cn.voidhaven.api.persistence.PartnerProfileRepository;
 import cn.voidhaven.api.service.ContentManagementService;
 import cn.voidhaven.api.service.IdempotencyService;
+import cn.voidhaven.api.service.ContentActionService;
 import cn.voidhaven.api.support.PageResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/partner")
@@ -29,17 +31,21 @@ public class PartnerController {
     private final AccountRepository accounts;
     private final ContentManagementService content;
     private final IdempotencyService idempotency;
+    private final ContentActionService contentActions;
 
     public PartnerController(PartnerProfileRepository profiles, AccountRepository accounts,
-                             ContentManagementService content, IdempotencyService idempotency) {
+                             ContentManagementService content, IdempotencyService idempotency,
+                             ContentActionService contentActions) {
         this.profiles = profiles;
         this.accounts = accounts;
         this.content = content;
         this.idempotency = idempotency;
+        this.contentActions = contentActions;
     }
 
     record Dashboard(String displayName, int quota, int publicActiveCount,
                      PageResult<ContentManagementService.Managed> contentItems) { }
+    record ActionSetRequest(List<ContentActionService.ActionInput> actions) { }
 
     @GetMapping("/dashboard")
     ApiResponse<Dashboard> dashboard(@RequestParam(required = false) String cursor,
@@ -106,6 +112,21 @@ public class PartnerController {
         return ok(idempotency.execute(key, Map.of("id", id, "action", "SUBMIT"),
                 ContentManagementService.Managed.class,
                 () -> content.submit(id, profile.getId(), accountId, "PARTNER", requestId(request))), request);
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/content-items/{id}/actions")
+    ApiResponse<ContentActionService.ActionSet> replaceActions(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
+            @Valid @RequestBody ActionSetRequest body, Authentication auth, HttpServletRequest request) {
+        PartnerProfile profile = profile(auth);
+        long expected = version(version);
+        return ok(idempotency.executeSingleDelivery(key, Map.of("id", id, "version", expected, "actions", body.actions()),
+                () -> contentActions.replace(id, profile.getId(), expected, body.actions(), accountId(auth), "PARTNER", requestId(request))), request);
+    }
+
+    @GetMapping("/content-items/{id}/actions")
+    ApiResponse<List<ContentActionService.ManagedAction>> actions(@PathVariable String id, Authentication auth, HttpServletRequest request) {
+        return ok(contentActions.managedActions(id, profile(auth).getId()), request);
     }
 
     private long version(String value) {

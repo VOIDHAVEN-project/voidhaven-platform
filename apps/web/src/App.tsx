@@ -3,8 +3,8 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react
 import { ThemeProvider } from './components/theme'
 import { PublicShell, ScrollManager } from './components/shell'
 import { HomePage, CatalogPage, DetailPage, SearchPage, AboutPage, NotFoundPage } from './pages/public'
-import { FeedbackPage, JoinPage } from './pages/forms'
-import { SignInPage, ActivationPage } from './pages/auth'
+import { CaseStatusPage, FeedbackPage, JoinPage, PartnerApplyPage } from './pages/forms'
+import { SignInPage, ActivationPage, ForgotPasswordPage, PasswordResetPage } from './pages/auth'
 import { Workspace } from './pages/workspace'
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -63,13 +63,18 @@ export default function App() {
               <Route path="/recruitment" element={<Navigate replace to="/recruitments" />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/content/:publicId" element={<DetailPage />} />
-              <Route path="/feedback" element={<FeedbackPage />} />
+              <Route path="/submit" element={<FeedbackPage />} />
+              <Route path="/feedback" element={<Navigate replace to="/submit" />} />
+              <Route path="/status" element={<CaseStatusPage />} />
+              <Route path="/partners/apply" element={<PartnerApplyPage />} />
               <Route path="/join" element={<JoinPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
             <Route path="/auth/sign-in" element={<SignInPage />} />
             <Route path="/auth/activate" element={<ActivationPage />} />
+            <Route path="/auth/reset-password" element={<PasswordResetPage />} />
+            <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/workspace/*" element={<Workspace />} />
           </Routes>
         </RouteErrorBoundary>

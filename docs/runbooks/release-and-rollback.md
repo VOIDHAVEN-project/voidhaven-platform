@@ -5,7 +5,7 @@
 - 预测试版本格式：`v0.1.0-pretest.N`；完成 R2 全部门禁后才使用 `v0.1.0-rc.N`。
 - API/Web 镜像标签必须同时包含版本和完整 Git SHA，不使用 `latest`。
 - annotated tag 记录源代码 SHA、Flyway 范围、镜像 ID、候选配置摘要及证据目录。
-- 当前唯一权威验证入口为 `infra/scripts/verify-release.ps1`；远程 CI 未获授权，仓库只保存不自动运行的模板。
+- 本地权威验证入口为 `infra/scripts/verify-release.ps1`；`main` 推送运行快速质量门，`v*` 标签运行完整候选验证、隔离全栈验收和打包。
 
 ## 首个超级管理员
 
@@ -28,14 +28,20 @@ docker compose --env-file .env.production -f infra/compose/compose.candidate.yml
 
 腾讯云、域名、备案、TLS、监控、告警和公网发布均需要单独批准，不由本仓库脚本自动触发。
 
-## 单副本运行边界（禁止扩容）
+## 多实例切换与回滚
 
-当前实现只能以单实例运行；在完成以下剩余改造之前，任何形式的水平扩容（包括 `docker compose up --scale`、多机部署或蓝绿双活）都会直接导致生产问题，禁止执行：
+公开写入限流、登录/激活限流、内容生命周期与保留清理任务、媒体删除领取均已改为 MySQL 共享状态（行锁、advisory lock 或租约）。会话继续使用 Spring Session JDBC。
 
-1. `PublicWriteRateLimiter` 是进程内 `ConcurrentHashMap`：多实例下公开投稿/合作方申请的限流阈值等效放大为「实例数 × 阈值」。
-2. `ContentLifecycleService` 与 `RetentionService` 的 `@Scheduled` 定时任务没有分布式锁：多实例下会重复执行，产生重复审计记录与重复的媒体清理尝试。
+水平扩容前必须采用非混合版本切换，避免新旧 API 同时运行时绕过新锁协议：
 
-已完成：会话已改为 Spring Session JDBC（MySQL），单实例重启/滚动发布不会再清空登录态。扩容前仍须先完成上述两项改造并补充相应测试，再解除此限制。
+1. 备份 MySQL，并暂停全部旧 API 实例。
+2. 执行向后兼容的 Flyway 迁移（当前含 V18）。
+3. 启动单实例新版 API 与 Web，完成冒烟：创建普通管理员、激活、登录后台、停用/恢复、重新签发、永久撤销及撤销后会话失效。
+4. 冒烟通过后再扩容多实例。
+
+紧急回滚时保留新增表和字段，不回滚 Flyway。旧版本只能临时以单 API 实例运行，防止重新出现多实例限流放大与重复后台任务。
+
+保数据上线的可执行步骤、隔离恢复演练、测试机切换、生产切换与回滚命令见 [data-preserving-cutover.md](data-preserving-cutover.md)。本地可用 `infra/scripts/rehearse-v11-data-safety.ps1` 在一次性 MySQL 容器上验证 V11 不删除账号/内容。
 
 ## 候选容器边界
 

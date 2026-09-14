@@ -5,6 +5,15 @@ info:
   description: 公开读取、公开输入和受控后台的接口契约。所有写入接口均使用 Idempotency-Key；私密字段绝不出现在公开响应。
 servers: [{ url: /api/v1 }]
 paths:
+  /public/capabilities:
+    get:
+      summary: 读取当前可供公开页面使用的产品能力；用于安全关闭未配置功能
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductCapabilitiesEnvelope' }
   /public/home:
     get:
       summary: 首页三栏投影
@@ -50,6 +59,23 @@ paths:
           '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicContentEnvelope' } } } },
           '404': { $ref: '#/components/responses/HiddenNotFound' },
         }
+  /public/content/{id}/related:
+    get:
+      summary: 读取显式关联的公开内容；比赛详情可据此反向展示招募
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } }
+        '404': { $ref: '#/components/responses/HiddenNotFound' }
+  /public/content/{id}/gated-actions:
+    get:
+      summary: 使用短期社群授权读取招募的受控行动入口
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/CommunityGrant' }
+      responses:
+        '200': { description: 成功 }
+        '401': { description: 社群授权无效或已过期 }
+        '404': { $ref: '#/components/responses/HiddenNotFound' }
   /public/competitions:
     get:
       summary: 公开竞赛列表（服务端筛选与 Cursor 分页）
@@ -111,15 +137,58 @@ paths:
         '404': { $ref: '#/components/responses/HiddenNotFound' }
   /public/submissions:
     post:
-      summary: 公开投稿或反馈；只接收文字、链接和图片说明
+      summary: 公开投稿、反馈或版权投诉；回执号与查询码仅本次返回
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubmissionRequest' } } } }
-      responses: { '201': { description: 已进入审核 }, '409': { $ref: '#/components/responses/IdempotencyConflict' } }
+      responses:
+        '201': { description: 已接收, content: { application/json: { schema: { $ref: '#/components/schemas/CreatedCaseEnvelope' } } } }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '503': { description: 必填联系人功能未安全配置 }
+  /public/submissions/status-query:
+    post:
+      summary: 使用回执号与查询码查询处理状态；失败响应不区分回执是否存在
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseQueryRequest' } } } }
+      responses:
+        '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/CaseStatusEnvelope' } } } }
+        '404': { description: 查询凭据无效 }
   /public/partner-applications:
     post:
-      summary: 公开合作方申请
+      summary: 公开合作方申请；联系人必填，回执号与查询码仅本次返回
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
-      responses: { '201': { description: 已进入审核 } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerApplicationRequest' } } } }
+      responses:
+        '201': { description: 已接收, content: { application/json: { schema: { $ref: '#/components/schemas/CreatedCaseEnvelope' } } } }
+        '503': { description: 联系人功能未安全配置 }
+  /public/partner-applications/status-query:
+    post:
+      summary: 使用回执号与查询码查询合作申请状态
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CaseQueryRequest' } } } }
+      responses:
+        '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/CaseStatusEnvelope' } } } }
+        '404': { description: 查询凭据无效 }
+  /public/community-gate/verify:
+    post:
+      summary: 使用批次共享邀请码换取 30 分钟短期授权
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CommunityVerifyRequest' } } } }
+      responses:
+        '200': { description: 验证成功, content: { application/json: { schema: { $ref: '#/components/schemas/CommunityGrantEnvelope' } } } }
+        '401': { description: 邀请码无效、过期、已撤销或已用尽 }
+        '429': { description: 尝试次数过多 }
+        '503': { description: 社群入口未启用 }
+  /public/community/entries:
+    get:
+      summary: 使用短期授权读取已启用的社群入口
+      parameters: [{ $ref: '#/components/parameters/CommunityGrant' }]
+      responses:
+        '200': { description: 成功 }
+        '401': { description: 社群授权无效或已过期 }
+  /public/community/media/{id}:
+    get:
+      summary: 使用短期授权读取社群或招聘受控二维码；响应禁止缓存
+      parameters: [{ $ref: '#/components/parameters/MediaId' }, { $ref: '#/components/parameters/CommunityGrant' }]
+      responses:
+        '200': { description: '图片字节，Cache-Control: no-store' }
+        '401': { description: 社群授权无效或已过期 }
   /auth/session:
     post: { summary: 受控账号登录, responses: { '200': { description: 会话已创建 }, '401': { description: 通用认证失败 } } }
     delete: { summary: 销毁当前会话, responses: { '204': { description: 已退出 } } }
@@ -132,6 +201,45 @@ paths:
       summary: 使用一次性激活令牌设置首个密码
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActivationRequest' } } } }
       responses: { '200': { description: 已激活 }, '400': { description: 令牌无效、已使用或已过期 } }
+  /auth/password/change:
+    post:
+      summary: 已登录账号验证当前密码后修改密码，并注销该账号全部会话
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordChangeRequest' } } } }
+      responses:
+        { '204': { description: 已修改，需重新登录 }, '400': { description: 当前密码错误或新密码不合规 }, '401': { description: 未登录 } }
+  /auth/password-reset/consume:
+    post:
+      summary: 使用恢复邮件或超级管理员人工交付的一次性凭据设置新密码
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordResetConsumeRequest' } } } }
+      responses: { '200': { description: 已重置 }, '400': { description: 凭据无效、已使用或已过期 } }
+  /auth/password-reset/request:
+    post:
+      summary: 按登录名请求向已验证恢复邮箱发送一次性密码重置凭据；始终返回相同文案
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordResetRequest' } } } }
+      responses: { '202': { description: 请求已接收，不透露账号或恢复邮箱是否存在 }, '429': { description: 请求过于频繁 } }
+  /auth/recovery-email:
+    get:
+      summary: 已登录账号读取恢复邮箱配置状态；只返回脱敏地址
+      responses: { '200': { description: 成功 }, '401': { description: 未登录 } }
+  /auth/recovery-email/request-verification:
+    post:
+      summary: 已登录账号验证当前密码后向新恢复邮箱发送一次性验证码
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecoveryEmailRequest' } } } }
+      responses:
+        { '200': { description: 验证码已发送 }, '400': { description: 当前密码或邮箱无效 }, '503': { description: 自助恢复未配置 } }
+  /auth/recovery-email/verify:
+    post:
+      summary: 当前登录账号粘贴一次性验证码以启用恢复邮箱
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecoveryEmailVerifyRequest' } } } }
+      responses: { '200': { description: 已验证 }, '400': { description: 验证码无效、已使用或已过期 } }
+  /auth/recovery-email/remove:
+    post:
+      summary: 当前登录账号验证密码后移除恢复邮箱；人工交付通道不受影响
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecoveryEmailRemoveRequest' } } } }
+      responses: { '204': { description: 已移除 }, '400': { description: 当前密码无效 } }
   /content-modules:
     get:
       summary: 受控编辑器使用的当前内容模块定义
@@ -304,6 +412,17 @@ paths:
         parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
         responses: { '200': { description: 已送审 } },
       }
+  /admin/content-items/{id}/verifications:
+    get:
+      summary: 管理员读取最近 20 条来源与链接核验记录
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses: { '200': { description: 成功 }, '403': { description: 不是管理员 } }
+    post:
+      summary: 管理员登记有效、失效或待复核结果，并更新异常链接待办
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ContentVerificationRequest' } } } }
+      responses: { '200': { description: 已登记 }, '400': { description: 核验结果或说明无效 }, '403': { description: 不是管理员 } }
   /admin/reviews/{id}/decision:
     post:
       summary: 管理员审核通过、退回或拒绝
@@ -368,6 +487,17 @@ paths:
         parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
         responses: { '200': { description: 已恢复 } },
       }
+  /admin/content-items/{id}/operational-status:
+    post:
+      summary: 管理员变更招募业务状态；紧急暂停可立即隐藏行动入口
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OperationalStatusChange' } } } }
+      responses: { '200': { description: 已更新 }, '409': { description: 版本或状态冲突 } }
   /admin/partner-applications:
     get:
       {
@@ -377,23 +507,41 @@ paths:
             { $ref: '#/components/parameters/ManagementCursor' },
             { $ref: '#/components/parameters/PageSize' },
             { $ref: '#/components/parameters/SearchQuery' },
-            { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } },
+            { name: status, in: query, schema: { $ref: '#/components/schemas/PartnerApplicationStatusFilter' } },
           ],
         responses: { '200': { description: 成功 } },
       }
   /admin/partner-applications/{id}/approve:
     post:
-      summary: 批准申请并一次性返回待交付的激活凭据
+      summary: 兼容期快捷路径：批准申请并签发激活凭据，写入 from_state 与人工交付记录
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePartnerApplication' } } } }
       responses: { '200': { description: 凭据仅在此首次响应中出现 }, '409': { description: 申请已处理或凭据不可重放 } }
   /admin/partner-applications/{id}/decision:
     post:
-      summary: 拒绝合作方申请；匿名申请不支持退回修改
+      deprecated: true
+      summary: 兼容期快捷路径：仅拒绝合作方申请；下一 major 并入 transition
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
         { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerApplicationDecision' } } } }
       responses: { '200': { description: 审核状态已更新 }, '409': { description: 申请已处理 } }
+  /admin/partner-applications/{id}/transition:
+    post:
+      summary: 通用状态机；待审状态请用 approve/decision，历史记录必须写入真实 from_state
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublicCaseTransition' } } } }
+      responses: { '200': { description: 已更新 }, '409': { description: 版本或状态冲突 } }
+  /admin/partner-applications/{id}/contact:
+    post:
+      summary: 单独授权查看合作申请联系人并记录审计
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 本次返回解密联系人 }, '404': { description: 申请或联系人不存在 } }
   /admin/submissions:
     get:
       {
@@ -403,7 +551,7 @@ paths:
             { $ref: '#/components/parameters/ManagementCursor' },
             { $ref: '#/components/parameters/PageSize' },
             { $ref: '#/components/parameters/SearchQuery' },
-            { name: status, in: query, schema: { type: string, enum: [PENDING_REVIEW, APPROVED, REJECTED, ALL], default: PENDING_REVIEW } },
+            { name: status, in: query, schema: { $ref: '#/components/schemas/PublicSubmissionStatusFilter' } },
           ],
         responses: { '200': { description: 成功 } },
       }
@@ -413,6 +561,23 @@ paths:
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublicInputDecision' } } } }
       responses: { '200': { description: 审核状态已更新 }, '409': { description: 请求已处理 } }
+  /admin/submissions/{id}/transition:
+    post:
+      summary: 更新投稿、反馈或版权请求状态与用户可见答复
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PublicCaseTransition' } } } }
+      responses: { '200': { description: 已更新 }, '409': { description: 版本或状态冲突 } }
+  /admin/submissions/{id}/contact:
+    post:
+      summary: 单独授权查看提交人联系人并记录审计
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 本次返回解密联系人 }, '404': { description: 请求或联系人不存在 } }
   /admin/partner-profiles:
     get:
       {
@@ -446,16 +611,56 @@ paths:
             { $ref: '#/components/parameters/ManagementCursor' },
             { $ref: '#/components/parameters/PageSize' },
             { $ref: '#/components/parameters/SearchQuery' },
+            { name: status, in: query, schema: { type: string, enum: [PENDING, ACTIVE, SUSPENDED, REVOKED] } },
           ],
-        responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } },
+        responses: { '200': { description: 成功 }, '401': { description: 未登录 }, '403': { description: 仅超级管理员 } },
       }
+    post:
+      {
+        summary: 超级管理员创建仅含 ADMIN 角色的待激活账号，激活令牌仅本次返回且不可重放,
+        parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }],
+        requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateAdminAccount' } } } },
+        responses:
+          {
+            '200': { description: 已创建 PENDING 账号；activationToken 仅本次返回 },
+            '401': { description: ACCOUNT_INACTIVE 或未登录 },
+            '403': { description: 仅超级管理员 },
+            '409': { description: LOGIN_ID_ALREADY_EXISTS、REQUEST_IN_PROGRESS 或 SENSITIVE_RESULT_NOT_REPLAYABLE },
+          },
+      }
+  /admin/accounts/{id}/activation-links:
+    post:
+      {
+        summary: 为 PENDING 账号重新签发一次性激活链接，并使此前未使用令牌失效,
+        parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
+        requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
+        responses:
+          {
+            '200': { description: 已重签；activationToken 仅本次返回 },
+            '401': { description: ACCOUNT_INACTIVE },
+            '403': { description: 仅超级管理员 },
+            '409': { description: 账号非 PENDING、REQUEST_IN_PROGRESS 或 SENSITIVE_RESULT_NOT_REPLAYABLE },
+          },
+      }
+  /admin/accounts/{id}/password-reset-links:
+    post:
+      summary: 超级管理员签发 30 分钟一次性密码重置凭据，明文仅本次返回
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 已签发 }, '403': { description: 仅超级管理员 }, '409': { description: 敏感结果不可重放 } }
   /admin/accounts/{id}/suspend:
     post:
       {
         summary: 超级管理员停用账号；其下一次受限请求立即失效,
         parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
         requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
-        responses: { '200': { description: 已停用 }, '403': { description: 仅超级管理员 } },
+        responses:
+          {
+            '200': { description: 已停用 },
+            '401': { description: ACCOUNT_INACTIVE },
+            '403': { description: 仅超级管理员 },
+            '409': { description: ACCOUNT_VERSION_CONFLICT 或状态不允许停用 },
+          },
       }
   /admin/accounts/{id}/reactivate:
     post:
@@ -463,7 +668,12 @@ paths:
         summary: 超级管理员恢复已停用账号,
         parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
         requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
-        responses: { '200': { description: 已恢复 }, '409': { description: 已撤销账号不可恢复 } },
+        responses:
+          {
+            '200': { description: 已恢复 },
+            '401': { description: ACCOUNT_INACTIVE },
+            '409': { description: 已撤销账号不可恢复或 ACCOUNT_VERSION_CONFLICT },
+          },
       }
   /admin/accounts/{id}/revoke:
     post:
@@ -471,8 +681,110 @@ paths:
         summary: 超级管理员永久撤销账号,
         parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }],
         requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } },
-        responses: { '200': { description: 已撤销 }, '409': { description: 撤销不可恢复 } },
+        responses:
+          {
+            '200': { description: 已撤销 },
+            '401': { description: ACCOUNT_INACTIVE },
+            '409': { description: 撤销不可恢复或 ACCOUNT_VERSION_CONFLICT },
+          },
       }
+  /admin/tasks:
+    get:
+      summary: 管理后台待办计数与可操作深链
+      responses: { '200': { description: 成功 } }
+  /admin/manual-deliveries:
+    get:
+      summary: 超级管理员按对象读取人工交付留痕
+      parameters:
+        - { name: subjectType, in: query, schema: { type: string, enum: [ACCOUNT, PARTNER_APPLICATION, SUBMISSION] } }
+        - { name: subjectId, in: query, schema: { type: string, minLength: 26, maxLength: 26 } }
+      responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } }
+    post:
+      summary: 超级管理员在实际完成交付后确认一次人工交付；签发凭据本身不计为交付
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectType, subjectId, deliveryType]
+              properties:
+                subjectType: { type: string, enum: [ACCOUNT, PARTNER_APPLICATION, SUBMISSION] }
+                subjectId: { type: string, minLength: 26, maxLength: 26 }
+                deliveryType: { type: string, enum: [ACTIVATION, PASSWORD_RESET, STATUS_RESULT] }
+                note: { type: string, maxLength: 1000 }
+      responses: { '200': { description: 已记录 }, '403': { description: 仅超级管理员 } }
+  /admin/community/media:
+    post:
+      summary: 超级管理员上传社群二维码图片；返回媒体 ID 供创建入口使用
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, altText]
+              properties:
+                file: { type: string, format: binary }
+                altText: { type: string, maxLength: 240 }
+      responses: { '200': { description: 已上传 }, '403': { description: 仅超级管理员 } }
+  /admin/community/entries:
+    get: { summary: 超级管理员读取社群入口, responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } } }
+    post:
+      summary: 超级管理员创建社群入口
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      responses: { '201': { description: 已创建 }, '403': { description: 仅超级管理员 } }
+  /admin/community/entries/{id}:
+    patch:
+      summary: 超级管理员编辑社群入口；事务内切换主入口并使用 If-Match 版本
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      responses: { '200': { description: 已更新 }, '403': { description: 仅超级管理员 }, '409': { description: 版本冲突或入口已停用 } }
+  /admin/community/entries/{id}/deactivate:
+    post:
+      summary: 超级管理员停用社群入口并清除主入口标记
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 已停用 }, '403': { description: 仅超级管理员 }, '409': { description: 版本冲突 } }
+  /admin/community/invite-batches:
+    get: { summary: 超级管理员读取邀请码批次统计, responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } } }
+    post:
+      summary: 超级管理员创建邀请码批次；明文邀请码仅本次返回
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInviteBatch' } } } }
+      responses: { '201': { description: 已创建 }, '403': { description: 仅超级管理员 }, '409': { description: 敏感结果不可重放 } }
+  /admin/community/invite-batches/{id}/revoke:
+    post:
+      summary: 超级管理员立即撤销邀请码批次
+      parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 已撤销 }, '403': { description: 仅超级管理员 } }
+  /admin/homepage-placements:
+    get:
+      summary: 管理员读取首页编排
+      responses:
+        '200':
+          description: 成功
+          content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementReplacement' } } }
+    put:
+      summary: 管理员整体替换首页编排；同一栏目下同一内容复用原记录，避免与历史停用行冲突
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementWrite' } } } }
+      responses:
+        '200':
+          description: 已保存，响应可幂等回放
+          content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementReplacement' } } }
   /admin/audit-logs:
     get:
       {
@@ -496,6 +808,14 @@ components:
     MediaId: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, description: JPA 内容版本号 } }
+    CommunityGrant:
+      {
+        name: X-Community-Grant,
+        in: header,
+        required: true,
+        schema: { type: string, minLength: 32, maxLength: 256 },
+        description: 仅保存在当前页面内存中的短期授权,
+      }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
     CsCursor: { name: cursor, in: query, schema: { type: string, description: 上一页最后一条不透明 ID } }
     SearchQuery: { name: q, in: query, schema: { type: string, maxLength: 240 } }
@@ -508,6 +828,30 @@ components:
     HiddenNotFound: { description: 不存在、隐藏、待审或无权限时统一返回 404 }
     IdempotencyConflict: { description: 相同幂等键用于不同请求 }
   schemas:
+    ProductCapabilitiesEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [privateContactEnabled, communityGateEnabled, gatedRecruitmentEnabled, statusQueryEnabled, passwordSelfServiceEnabled]
+          properties:
+            privateContactEnabled:
+              type: boolean
+              description: 是否可安全收集和读取私密联系方式
+            communityGateEnabled:
+              type: boolean
+              description: 邀请码、短期授权及社群入口是否已完整配置
+            gatedRecruitmentEnabled:
+              type: boolean
+              description: 受控招募联系方式和二维码是否可用
+            statusQueryEnabled:
+              type: boolean
+              description: 回执号与查询码状态查询是否可用
+            passwordSelfServiceEnabled:
+              type: boolean
+              description: 恢复邮箱加密密钥和邮件服务是否均已配置
     SubmissionRequest:
       type: object
       required: [submissionType, title, message]
@@ -517,6 +861,64 @@ components:
         message: { type: string, maxLength: 5000 }
         linkUrl: { type: [string, 'null'], format: uri }
         imageDescription: { type: [string, 'null'], maxLength: 1000 }
+        contact:
+          { type: [string, 'null'], minLength: 3, maxLength: 500, writeOnly: true, description: CONTENT/FEEDBACK 可选，COPYRIGHT 必填。 }
+    PartnerApplicationRequest:
+      type: object
+      required: [displayName, introduction, contact]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        introduction: { type: string, minLength: 1, maxLength: 5000 }
+        portfolioUrl: { type: [string, 'null'], format: uri }
+        contact: { type: string, minLength: 3, maxLength: 500, writeOnly: true }
+    CreatedCaseEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [id, queryCode]
+          properties:
+            id: { type: string, minLength: 26, maxLength: 26 }
+            queryCode: { type: string, writeOnly: true, description: 仅本次返回，服务端只保存摘要。 }
+    CaseQueryRequest:
+      type: object
+      required: [id, queryCode]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        queryCode: { type: string, minLength: 16, maxLength: 256, writeOnly: true }
+    CaseStatusEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [id, status, createdAt, updatedAt]
+          properties:
+            id: { type: string }
+            status: { type: string }
+            publicResult: { type: [string, 'null'], maxLength: 2000 }
+            dueAt: { type: [string, 'null'], format: date-time }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    CommunityVerifyRequest:
+      type: object
+      required: [inviteCode]
+      properties:
+        inviteCode: { type: string, minLength: 8, maxLength: 256, writeOnly: true }
+    CommunityGrantEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [grant, expiresAt]
+          properties:
+            grant: { type: string, writeOnly: true }
+            expiresAt: { type: string, format: date-time }
     HomeEnvelope:
       type: object
       required: [data, requestId]
@@ -576,6 +978,14 @@ components:
         details: { type: object }
         revision: { type: integer }
         media: { type: array, items: { $ref: '#/components/schemas/PublicMedia' } }
+        verification:
+          anyOf: [{ $ref: '#/components/schemas/PublicContentVerification' }, { type: 'null' }]
+    PublicContentVerification:
+      type: object
+      required: [outcome, checkedAt]
+      properties:
+        outcome: { type: string, enum: [VALID, INVALID, NEEDS_REVIEW] }
+        checkedAt: { type: string, format: date-time }
     PublicMedia:
       type: object
       required: [id, url, mediaType, width, height, altText]
@@ -781,6 +1191,111 @@ components:
       properties:
         token: { type: string }
         password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    PasswordChangeRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        newPassword: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    PasswordResetConsumeRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256, writeOnly: true }
+        newPassword: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+    PasswordResetRequest:
+      type: object
+      required: [loginId]
+      properties:
+        loginId: { type: string, pattern: '^[A-Za-z0-9._-]{4,100}$' }
+    RecoveryEmailRequest:
+      type: object
+      required: [currentPassword, email]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        email: { type: string, format: email, maxLength: 254, writeOnly: true }
+    RecoveryEmailVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 32, maxLength: 256, writeOnly: true }
+    RecoveryEmailRemoveRequest:
+      type: object
+      required: [currentPassword]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+    ContentVerificationRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome: { type: string, enum: [VALID, INVALID, NEEDS_REVIEW] }
+        detailSummary: { type: [string, 'null'], maxLength: 1000 }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+    OperationalStatusChange:
+      type: object
+      required: [status, reason]
+      properties:
+        status: { type: string, enum: [OPEN, PAUSED, FILLED, EXPIRED, CANCELLED] }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    PublicSubmissionStatusFilter:
+      type: string
+      default: RECEIVED
+      description: 公开事项状态。PENDING_REVIEW 仅作为历史筛选别名映射到 RECEIVED，不等于内容审核工作流状态。
+      enum: [RECEIVED, IN_PROGRESS, WAITING_FOR_REQUESTER, RESOLVED, REJECTED, CLOSED, ALL]
+    PartnerApplicationStatusFilter:
+      type: string
+      default: RECEIVED
+      description: 合作申请状态。PENDING_REVIEW 仅作为历史筛选别名映射到 RECEIVED，不等于内容审核工作流状态。
+      enum: [RECEIVED, IN_REVIEW, WAITING_FOR_APPLICANT, APPROVED, ACTIVATION_PENDING, ACTIVATED, REJECTED, CLOSED, ALL]
+    PublicCaseTransition:
+      type: object
+      required: [status, reason]
+      properties:
+        status:
+          type: string
+          description: 投稿使用 RECEIVED/IN_PROGRESS/WAITING_FOR_REQUESTER/RESOLVED/REJECTED/CLOSED；合作申请使用 RECEIVED/IN_REVIEW/WAITING_FOR_APPLICANT/APPROVED/ACTIVATION_PENDING/ACTIVATED/REJECTED/CLOSED。内容工作流 PENDING_REVIEW 不适用于本接口。
+        publicResult: { type: [string, 'null'], maxLength: 2000 }
+        dueAt: { type: [string, 'null'], format: date-time }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    HomepagePlacement:
+      type: object
+      required: [id, slot, contentItemId, sortOrder, version]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        slot: { type: string, enum: [FOCUS, RECRUITMENT, RESOURCE] }
+        contentItemId: { type: string, minLength: 26, maxLength: 26 }
+        sortOrder: { type: integer }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
+        version: { type: integer, format: int64 }
+    HomepagePlacementReplacement:
+      type: object
+      required: [placements]
+      properties:
+        placements: { type: array, items: { $ref: '#/components/schemas/HomepagePlacement' } }
+    HomepagePlacementWrite:
+      type: object
+      required: [placements]
+      properties:
+        placements:
+          type: array
+          maxItems: 30
+          items:
+            type: object
+            required: [slot, contentItemId, sortOrder]
+            properties:
+              slot: { type: string, enum: [FOCUS, RECRUITMENT, RESOURCE] }
+              contentItemId: { type: string, minLength: 26, maxLength: 26 }
+              sortOrder: { type: integer }
+              startsAt: { type: [string, 'null'], format: date-time }
+              endsAt: { type: [string, 'null'], format: date-time }
+    CreateInviteBatch:
+      type: object
+      required: [label]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 120 }
+        expiresInDays: { type: integer, minimum: 1, maximum: 90, default: 30 }
+        maxUses: { type: integer, minimum: 1, maximum: 10000, default: 500 }
     ApprovePartnerApplication:
       type: object
       required: [loginId, reason]
@@ -817,6 +1332,26 @@ components:
       required: [reason]
       properties:
         reason: { type: string, minLength: 1, maxLength: 1000 }
+    CreateAdminAccount:
+      type: object
+      required: [loginId, reason]
+      properties:
+        loginId: { type: string, pattern: '^[A-Za-z0-9._-]{4,100}$' }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    CreatedAdminAccount:
+      type: object
+      required: [id, loginId, qualificationStatus, roles, activationToken, activationExpiresAt]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        loginId: { type: string }
+        qualificationStatus: { type: string, enum: [PENDING] }
+        roles: { type: array, items: { type: string, enum: [ADMIN] } }
+        activationToken: { type: string, writeOnly: true, description: 仅首次成功响应返回，幂等重放不会再次给出 }
+        activationExpiresAt: { type: string, format: date-time }
+    AccountQualification:
+      description: PENDING 激活后变为 ACTIVE；ACTIVE 可停用为 SUSPENDED 或撤销为 REVOKED；SUSPENDED 可恢复为 ACTIVE 或撤销为 REVOKED；REVOKED 为永久终态。激活、恢复、停用与撤销并发后最终只能是 REVOKED。
+      type: string
+      enum: [PENDING, ACTIVE, SUSPENDED, REVOKED]
     ApiError:
       type: object
       required: [code, message, requestId, fieldErrors, retryable]

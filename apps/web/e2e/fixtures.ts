@@ -116,7 +116,7 @@ export type MockState = {
   recordState: string
   visibility: string
   quota: number
-  partnerApplicationState: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'
+  partnerApplicationState: 'RECEIVED' | 'APPROVED' | 'REJECTED' | 'ACTIVATION_PENDING'
   writes: { path: string; method: string; body: any; headers: Record<string, string> }[]
   fail?: string
   conflict: boolean
@@ -128,7 +128,7 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
     recordState: 'ACTIVE',
     visibility: 'HIDDEN',
     quota: 2,
-    partnerApplicationState: 'PENDING_REVIEW',
+    partnerApplicationState: 'RECEIVED',
     writes: [],
     conflict: false,
   }
@@ -168,7 +168,85 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           ? route.fulfill({ status: 204 })
           : reply({ loginId: 'isolated-user', roles: [role] })
       if (path === '/auth/activation/consume') return reply({ loginId: 'isolated-user' })
-      if (path.startsWith('/public/')) return reply({ id: 'isolated-receipt' }, 201)
+      if (path.endsWith('/status-query')) {
+        return reply({
+          id: body.id,
+          status: 'RECEIVED',
+          publicResult: '我们已收到你的提交。',
+          createdAt: '2030-01-01T10:00:00Z',
+          updatedAt: '2030-01-01T10:00:00Z',
+        })
+      }
+      if (path === '/public/community-gate/verify') {
+        return reply({ grant: 'isolated-grant', expiresAt: '2030-01-01T10:30:00Z' })
+      }
+      if (path === '/auth/password/change') return reply({ ok: true })
+      if (path === '/auth/password-reset/consume') {
+        return reply({ loginId: 'isolated-user', message: '密码已重置' })
+      }
+      if (path === '/auth/password-reset/request') {
+        return reply({ message: '如果账号存在且已绑定恢复邮箱，系统会发送一次性密码重置凭据。' }, 202)
+      }
+      if (path === '/auth/recovery-email/request-verification') {
+        return reply({ expiresAt: '2030-01-01T10:15:00Z' })
+      }
+      if (path === '/auth/recovery-email/verify') {
+        return reply({ available: true, verified: true, maskedEmail: 'is***@example.com' })
+      }
+      if (path === '/auth/recovery-email/remove') return route.fulfill({ status: 204 })
+      if (path.endsWith('/verifications')) {
+        return reply({
+          id: '01JVERIFY000000000000000001',
+          contentItemId: id,
+          outcome: body.outcome,
+          detailSummary: body.detailSummary ?? null,
+          checkedByAccountId: 'account-1',
+          checkedAt: '2030-01-01T10:00:00Z',
+          nextCheckAt: body.nextCheckAt ?? null,
+        })
+      }
+      if (path.endsWith('/password-reset-links')) {
+        return reply({
+          accountId: 'account-2',
+          loginId: 'other-admin',
+          resetToken: 'isolated-reset-token-value-32chars',
+          expiresAt: '2030-01-01T10:30:00Z',
+        })
+      }
+      if (path === '/admin/community/media') {
+        return reply({
+          id: '01JCOMMUNITYMEDIA0000000001',
+          url: '/api/v1/media/01JCOMMUNITYMEDIA0000000001/preview',
+          mediaType: 'image/png',
+          width: 240,
+          height: 240,
+          altText: '社群二维码',
+        })
+      }
+      if (path === '/admin/manual-deliveries') {
+        return reply({
+          id: '01JDELIVERY0000000000000001',
+          subjectType: body.subjectType,
+          subjectId: body.subjectId,
+          deliveryType: body.deliveryType,
+          deliveredAt: '2030-01-01T10:00:00Z',
+          note: body.note ?? null,
+        })
+      }
+      if (path === '/admin/homepage-placements') {
+        return reply({
+          placements: (body.placements ?? []).map(
+            (item: { slot: string; contentItemId: string; sortOrder: number }, index: number) => ({
+              id: `01JPLACE00000000000000000${index}`,
+              ...item,
+              version: 1,
+            }),
+          ),
+        })
+      }
+      if (path.startsWith('/public/')) {
+        return reply({ id: '01JRECEIPT0000000000000001', queryCode: 'isolated-query-code-value' }, 201)
+      }
       if (method === 'PATCH' && path.includes('/content-items/')) {
         if (state.conflict) return reply({ code: 'REVISION_MISMATCH' }, 412)
         return reply(managed())
@@ -205,6 +283,31 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           },
           201,
         )
+      if (path === '/admin/accounts') {
+        if (state.conflict)
+          return reply(
+            { code: 'ACCOUNT_VERSION_CONFLICT', message: '账号状态已被其他操作更新，请刷新后重试。' },
+            409,
+          )
+        return reply({
+          id: 'account-3',
+          loginId: body.loginId,
+          qualificationStatus: 'PENDING',
+          roles: ['ADMIN'],
+          activationToken: 'isolated-admin-token',
+          activationExpiresAt: '2030-01-02T00:00:00Z',
+        })
+      }
+      if (path.includes('/activation-links')) {
+        return reply({
+          id: 'account-pending',
+          loginId: 'pending-admin',
+          qualificationStatus: 'PENDING',
+          roles: ['ADMIN'],
+          activationToken: 'reissued-token',
+          activationExpiresAt: '2030-01-02T00:00:00Z',
+        })
+      }
       if (path.includes('/partner-applications/')) {
         if (path.endsWith('/approve')) {
           state.partnerApplicationState = 'APPROVED'
@@ -235,7 +338,17 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           { ...content, id: 'CCCCCCCCCCCCCCCCCCCCCCCCCC', kind: 'RECRUITMENT', title: '隔离测试招募' },
         ],
       })
-    if (path.startsWith('/public/content/')) return reply(content)
+    if (path.endsWith('/related')) {
+      return reply({
+        items: [
+          content,
+          { ...content, id: 'DDDDDDDDDDDDDDDDDDDDDDDDDD', title: '同类竞赛一' },
+          { ...content, id: 'EEEEEEEEEEEEEEEEEEEEEEEEEE', title: '同类竞赛二' },
+        ],
+        nextCursor: null,
+      })
+    }
+    if (path.startsWith('/public/content/')) return reply({ ...content, actions: [] })
     if (path === '/public/content-modules') return reply(modules)
     if (path === '/public/content') {
       const items = [
@@ -278,7 +391,18 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
         nextCursor: url.searchParams.get('cursor') ? undefined : 'next-test-cursor',
       })
     }
+    if (path === '/public/capabilities') {
+      return reply({
+        privateContactEnabled: true,
+        communityGateEnabled: true,
+        gatedRecruitmentEnabled: true,
+        statusQueryEnabled: true,
+        passwordSelfServiceEnabled: true,
+      })
+    }
     if (path === '/content-modules') return reply(modules)
+    if (path === '/auth/recovery-email') return reply({ available: true, verified: false, maskedEmail: null })
+    if (path.endsWith('/verifications')) return reply([])
     if (path === '/admin/content-items') return reply({ items: [managed()], nextCursor: null })
     if (path === '/admin/review-queue')
       return reply({ items: state.status === 'PENDING_REVIEW' ? [managed()] : [], nextCursor: null })
@@ -292,8 +416,53 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
       })
     if (path.includes('/content-items/'))
       return reply({ ...managed(), draft: content, media: [], reviews: [] })
+    if (path === '/public/community/entries') {
+      return reply([
+        {
+          id: '01JENTRY0000000000000000001',
+          name: '主社群',
+          description: '隔离测试入口',
+          entryType: 'URL',
+          value: 'https://example.com/community',
+          primary: true,
+          sortOrder: 0,
+        },
+      ])
+    }
+    if (path === '/admin/homepage-placements') return reply({ placements: [] })
+    if (path === '/admin/community/entries') {
+      return reply([
+        {
+          id: '01JENTRY0000000000000000001',
+          name: '主社群',
+          description: '隔离测试入口',
+          entryType: 'URL',
+          mediaAssetId: null,
+          primary: true,
+          active: true,
+          sortOrder: 0,
+          version: 1,
+        },
+      ])
+    }
+    if (path === '/admin/community/invite-batches') {
+      return reply([
+        {
+          id: '01JINVITE000000000000000001',
+          label: '隔离批次',
+          validFrom: '2030-01-01T00:00:00Z',
+          expiresAt: '2030-01-31T00:00:00Z',
+          maxUses: 500,
+          useCount: 1,
+          state: 'ACTIVE',
+          createdAt: '2030-01-01T00:00:00Z',
+        },
+      ])
+    }
+    if (path === '/admin/manual-deliveries') return reply([])
+    if (path === '/admin/tasks') return reply([])
     if (path === '/admin/partner-applications') {
-      const requestedStatus = url.searchParams.get('status') || 'PENDING_REVIEW'
+      const requestedStatus = url.searchParams.get('status') || 'RECEIVED'
       const visible = requestedStatus === 'ALL' || requestedStatus === state.partnerApplicationState
       return reply({
         items: visible
@@ -304,6 +473,8 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
                 introduction: '模拟申请，不提交真实记录。',
                 portfolioUrl: 'https://example.com',
                 state: state.partnerApplicationState,
+                version: 1,
+                contactAvailable: false,
               },
             ]
           : [],
@@ -324,24 +495,39 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
         ],
         nextCursor: null,
       })
-    if (path === '/admin/submissions')
+    if (path === '/admin/submissions') {
+      const requestedStatus = url.searchParams.get('status') || 'RECEIVED'
+      const visible = requestedStatus === 'ALL' || requestedStatus === 'RECEIVED'
       return reply({
-        items: [
-          {
-            id: 'submission-1',
-            submissionType: 'FEEDBACK',
-            title: '测试反馈',
-            message: '模拟公开输入',
-            linkUrl: null,
-            imageDescription: null,
-            state: 'PENDING',
-          },
-        ],
+        items: visible
+          ? [
+              {
+                id: 'submission-1',
+                submissionType: 'FEEDBACK',
+                title: '测试反馈',
+                message: '模拟公开输入',
+                linkUrl: null,
+                imageDescription: null,
+                state: 'RECEIVED',
+                version: 1,
+                contactAvailable: false,
+              },
+            ]
+          : [],
         nextCursor: null,
       })
+    }
     if (path === '/admin/accounts')
       return reply({
-        items: [{ id: 'account-2', loginId: 'other-admin', qualificationStatus: 'ACTIVE', roles: ['ADMIN'] }],
+        items: [
+          { id: 'account-2', loginId: 'other-admin', qualificationStatus: 'ACTIVE', roles: ['ADMIN'] },
+          {
+            id: 'account-pending',
+            loginId: 'pending-admin',
+            qualificationStatus: 'PENDING',
+            roles: ['ADMIN'],
+          },
+        ],
         nextCursor: null,
       })
     if (path === '/admin/audit-logs')

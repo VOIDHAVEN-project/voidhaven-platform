@@ -26,7 +26,7 @@
       "template": "# 招募说明\n\n- 希望一起完成什么：\n- 适合怎样的伙伴：\n- 后续如何了解：\n\n",
       "fields": [
         { "key": "deadlineDate", "label": "截止日期", "type": "date", "required": false, "filterable": true, "help": "到期后会按平台规则关闭。" },
-        { "key": "followUpUrl", "label": "后续入口", "type": "url", "required": false, "filterable": false, "help": "仅提供受控后续入口，不在站内记录沟通。" },
+        { "key": "followUpUrl", "label": "后续入口（已弃用）", "type": "url", "required": false, "filterable": false, "deprecated": true, "help": "已弃用：请改用招募行动入口。本字段保留一个发布周期，下一 major 停止写入并计划删除列。" },
         { "key": "relatedCompetitionId", "label": "关联竞赛 ID", "type": "relation", "required": false, "filterable": false, "help": "如本招募围绕一项已收录竞赛。" }
       ]
     },

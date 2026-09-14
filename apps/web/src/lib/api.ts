@@ -1,5 +1,6 @@
 import { createIdempotencyKey } from './secure-id'
 import type { PartnerApplicationState } from './partner-applications'
+import type { PublicSubmissionState } from './public-submissions'
 
 export type ContentKind = 'COMPETITION' | 'RESOURCE' | 'RECRUITMENT'
 export type ReusePermission = 'NOT_ALLOWED' | 'ATTRIBUTION_ALLOWED'
@@ -50,7 +51,24 @@ export type PublicContent = AdminDraft & {
   languageLabel?: string
   revision: number
   media?: Media[]
+  operationalStatus?: 'OPEN' | 'PAUSED' | 'FILLED' | 'EXPIRED' | 'CANCELLED' | null
+  actions?: PublicAction[]
+  verification?: { outcome: 'VALID' | 'INVALID' | 'NEEDS_REVIEW'; checkedAt: string } | null
 }
+export type PublicAction = {
+  id: string
+  actionType: 'APPLICATION_URL' | 'PUBLIC_EMAIL' | 'QQ' | 'WECHAT' | 'QQ_GROUP' | 'WECHAT_GROUP' | 'QR_CODE'
+  label: string
+  value?: string | null
+  mediaUrl?: string | null
+  accessLevel: 'PUBLIC' | 'COMMUNITY_GATED'
+}
+export type ContentActionInput = Omit<PublicAction, 'id' | 'mediaUrl'> & {
+  mediaAssetId?: string | null
+  enabled: boolean
+  sortOrder: number
+}
+export type ManagedAction = ContentActionInput & { id: string }
 export type ReviewRecord = { decision: string; reason: string | null; createdAt: string; revisionId: string }
 export type ManagedContent = {
   id: string
@@ -65,6 +83,7 @@ export type ManagedContent = {
   ownerPartnerProfileId?: string | null
   submittedAt?: string | null
   latestReview?: ReviewRecord | null
+  operationalStatus?: string | null
 }
 export type ManagementPage<T> = { items: T[]; nextCursor?: string | null }
 export type ManagedPage = ManagementPage<ManagedContent>
@@ -80,6 +99,7 @@ export type EditablePartnerContent = {
   submittedAt?: string | null
   media: Media[]
   reviews: ReviewRecord[]
+  operationalStatus?: string | null
 }
 export type ManagementQuery = {
   cursor?: string
@@ -105,6 +125,10 @@ export type PendingPartnerApplication = {
   introduction: string
   portfolioUrl: string | null
   state: PartnerApplicationState
+  publicResult?: string | null
+  dueAt?: string | null
+  version: number
+  contactAvailable: boolean
 }
 export type PublicSubmission = {
   id: string
@@ -113,7 +137,79 @@ export type PublicSubmission = {
   message: string
   linkUrl: string | null
   imageDescription: string | null
+  state: PublicSubmissionState
+  publicResult?: string | null
+  dueAt?: string | null
+  version: number
+  contactAvailable: boolean
+}
+export type CreatedCase = { id: string; queryCode: string }
+export type CaseStatus = {
+  id: string
+  status: string
+  publicResult?: string | null
+  dueAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+export type ProductCapabilities = {
+  privateContactEnabled: boolean
+  communityGateEnabled: boolean
+  gatedRecruitmentEnabled: boolean
+  statusQueryEnabled: boolean
+  passwordSelfServiceEnabled: boolean
+}
+export type RecoveryEmailStatus = { available: boolean; verified: boolean; maskedEmail?: string | null }
+export type ContentVerification = {
+  id: string
+  contentItemId: string
+  outcome: 'VALID' | 'INVALID' | 'NEEDS_REVIEW'
+  detailSummary?: string | null
+  checkedByAccountId?: string | null
+  checkedAt: string
+  nextCheckAt?: string | null
+}
+export type CommunityGrant = { grant: string; expiresAt: string }
+export type CommunityEntry = {
+  id: string
+  name: string
+  description?: string | null
+  entryType: 'URL' | 'WECHAT' | 'QQ_GROUP' | 'QR_CODE' | 'TEXT'
+  value?: string | null
+  mediaUrl?: string | null
+  primary: boolean
+  sortOrder: number
+}
+export type OperationalTask = { code: string; label: string; count: number; href: string; severity: string }
+export type CommunityEntrySummary = {
+  id: string
+  name: string
+  description?: string | null
+  entryType: string
+  mediaAssetId?: string | null
+  primary: boolean
+  active: boolean
+  sortOrder: number
+  version: number
+}
+export type CommunityInviteBatch = {
+  id: string
+  label: string
+  validFrom: string
+  expiresAt: string
+  maxUses: number
+  useCount: number
   state: string
+  createdAt: string
+}
+export type HomepagePlacement = {
+  id: string
+  slot: 'FOCUS' | 'RECRUITMENT' | 'RESOURCE'
+  contentItemId: string
+  sortOrder: number
+  startsAt?: string | null
+  endsAt?: string | null
+  version: number
 }
 export type ReviewDecisionResult = { id: string; state: string }
 export type ProvisionedPartner = { partnerProfileId: string; loginId: string; activationToken: string }
@@ -126,6 +222,7 @@ export type PartnerProfile = {
   qualificationStatus: string
 }
 export type AccountStatus = { id: string; loginId: string; qualificationStatus: string; roles: string[] }
+export type CreatedAdminAccount = AccountStatus & { activationToken: string; activationExpiresAt: string }
 export type PublicationReadiness = {
   ready: boolean
   blockers: { code: string; message: string }[]
@@ -147,6 +244,7 @@ export type AuditLogEntry = {
 export type ModuleField = {
   key: string
   label: string
+  deprecated?: boolean
   type:
     | 'text'
     | 'textarea'
@@ -193,6 +291,7 @@ export type Submission = {
   message: string
   linkUrl?: string
   imageDescription?: string
+  contact?: string
 }
 export type Identity = { loginId: string; roles: string[] }
 
@@ -342,6 +441,7 @@ export const categories = {
 }
 
 export const api = {
+  capabilities: (signal?: AbortSignal) => request<ProductCapabilities>('/public/capabilities', { signal }),
   home: (signal?: AbortSignal) => request<HomeContent>('/public/home', { signal }),
   publicModules: (signal?: AbortSignal) => request<ModuleSet>('/public/content-modules', { signal }),
   modules: (signal?: AbortSignal) => request<ModuleSet>('/content-modules', { signal }),
@@ -384,12 +484,48 @@ export const api = {
   },
   detail: (id: string, signal?: AbortSignal) =>
     request<PublicContent>('/public/content/' + encodeURIComponent(id), { signal }),
+  related: (id: string, signal?: AbortSignal) =>
+    request<PublicPage>(`/public/content/${encodeURIComponent(id)}/related`, { signal }),
+  gatedActions: (id: string, grant: string) =>
+    request<PublicAction[]>(`/public/content/${encodeURIComponent(id)}/gated-actions`, {
+      headers: { 'X-Community-Grant': grant },
+    }),
   submit: (body: Submission, key: string = createIdempotencyKey()) =>
-    request<{ id: string }>('/public/submissions', jsonWrite(body, key)),
+    request<CreatedCase>('/public/submissions', jsonWrite(body, key)),
+  submissionStatus: (id: string, queryCode: string) =>
+    request<CaseStatus>('/public/submissions/status-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, queryCode }),
+    }),
   partnerApply: (
-    body: { displayName: string; introduction: string; portfolioUrl?: string },
+    body: { displayName: string; introduction: string; portfolioUrl?: string; contact: string },
     key: string = createIdempotencyKey(),
-  ) => request<{ id: string }>('/public/partner-applications', jsonWrite(body, key)),
+  ) => request<CreatedCase>('/public/partner-applications', jsonWrite(body, key)),
+  partnerApplicationStatus: (id: string, queryCode: string) =>
+    request<CaseStatus>('/public/partner-applications/status-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, queryCode }),
+    }),
+  verifyCommunityInvite: (inviteCode: string) =>
+    request<CommunityGrant>('/public/community-gate/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteCode }),
+    }),
+  communityEntries: (grant: string) =>
+    request<CommunityEntry[]>('/public/community/entries', { headers: { 'X-Community-Grant': grant } }),
+  communityMediaBlob: async (path: string, grant: string) => {
+    const response = await fetch(path, {
+      credentials: 'include',
+      headers: { 'X-Community-Grant': grant, Accept: 'image/*' },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!response.ok)
+      throw new ApiFailure('COMMUNITY_MEDIA_UNAVAILABLE', '受控二维码当前无法读取。', response.status)
+    return response.blob()
+  },
   signIn: (loginId: string, password: string) =>
     request<Identity>('/auth/session', {
       method: 'POST',
@@ -401,6 +537,43 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, password }),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    protectedRequest<void>('/auth/password/change', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  consumePasswordReset: (token: string, newPassword: string) =>
+    request<{ loginId: string; message: string }>('/auth/password-reset/consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    }),
+  requestPasswordReset: (loginId: string) =>
+    request<{ message: string }>('/auth/password-reset/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loginId }),
+    }),
+  recoveryEmailStatus: () => request<RecoveryEmailStatus>('/auth/recovery-email'),
+  requestRecoveryEmailVerification: (currentPassword: string, email: string) =>
+    protectedRequest<{ expiresAt: string }>('/auth/recovery-email/request-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, email }),
+    }),
+  verifyRecoveryEmail: (token: string) =>
+    protectedRequest<RecoveryEmailStatus>('/auth/recovery-email/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }),
+  removeRecoveryEmail: (currentPassword: string) =>
+    protectedRequest<void>('/auth/recovery-email/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword }),
     }),
   me: () => request<Identity>('/auth/me'),
   signOut: () => protectedRequest<void>('/auth/session', { method: 'DELETE' }),
@@ -414,6 +587,128 @@ export const api = {
   adminContent: (id: string) => request<EditablePartnerContent>(itemPath('admin', id)),
   adminPublicationReadiness: (id: string) =>
     request<PublicationReadiness>(itemPath('admin', id) + '/publication-readiness'),
+  adminTasks: () => request<OperationalTask[]>('/admin/tasks'),
+  adminContentVerifications: (id: string) =>
+    request<ContentVerification[]>(`/admin/content-items/${encodeURIComponent(id)}/verifications`),
+  adminRecordContentVerification: (
+    id: string,
+    body: { outcome: ContentVerification['outcome']; detailSummary?: string; nextCheckAt?: string },
+  ) => write<ContentVerification>(`/admin/content-items/${encodeURIComponent(id)}/verifications`, body),
+  adminCommunityEntries: () => request<CommunityEntrySummary[]>('/admin/community/entries'),
+  adminCreateCommunityEntry: (body: {
+    name: string
+    description?: string
+    entryType: string
+    value?: string
+    mediaAssetId?: string
+    primary: boolean
+    sortOrder: number
+  }) => write<CommunityEntrySummary>('/admin/community/entries', body),
+  adminUploadCommunityMedia: (file: File, altText: string, key: string = createIdempotencyKey()) => {
+    const body = new FormData()
+    body.set('altText', altText)
+    body.set('file', file)
+    return protectedRequest<Media>('/admin/community/media', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body,
+    })
+  },
+  adminUpdateCommunityEntry: (
+    id: string,
+    version: number,
+    body: {
+      name: string
+      description?: string
+      entryType: string
+      value?: string
+      mediaAssetId?: string
+      primary: boolean
+      sortOrder: number
+    },
+  ) => {
+    const init = jsonWrite(body)
+    return protectedRequest<CommunityEntrySummary>(`/admin/community/entries/${encodeURIComponent(id)}`, {
+      ...init,
+      method: 'PATCH',
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
+  },
+  adminDeactivateCommunityEntry: (id: string, version: number, reason: string) => {
+    const init = jsonWrite({ reason })
+    return protectedRequest<CommunityEntrySummary>(
+      `/admin/community/entries/${encodeURIComponent(id)}/deactivate`,
+      {
+        ...init,
+        headers: { ...init.headers, 'If-Match': String(version) },
+      },
+    )
+  },
+  adminRecordManualDelivery: (body: {
+    subjectType: 'ACCOUNT' | 'PARTNER_APPLICATION' | 'SUBMISSION'
+    subjectId: string
+    deliveryType: 'ACTIVATION' | 'PASSWORD_RESET' | 'STATUS_RESULT'
+    note?: string
+  }) =>
+    write<{
+      id: string
+      subjectType: string
+      subjectId: string
+      deliveryType: string
+      deliveredAt: string
+      note?: string | null
+    }>('/admin/manual-deliveries', body),
+  adminManualDeliveries: (subjectType?: string, subjectId?: string) => {
+    const params = new URLSearchParams()
+    if (subjectType) params.set('subjectType', subjectType)
+    if (subjectId) params.set('subjectId', subjectId)
+    return request<
+      {
+        id: string
+        subjectType: string
+        subjectId: string
+        deliveryType: string
+        deliveredAt: string
+        note?: string | null
+      }[]
+    >(`/admin/manual-deliveries${params.size ? `?${params}` : ''}`)
+  },
+  adminCommunityInvites: () => request<CommunityInviteBatch[]>('/admin/community/invite-batches'),
+  adminCreateCommunityInvite: (label: string, expiresInDays = 30, maxUses = 500) =>
+    write<{ id: string; label: string; inviteCode: string; expiresAt: string; maxUses: number }>(
+      '/admin/community/invite-batches',
+      { label, expiresInDays, maxUses },
+    ),
+  adminRevokeCommunityInvite: (id: string, reason: string) =>
+    write<CommunityInviteBatch>(`/admin/community/invite-batches/${encodeURIComponent(id)}/revoke`, {
+      reason,
+    }),
+  adminHomepagePlacements: async () =>
+    (await request<{ placements: HomepagePlacement[] }>('/admin/homepage-placements')).placements,
+  adminReplaceHomepagePlacements: async (placements: Omit<HomepagePlacement, 'id' | 'version'>[]) => {
+    const init = jsonWrite({ placements })
+    return (
+      await protectedRequest<{ placements: HomepagePlacement[] }>('/admin/homepage-placements', {
+        ...init,
+        method: 'PUT',
+      })
+    ).placements
+  },
+  adminReplaceActions: (id: string, revision: number, actions: ContentActionInput[]) => {
+    const init = jsonWrite({ actions })
+    return protectedRequest<{ contentId: string; version: number; actions: PublicAction[] }>(
+      itemPath('admin', id) + '/actions',
+      { ...init, method: 'PUT', headers: { ...init.headers, 'If-Match': String(revision) } },
+    )
+  },
+  adminActions: (id: string) => request<ManagedAction[]>(itemPath('admin', id) + '/actions'),
+  adminOperationalStatus: (id: string, revision: number, status: string, reason: string) => {
+    const init = jsonWrite({ status, reason })
+    return protectedRequest<ManagedContent>(itemPath('admin', id) + '/operational-status', {
+      ...init,
+      headers: { ...init.headers, 'If-Match': String(revision) },
+    })
+  },
   adminCreate: (draft: AdminDraft) => write<ManagedContent>('/admin/content-items', draft),
   adminRevise: (id: string, revision: number, draft: AdminDraft) => revise('admin', id, revision, draft),
   adminSubmit: (id: string) => write<ManagedContent>(itemPath('admin', id) + '/submit-review'),
@@ -454,11 +749,45 @@ export const api = {
       decision: 'REJECT',
       reason,
     }),
+  adminTransitionPartnerApplication: (
+    id: string,
+    version: number,
+    status: string,
+    publicResult: string,
+    reason: string,
+  ) => {
+    const init = jsonWrite({ status, publicResult, reason })
+    return protectedRequest(`/admin/partner-applications/${encodeURIComponent(id)}/transition`, {
+      ...init,
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
+  },
+  adminRevealPartnerContact: (id: string, reason: string) =>
+    write<{ id: string; contact: string }>(`/admin/partner-applications/${encodeURIComponent(id)}/contact`, {
+      reason,
+    }),
   adminSubmissions: (options: ManagementQuery = {}) =>
     request<ManagementPage<PublicSubmission>>(`/admin/submissions?${queryString(options)}`),
   adminDecideSubmission: (id: string, decision: 'APPROVE' | 'REJECT', reason: string) =>
     write<ReviewDecisionResult>(`/admin/submissions/${encodeURIComponent(id)}/decision`, {
       decision,
+      reason,
+    }),
+  adminTransitionSubmission: (
+    id: string,
+    version: number,
+    status: string,
+    publicResult: string,
+    reason: string,
+  ) => {
+    const init = jsonWrite({ status, publicResult, reason })
+    return protectedRequest(`/admin/submissions/${encodeURIComponent(id)}/transition`, {
+      ...init,
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
+  },
+  adminRevealSubmissionContact: (id: string, reason: string) =>
+    write<{ id: string; contact: string }>(`/admin/submissions/${encodeURIComponent(id)}/contact`, {
       reason,
     }),
   adminPartnerProfiles: (options: ManagementQuery | AbortSignal = {}) =>
@@ -479,6 +808,15 @@ export const api = {
     }),
   adminAccounts: (options: ManagementQuery = {}) =>
     request<ManagementPage<AccountStatus>>(`/admin/accounts?${queryString(options)}`),
+  adminCreateAdmin: (loginId: string, reason: string) =>
+    write<CreatedAdminAccount>('/admin/accounts', { loginId, reason }),
+  adminReissueActivation: (id: string, reason: string) =>
+    write<CreatedAdminAccount>(`/admin/accounts/${encodeURIComponent(id)}/activation-links`, { reason }),
+  adminIssuePasswordReset: (id: string, reason: string) =>
+    write<{ accountId: string; loginId: string; resetToken: string; expiresAt: string }>(
+      `/admin/accounts/${encodeURIComponent(id)}/password-reset-links`,
+      { reason },
+    ),
   adminSuspendAccount: (id: string, reason: string) =>
     write<AccountStatus>(`/admin/accounts/${encodeURIComponent(id)}/suspend`, { reason }),
   adminReactivateAccount: (id: string, reason: string) =>
@@ -512,4 +850,12 @@ export const api = {
   partnerCreate: (draft: AdminDraft) => write<ManagedContent>('/partner/content-items', draft),
   partnerSubmit: (id: string) => write<ManagedContent>(itemPath('partner', id) + '/submit-review'),
   partnerRevise: (id: string, revision: number, draft: AdminDraft) => revise('partner', id, revision, draft),
+  partnerReplaceActions: (id: string, revision: number, actions: ContentActionInput[]) => {
+    const init = jsonWrite({ actions })
+    return protectedRequest<{ contentId: string; version: number; actions: PublicAction[] }>(
+      itemPath('partner', id) + '/actions',
+      { ...init, method: 'PUT', headers: { ...init.headers, 'If-Match': String(revision) } },
+    )
+  },
+  partnerActions: (id: string) => request<ManagedAction[]>(itemPath('partner', id) + '/actions'),
 }

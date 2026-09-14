@@ -31,9 +31,12 @@ import {
   type ContentKind,
   type ContentModule,
   type PublicContent,
+  type PublicAction,
   type SearchGroup,
 } from '../lib/api'
+import { copyText } from '../lib/copy-text'
 import { usePageTitle, useResource } from '../lib/hooks'
+import { ControlledCommunityImage } from '../components/controlled-community-image'
 import { EmptyState, ErrorState, LoadingRows, Notice, message, type NoticeValue } from '../components/ui'
 import { DocumentView, extractDocumentHeadings, safeUrl, type DocumentHeading } from '../components/document'
 import type { PublicShellContext } from '../components/shell'
@@ -173,7 +176,7 @@ export function HomePage() {
           <LoadingRows />
         ) : state.error ? (
           <ErrorState error={state.error} retry={state.reload} />
-        ) : state.data?.competitions.length ? (
+        ) : state.data?.competitions?.length ? (
           <>
             <div className="focus-grid">
               <ContentCard item={state.data.competitions[0]} featured />
@@ -297,7 +300,7 @@ export function HomePage() {
           <Link className="button primary" to="/feedback">
             投稿 / 反馈 <ArrowUpRight size={16} />
           </Link>
-          <Link className="text-link" to="/join">
+          <Link className="text-link" to="/partners/apply">
             申请成为合作方 <ArrowRight size={16} />
           </Link>
         </div>
@@ -798,6 +801,99 @@ function RelatedLinks({ items }: { items: PublicContent[] }) {
   )
 }
 
+function RecruitmentActions({ item }: { item: PublicContent }) {
+  const [inviteCode, setInviteCode] = useState('')
+  const [grantToken, setGrantToken] = useState('')
+  const [gated, setGated] = useState<PublicAction[]>([])
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  if (item.kind !== 'RECRUITMENT') return null
+  const open = (item.operationalStatus ?? 'OPEN') === 'OPEN' && !expired(item)
+  const actions = [...(item.actions ?? []), ...gated]
+  const verify = async () => {
+    if (!inviteCode.trim()) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const grant = await api.verifyCommunityInvite(inviteCode.trim())
+      setGrantToken(grant.grant)
+      setGated(await api.gatedActions(item.id, grant.grant))
+      setInviteCode('')
+      setNotice({ tone: 'success', text: '验证成功，受控联系方式已在当前页面临时显示。' })
+    } catch (error) {
+      setNotice({ tone: 'error', text: message(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="recruitment-actions" aria-labelledby="recruitment-actions-title">
+      <p className="eyebrow">TAKE THE NEXT STEP</p>
+      <h2 id="recruitment-actions-title">下一步怎么做</h2>
+      {!open ? (
+        <p className="muted">本次招募已暂停、截止或结束，行动入口不再开放；页面保留为历史记录。</p>
+      ) : (
+        <>
+          <div className="button-row">
+            {actions.map((action) => (
+              <RecruitmentAction key={action.id} action={action} grant={grantToken} />
+            ))}
+          </div>
+          <div className="community-unlock">
+            <label>
+              查看微信、群号或二维码等受控入口
+              <input
+                value={inviteCode}
+                onChange={(event) => setInviteCode(event.target.value)}
+                maxLength={256}
+                autoComplete="off"
+                placeholder="输入邀请码"
+              />
+            </label>
+            <button
+              className="button ghost"
+              type="button"
+              disabled={busy || !inviteCode.trim()}
+              onClick={() => void verify()}
+            >
+              {busy ? '验证中…' : '验证并显示'}
+            </button>
+          </div>
+          <Notice value={notice} />
+        </>
+      )}
+    </section>
+  )
+}
+
+function RecruitmentAction({ action, grant }: { action: PublicAction; grant?: string }) {
+  if (action.mediaUrl && grant) {
+    return (
+      <figure className="recruitment-qr">
+        <figcaption>{action.label}</figcaption>
+        <ControlledCommunityImage path={action.mediaUrl} grant={grant} alt={`${action.label}二维码`} />
+      </figure>
+    )
+  }
+  if (action.mediaUrl) return <span className="button ghost">{action.label}（验证邀请码后显示二维码）</span>
+  if (!action.value) return null
+  const href = action.actionType === 'PUBLIC_EMAIL' ? `mailto:${action.value}` : safeUrl(action.value)
+  return href ? (
+    <a
+      className="button primary"
+      href={href}
+      target={href.startsWith('http') ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {action.label} <ArrowUpRight size={14} />
+    </a>
+  ) : (
+    <button className="button ghost" type="button" onClick={() => void copyText(action.value ?? '')}>
+      {action.label}：{action.value}
+    </button>
+  )
+}
+
 function DetailQuickFacts({
   item,
   module,
@@ -878,7 +974,7 @@ function DetailQuickFacts({
           阅读官方规则 <ArrowUpRight size={15} />
         </a>
       ) : null}
-      {follow ? (
+      {follow && !(item.actions && item.actions.length) ? (
         <a className="button primary" href={follow} target="_blank" rel="noreferrer">
           了解后续入口 <ArrowUpRight size={15} />
         </a>
@@ -929,6 +1025,12 @@ function Provenance({ item }: { item: PublicContent }) {
             item.sourceName || '原创内容'
           )}
         </dd>
+        <dt>最近来源核验</dt>
+        <dd>
+          {item.verification
+            ? `${item.verification.outcome === 'VALID' ? '有效' : item.verification.outcome === 'INVALID' ? '已标记失效' : '待复核'} · ${new Date(item.verification.checkedAt).toLocaleDateString()}`
+            : '尚无独立核验记录，请以原始来源为准'}
+        </dd>
         <dt>作者展示名</dt>
         <dd>{item.authorDisplayName || '未提供'}</dd>
         <dt>权利来源 / 使用说明</dt>
@@ -969,16 +1071,10 @@ function DetailContent({ item }: { item: PublicContent }) {
   const module = modulesState.data?.modules.find((value) => value.key === item.moduleKey)
   const headings = useMemo(() => extractDocumentHeadings(item.body), [item.body])
   const [activeHeading, setActiveHeading] = useState(headings[0]?.id ?? '')
-  const relatedLoader = useCallback(
-    (signal?: AbortSignal) =>
-      item.moduleKey
-        ? api.listModule(item.moduleKey, {}, signal)
-        : api.list(item.kind, '', undefined, signal),
-    [item.kind, item.moduleKey],
-  )
+  const relatedLoader = useCallback((signal?: AbortSignal) => api.related(item.id, signal), [item.id])
   const related = useResource(relatedLoader)
   const relatedItems = useMemo(
-    () => related.data?.items.filter((entry) => entry.id !== item.id).slice(0, 4) ?? [],
+    () => related.data?.items?.filter((entry) => entry.id !== item.id).slice(0, 4) ?? [],
     [related.data, item.id],
   )
   const isLong = headings.length >= 3 || item.body.blocks.length >= 10
@@ -1024,8 +1120,11 @@ function DetailContent({ item }: { item: PublicContent }) {
   const fallback = categories[item.kind].path
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(locationOrigin())
-      setNotice({ tone: 'success', text: '链接已复制，可粘贴分享。本地地址仅能在可访问此服务的设备打开。' })
+      const shareText = [item.title, item.summary, date ? `截止：${dateLabel(date)}` : '', locationOrigin()]
+        .filter(Boolean)
+        .join('\n')
+      await copyText(shareText)
+      setNotice({ tone: 'success', text: '标题、导读、截止信息和链接已复制，可直接粘贴分享。' })
     } catch {
       setNotice({ tone: 'error', text: '未能自动复制，请从浏览器地址栏复制链接。' })
     }
@@ -1033,7 +1132,7 @@ function DetailContent({ item }: { item: PublicContent }) {
   const share = async () => {
     if (!navigator.share) return copy()
     try {
-      await navigator.share({ title: item.title, url: locationOrigin() })
+      await navigator.share({ title: item.title, text: item.summary, url: locationOrigin() })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       await copy()
@@ -1097,6 +1196,7 @@ function DetailContent({ item }: { item: PublicContent }) {
         </div>
         <Notice value={notice} />
       </header>
+      <RecruitmentActions item={item} />
       <div className={`detail-document-grid ${showRelatedRail ? 'has-related-rail' : ''}`}>
         {showRelatedRail ? (
           <aside className="related-rail">

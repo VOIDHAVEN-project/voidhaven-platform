@@ -14,6 +14,7 @@ import java.util.function.Supplier;
 
 @Service
 public class IdempotencyService {
+    private static final String SENSITIVE_BODY = "{\"state\":\"DELIVERED_NO_REPLAY\"}";
     private final JdbcTemplate jdbc; private final ObjectMapper json; private final IdempotencyReservationService reservations;
     public IdempotencyService(JdbcTemplate jdbc, ObjectMapper json, IdempotencyReservationService reservations) { this.jdbc = jdbc; this.json = json; this.reservations = reservations; }
     @Transactional
@@ -24,7 +25,7 @@ public class IdempotencyService {
         if (existing != null) return restore(existing, requestHash, responseType);
         try {
             T result = action.get(); String response = write(result);
-            int completed = jdbc.update("update idempotency_records set response_status = 200, response_body = cast(? as json), expires_at = ? where idempotency_key = ? and request_hash = ? and response_status = 102",
+            int completed = jdbc.update("update idempotency_records set response_status = 200, response_body = cast(? as json), response_replayable = true, expires_at = ? where idempotency_key = ? and request_hash = ? and response_status = 102",
                     response, Timestamp.from(Instant.now().plusSeconds(86400)), key, requestHash);
             if (completed != 1) throw new IllegalStateException("Idempotency reservation was lost before completion");
             return result;
@@ -45,12 +46,12 @@ public class IdempotencyService {
         if (existing != null) {
             if (!Objects.equals(existing.requestHash(), requestHash)) throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "该请求标识已用于不同内容，请生成新的请求后重试。");
             if (existing.responseStatus() == 102) throw new ApiException(HttpStatus.CONFLICT, "REQUEST_IN_PROGRESS", "相同请求仍在处理，请稍后使用相同请求标识重试。");
-            throw new ApiException(HttpStatus.CONFLICT, "ONE_TIME_CREDENTIAL_REDELIVERY_REQUIRED", "一次性激活凭据不会被重复返回，请由管理员重新生成。");
+            throw new ApiException(HttpStatus.CONFLICT, "SENSITIVE_RESULT_NOT_REPLAYABLE", "一次性敏感结果不会被重复返回，请核对当前状态后使用新的请求标识重新签发或提交。");
         }
         try {
             T result = action.get();
-            int completed = jdbc.update("update idempotency_records set response_status = 200, response_body = cast(? as json), expires_at = ? where idempotency_key = ? and request_hash = ? and response_status = 102",
-                    "{\"state\":\"DELIVERED_NO_REPLAY\"}", Timestamp.from(Instant.now().plusSeconds(86400)), key, requestHash);
+            int completed = jdbc.update("update idempotency_records set response_status = 200, response_body = cast(? as json), response_replayable = false, expires_at = ? where idempotency_key = ? and request_hash = ? and response_status = 102",
+                    SENSITIVE_BODY, Timestamp.from(Instant.now().plusSeconds(86400)), key, requestHash);
             if (completed != 1) throw new IllegalStateException("Idempotency reservation was lost before completion");
             return result;
         } catch (RuntimeException | Error error) {
@@ -61,6 +62,7 @@ public class IdempotencyService {
     private <T> T restore(IdempotencyReservationService.Existing existing, String hash, Class<T> type) {
         if (!Objects.equals(existing.requestHash(), hash)) throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED", "该请求标识已用于不同内容，请生成新的请求后重试。");
         if (existing.responseStatus() == 102) throw new ApiException(HttpStatus.CONFLICT, "REQUEST_IN_PROGRESS", "相同请求仍在处理，请稍后使用相同请求标识重试。");
+        if (!existing.responseReplayable()) throw new ApiException(HttpStatus.CONFLICT, "SENSITIVE_RESULT_NOT_REPLAYABLE", "一次性敏感结果不会被重复返回，请核对当前状态后使用新的请求标识重新签发或提交。");
         try { return json.readValue(existing.responseBody(), type); } catch (Exception error) { throw new IllegalStateException("Stored idempotency response cannot be restored", error); }
     }
     private String write(Object object) { try { return json.writeValueAsString(object); } catch (Exception error) { throw new IllegalStateException("Response cannot be serialized", error); } }

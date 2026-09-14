@@ -15,7 +15,7 @@ import java.util.Map;
 /** Commits the short-lived ownership marker independently from the protected business transaction. */
 @Service
 public class IdempotencyReservationService {
-    public record Existing(String requestHash, int responseStatus, String responseBody) { }
+    public record Existing(String requestHash, int responseStatus, String responseBody, boolean responseReplayable) { }
 
     private final JdbcTemplate jdbc;
     private final long inProgressSeconds;
@@ -37,9 +37,11 @@ public class IdempotencyReservationService {
             return null;
         } catch (DuplicateKeyException ignored) {
             Map<String, Object> row = jdbc.queryForMap(
-                    "select request_hash, response_status, response_body from idempotency_records where idempotency_key = ?", key);
+                    "select request_hash, response_status, response_body, response_replayable from idempotency_records where idempotency_key = ?", key);
+            Object replayable = row.get("response_replayable");
+            boolean replay = replayable instanceof Boolean value ? value : !"0".equals(String.valueOf(replayable));
             return new Existing(row.get("request_hash").toString(), Integer.parseInt(row.get("response_status").toString()),
-                    row.get("response_body").toString());
+                    row.get("response_body").toString(), replay);
         }
     }
 

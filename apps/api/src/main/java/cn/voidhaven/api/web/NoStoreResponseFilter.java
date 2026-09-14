@@ -17,7 +17,7 @@ public class NoStoreResponseFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain) throws ServletException, IOException {
         String path = request.getRequestURI();
-        if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/v1/admin/") || path.startsWith("/api/v1/partner/") || path.startsWith("/api/v1/media/") || path.startsWith("/api/v1/public/community-gate/")) {
+        if (path.startsWith("/api/v1/auth/") || path.startsWith("/api/v1/admin/") || path.startsWith("/api/v1/partner/") || path.startsWith("/api/v1/media/") || path.contains("/community") || path.endsWith("/status-query") || path.endsWith("/gated-actions") || path.equals("/api/v1/public/submissions") || path.equals("/api/v1/public/partner-applications")) {
             response.setHeader("Cache-Control", "no-store");
             response.setHeader("Pragma", "no-cache");
         }

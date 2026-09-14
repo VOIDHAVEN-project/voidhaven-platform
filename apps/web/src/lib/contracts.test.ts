@@ -203,6 +203,13 @@ describe('v0 contract protection', () => {
       { type: 'image', alt: '图', mediaId: '01HZX9Z8NQ2J3K4M5P6R7S8T9U' },
     ])
   })
+  it('reuses a caller-provided idempotency key for a logical public submission', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { id: 'submission' } })))
+    await api.submit({ submissionType: 'FEEDBACK', title: '标题', message: '正文' }, 'same-attempt')
+    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({ 'Idempotency-Key': 'same-attempt' })
+  })
   it('parses the latest markdown once for save while preserving other draft fields', () => {
     const draft = {
       kind: 'RESOURCE',
@@ -232,11 +239,31 @@ describe('v0 contract protection', () => {
     expect(result.details).toEqual({ hidden: { keep: true } })
     expect(result.customMetadata).toBe('keep-me')
   })
-  it('reuses a caller-provided idempotency key for a logical public submission', async () => {
+  it('creates a regular admin with an idempotency key and does not persist the activation token in the client helper', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify({ data: { id: 'submission' } })))
-    await api.submit({ submissionType: 'FEEDBACK', title: '标题', message: '正文' }, 'same-attempt')
-    expect(fetcher.mock.calls[0][1]?.headers).toMatchObject({ 'Idempotency-Key': 'same-attempt' })
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { headerName: 'X-CSRF-TOKEN', token: 'test-csrf' } })),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              id: 'account',
+              loginId: 'admin.example',
+              qualificationStatus: 'PENDING',
+              roles: ['ADMIN'],
+              activationToken: 'once',
+              activationExpiresAt: '2030-01-01T00:00:00Z',
+            },
+          }),
+        ),
+      )
+    const created = await api.adminCreateAdmin('admin.example', '新增内容审核管理员')
+    expect(created.roles).toEqual(['ADMIN'])
+    expect(created.qualificationStatus).toBe('PENDING')
+    const [, init] = fetcher.mock.calls[1]
+    expect(fetcher.mock.calls[1][0]).toBe('/api/v1/admin/accounts')
+    expect((init!.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy()
   })
 })

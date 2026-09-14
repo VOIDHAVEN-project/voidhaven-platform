@@ -1,8 +1,9 @@
 import { useCallback, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowUpRight, KeyRound, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, Copy, KeyRound, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import {
   api,
+  ApiFailure,
   type AccountStatus,
   type AuditLogEntry,
   type EditablePartnerContent,
@@ -11,11 +12,14 @@ import {
   type ManagementQuery,
   type PendingPartnerApplication,
   type ProvisionedPartner,
+  type CreatedAdminAccount,
   type PublicSubmission,
   type PublicationReadiness,
 } from '../lib/api'
+import { copyText } from '../lib/copy-text'
 import { useResource } from '../lib/hooks'
 import { isReviewablePartnerApplication, partnerApplicationStatusOptions } from '../lib/partner-applications'
+import { isReviewablePublicSubmission, publicSubmissionStatusOptions } from '../lib/public-submissions'
 import { DocumentView } from './document'
 import {
   Badge,
@@ -358,14 +362,16 @@ export function SubmissionsPanel() {
         description="公开输入只在受控工作区处理；通过并不意味着内容会自动公开。"
         loader={api.adminSubmissions}
         empty="当前没有待处理公开输入"
+        initialOptions={{ status: 'RECEIVED' }}
         controls={
           <label>
             状态
-            <select name="status">
-              <option value="">全部状态</option>
-              <option value="PENDING">待处理</option>
-              <option value="APPROVED">已通过</option>
-              <option value="REJECTED">已拒绝</option>
+            <select name="status" defaultValue="RECEIVED">
+              {publicSubmissionStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
         }
@@ -384,11 +390,20 @@ export function SubmissionsPanel() {
                 </a>
               ) : null}
               {item.imageDescription ? <small>图片说明：{item.imageDescription}</small> : null}
+              {item.publicResult ? <p className="review-note">公开答复：{item.publicResult}</p> : null}
             </div>
-            {item.state === 'PENDING' ? (
-              <DecisionButtons
-                onRun={async (decision, reason) => {
-                  await api.adminDecideSubmission(item.id, decision, reason)
+            {isReviewablePublicSubmission(item.state) ? (
+              <CaseWorkflow
+                statuses={['IN_PROGRESS', 'WAITING_FOR_REQUESTER', 'RESOLVED', 'REJECTED', 'CLOSED']}
+                contactAvailable={item.contactAvailable}
+                deliverySubject={{
+                  subjectType: 'SUBMISSION',
+                  subjectId: item.id,
+                  ready: Boolean(item.publicResult),
+                }}
+                onReveal={(reason) => api.adminRevealSubmissionContact(item.id, reason)}
+                onRun={async (status, publicResult, reason) => {
+                  await api.adminTransitionSubmission(item.id, item.version, status, publicResult, reason)
                   reload()
                   setNotice({ tone: 'success', text: '公开输入处理结果已保存。' })
                 }}
@@ -401,30 +416,54 @@ export function SubmissionsPanel() {
   )
 }
 
-function DecisionButtons({
+function CaseWorkflow({
+  statuses,
+  contactAvailable,
+  onReveal,
   onRun,
+  deliverySubject,
 }: {
-  onRun: (decision: 'APPROVE' | 'REJECT', reason: string) => Promise<void>
+  statuses: string[]
+  contactAvailable: boolean
+  onReveal: (reason: string) => Promise<{ contact: string }>
+  onRun: (status: string, publicResult: string, reason: string) => Promise<void>
+  deliverySubject?: {
+    subjectType: 'SUBMISSION' | 'PARTNER_APPLICATION'
+    subjectId: string
+    ready: boolean
+  }
 }) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
+  const [contact, setContact] = useState('')
   return (
     <form
       className="decision-inline"
       onSubmit={async (event) => {
         event.preventDefault()
         const data = new FormData(event.currentTarget)
-        const decision = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value as
-          | 'APPROVE'
-          | 'REJECT'
+        const action = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value
         const reason = String(data.get('reason') ?? '').trim()
+        const status = String(data.get('status') ?? '')
+        const publicResult = String(data.get('publicResult') ?? '').trim()
         if (!reason) {
           setNotice({ tone: 'error', text: '请填写审核原因。' })
           return
         }
         setBusy(true)
         try {
-          await onRun(decision, reason)
+          if (action === 'reveal') {
+            setContact((await onReveal(reason)).contact)
+            setNotice({ tone: 'success', text: '联系人仅在当前页面临时显示，本次查看已记录审计。' })
+          } else if (action === 'deliver' && deliverySubject) {
+            await api.adminRecordManualDelivery({
+              subjectType: deliverySubject.subjectType,
+              subjectId: deliverySubject.subjectId,
+              deliveryType: 'STATUS_RESULT',
+              note: reason,
+            })
+            setNotice({ tone: 'success', text: '已记录本次用户可见结果的人工通知。' })
+          } else await onRun(status, publicResult, reason)
         } catch (error) {
           setNotice({ tone: 'error', text: message(error) })
         } finally {
@@ -436,14 +475,36 @@ function DecisionButtons({
         处理原因
         <input name="reason" required maxLength={1000} />
       </label>
+      <label>
+        下一状态
+        <select name="status">
+          {statuses.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        用户可见答复
+        <textarea name="publicResult" maxLength={2000} rows={3} />
+      </label>
       <div>
-        <button className="button ghost" name="decision" value="REJECT" disabled={busy}>
-          拒绝
-        </button>
-        <button className="button primary" name="decision" value="APPROVE" disabled={busy}>
-          通过
+        {contactAvailable ? (
+          <button className="button ghost" name="action" value="reveal" disabled={busy}>
+            查看联系人
+          </button>
+        ) : null}
+        {deliverySubject?.ready ? (
+          <button className="button ghost" name="action" value="deliver" disabled={busy}>
+            记录结果已通知
+          </button>
+        ) : null}
+        <button className="button primary" name="action" value="transition" disabled={busy}>
+          保存状态
         </button>
       </div>
+      {contact ? <code>{contact}</code> : null}
       <Notice value={notice} />
     </form>
   )
@@ -451,6 +512,7 @@ function DecisionButtons({
 
 export function ApplicationsPanel() {
   const [credential, setCredential] = useState<ProvisionedPartner | null>(null)
+  const [deliverySubjectId, setDeliverySubjectId] = useState('')
   const [notice, setNotice] = useState<NoticeValue>(null)
   return (
     <>
@@ -460,9 +522,31 @@ export function ApplicationsPanel() {
           <div>
             <strong>一次性激活链接 · {credential.loginId}</strong>
             <code>{`${window.location.origin}/auth/activate?token=${encodeURIComponent(credential.activationToken)}`}</code>
-            <small>凭据只保存在当前页面内存，关闭或刷新后清除。</small>
-            <button className="button ghost" onClick={() => setCredential(null)}>
-              已妥善记录，关闭凭据
+            <small>
+              凭据只保存在当前页面内存，关闭或刷新后清除。只有实际完成交付后，才点击下方按钮记录留痕。
+            </small>
+            <button
+              className="button ghost"
+              type="button"
+              onClick={async () => {
+                if (deliverySubjectId) {
+                  try {
+                    await api.adminRecordManualDelivery({
+                      subjectType: 'PARTNER_APPLICATION',
+                      subjectId: deliverySubjectId,
+                      deliveryType: 'ACTIVATION',
+                      note: '已当面交付激活凭据',
+                    })
+                  } catch (error) {
+                    setNotice({ tone: 'error', text: message(error) })
+                    return
+                  }
+                }
+                setCredential(null)
+                setDeliverySubjectId('')
+              }}
+            >
+              确认已人工交付
             </button>
           </div>
         </section>
@@ -474,11 +558,11 @@ export function ApplicationsPanel() {
         description="批准与拒绝都必须写明原因；批准时会生成一次性激活凭据。"
         loader={api.adminPartnerApplications}
         empty="当前没有合作方申请"
-        initialOptions={{ status: 'PENDING_REVIEW' }}
+        initialOptions={{ status: 'RECEIVED' }}
         controls={
           <label>
             状态
-            <select name="status" defaultValue="PENDING_REVIEW">
+            <select name="status" defaultValue="RECEIVED">
               {partnerApplicationStatusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -500,6 +584,7 @@ export function ApplicationsPanel() {
                   查看公开作品 <ArrowUpRight size={14} />
                 </a>
               ) : null}
+              {item.publicResult ? <p className="review-note">申请人可见答复：{item.publicResult}</p> : null}
             </div>
             {isReviewablePartnerApplication(item.state) ? (
               <form
@@ -516,9 +601,10 @@ export function ApplicationsPanel() {
                     return
                   }
                   try {
-                    if (decision === 'APPROVE')
+                    if (decision === 'APPROVE') {
+                      setDeliverySubjectId(item.id)
                       setCredential(await api.adminApprovePartnerApplication(item.id, loginId, reason))
-                    else await api.adminDecidePartnerApplication(item.id, reason)
+                    } else await api.adminDecidePartnerApplication(item.id, reason)
                     reload()
                     setNotice({ tone: 'success', text: '申请处理结果已保存。' })
                   } catch (error) {
@@ -544,6 +630,40 @@ export function ApplicationsPanel() {
                 </div>
               </form>
             ) : null}
+            {!isReviewablePartnerApplication(item.state) &&
+            item.state !== 'REJECTED' &&
+            item.state !== 'ACTIVATED' &&
+            item.state !== 'CLOSED' ? (
+              <CaseWorkflow
+                statuses={[
+                  'IN_REVIEW',
+                  'WAITING_FOR_APPLICANT',
+                  'APPROVED',
+                  'ACTIVATION_PENDING',
+                  'ACTIVATED',
+                  'REJECTED',
+                  'CLOSED',
+                ]}
+                contactAvailable={item.contactAvailable}
+                deliverySubject={{
+                  subjectType: 'PARTNER_APPLICATION',
+                  subjectId: item.id,
+                  ready: Boolean(item.publicResult),
+                }}
+                onReveal={(reason) => api.adminRevealPartnerContact(item.id, reason)}
+                onRun={async (status, publicResult, reason) => {
+                  await api.adminTransitionPartnerApplication(
+                    item.id,
+                    item.version,
+                    status,
+                    publicResult,
+                    reason,
+                  )
+                  reload()
+                  setNotice({ tone: 'success', text: '合作申请状态已更新。' })
+                }}
+              />
+            ) : null}
           </article>
         )}
       />
@@ -551,15 +671,173 @@ export function ApplicationsPanel() {
   )
 }
 
+const accountConflicts = new Set([
+  'ACCOUNT_VERSION_CONFLICT',
+  'LOGIN_ID_ALREADY_EXISTS',
+  'SENSITIVE_RESULT_NOT_REPLAYABLE',
+  'REQUEST_IN_PROGRESS',
+])
+function activationUrl(token: string) {
+  return `${window.location.origin}/auth/activate?token=${encodeURIComponent(token)}`
+}
+
 export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
   const [notice, setNotice] = useState<NoticeValue>(null)
+  const [credential, setCredential] = useState<CreatedAdminAccount | null>(null)
+  const [resetCredential, setResetCredential] = useState<{
+    accountId: string
+    loginId: string
+    resetToken: string
+    expiresAt: string
+  } | null>(null)
+  const [copied, setCopied] = useState(false)
+  async function onConflict(error: unknown, reload: () => void) {
+    if (error instanceof ApiFailure && accountConflicts.has(error.code)) {
+      reload()
+    }
+    setNotice({ tone: 'error', text: message(error) })
+  }
   return (
     <>
+      {credential ? (
+        <section className="token-card">
+          <KeyRound size={21} />
+          <div>
+            <strong>一次性激活链接 · {credential.loginId}</strong>
+            <code>{activationUrl(credential.activationToken)}</code>
+            <small>
+              凭据只保存在当前页面内存，关闭或刷新后清除。角色 {credential.roles.join(' / ')} ·{' '}
+              {credential.qualificationStatus}
+            </small>
+            <div>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await copyText(activationUrl(credential.activationToken))
+                    setCopied(true)
+                    setNotice({ tone: 'success', text: '激活链接已复制，可直接粘贴交付。' })
+                  } catch (error) {
+                    setCopied(false)
+                    setNotice({ tone: 'error', text: message(error) })
+                  }
+                }}
+              >
+                <Copy size={15} />
+                {copied ? '已复制' : '复制链接'}
+              </button>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api.adminRecordManualDelivery({
+                      subjectType: 'ACCOUNT',
+                      subjectId: credential.id,
+                      deliveryType: 'ACTIVATION',
+                      note: '已当面交付激活凭据',
+                    })
+                    setCredential(null)
+                    setCopied(false)
+                  } catch (error) {
+                    setNotice({ tone: 'error', text: message(error) })
+                  }
+                }}
+              >
+                确认已人工交付
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      {resetCredential ? (
+        <section className="token-card">
+          <KeyRound size={21} />
+          <div>
+            <strong>一次性密码重置凭据 · {resetCredential.loginId}</strong>
+            <code>{resetCredential.resetToken}</code>
+            <small>
+              30 分钟内有效，只能使用一次。请让用户在 /auth/reset-password 页面手动粘贴，凭据不要放入 URL。
+            </small>
+            <div>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => void copyText(resetCredential.resetToken)}
+              >
+                复制重置凭据
+              </button>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api.adminRecordManualDelivery({
+                      subjectType: 'ACCOUNT',
+                      subjectId: resetCredential.accountId,
+                      deliveryType: 'PASSWORD_RESET',
+                      note: '已当面交付密码重置凭据',
+                    })
+                    setResetCredential(null)
+                  } catch (error) {
+                    setNotice({ tone: 'error', text: message(error) })
+                  }
+                }}
+              >
+                确认已人工交付
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
       <Notice value={notice} />
+      <form
+        className="panel create-admin-form"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const data = new FormData(form)
+          const loginId = String(data.get('loginId') ?? '').trim()
+          const reason = String(data.get('reason') ?? '').trim()
+          if (!loginId || !reason) {
+            setNotice({ tone: 'error', text: '请填写登录名和开通说明。' })
+            return
+          }
+          try {
+            const created = await api.adminCreateAdmin(loginId, reason)
+            setCredential(created)
+            setCopied(false)
+            setNotice({ tone: 'success', text: '普通管理员已创建，请立即复制一次性激活链接。' })
+            form.reset()
+          } catch (error) {
+            setNotice({ tone: 'error', text: message(error) })
+          }
+        }}
+      >
+        <PanelHeading eyebrow="超级管理员" title="创建普通管理员" />
+        <p className="panel-help">只创建 ADMIN 角色的待激活账号；激活链接不会写入日志或浏览器存储。</p>
+        <label>
+          登录名
+          <input
+            name="loginId"
+            required
+            minLength={4}
+            maxLength={100}
+            pattern="[A-Za-z0-9._-]{4,100}"
+            placeholder="admin.example"
+          />
+        </label>
+        <label>
+          开通说明
+          <input name="reason" required maxLength={1000} />
+        </label>
+        <button className="button primary">创建普通管理员</button>
+      </form>
       <PagedPanel<AccountStatus>
         eyebrow="超级管理员"
         title="账号资格治理"
-        description="永久撤销不可逆；当前登录账号不提供自我停用或撤销入口。"
+        description="永久撤销不可逆；当前登录账号和超级管理员账号不提供停用或撤销入口。"
         loader={api.adminAccounts}
         empty="没有匹配账号"
         controls={
@@ -567,6 +845,7 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
             资格状态
             <select name="status">
               <option value="">全部状态</option>
+              <option value="PENDING">PENDING</option>
               <option value="ACTIVE">ACTIVE</option>
               <option value="SUSPENDED">SUSPENDED</option>
               <option value="REVOKED">REVOKED</option>
@@ -584,17 +863,36 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
               </div>
               <h3>{account.loginId}</h3>
             </div>
-            {account.loginId === currentLoginId || account.qualificationStatus === 'REVOKED' ? (
+            {account.loginId === currentLoginId ||
+            account.qualificationStatus === 'REVOKED' ||
+            account.roles.includes('SUPER_ADMIN') ? (
               <span className="muted">只读</span>
             ) : (
               <AccountActions
                 account={account}
                 run={async (action, reason) => {
-                  if (action === 'suspend') await api.adminSuspendAccount(account.id, reason)
-                  if (action === 'reactivate') await api.adminReactivateAccount(account.id, reason)
-                  if (action === 'revoke') await api.adminRevokeAccount(account.id, reason)
-                  reload()
-                  setNotice({ tone: 'success', text: '账号资格状态已更新。' })
+                  try {
+                    if (action === 'suspend') await api.adminSuspendAccount(account.id, reason)
+                    if (action === 'reactivate') await api.adminReactivateAccount(account.id, reason)
+                    if (action === 'revoke') await api.adminRevokeAccount(account.id, reason)
+                    if (action === 'reissue')
+                      setCredential(await api.adminReissueActivation(account.id, reason))
+                    if (action === 'reset')
+                      setResetCredential(await api.adminIssuePasswordReset(account.id, reason))
+                    reload()
+                    setNotice({
+                      tone: 'success',
+                      text:
+                        action === 'reissue'
+                          ? '已重新签发激活链接。'
+                          : action === 'reset'
+                            ? '已签发一次性密码重置凭据。'
+                            : '账号资格状态已更新。',
+                    })
+                  } catch (error) {
+                    await onConflict(error, reload)
+                    throw error
+                  }
                 }}
               />
             )}
@@ -610,7 +908,7 @@ function AccountActions({
   run,
 }: {
   account: AccountStatus
-  run: (action: 'suspend' | 'reactivate' | 'revoke', reason: string) => Promise<void>
+  run: (action: 'suspend' | 'reactivate' | 'revoke' | 'reissue' | 'reset', reason: string) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -624,6 +922,8 @@ function AccountActions({
           | 'suspend'
           | 'reactivate'
           | 'revoke'
+          | 'reissue'
+          | 'reset'
         const reason = String(data.get('reason') ?? '').trim()
         const confirmLogin = String(data.get('confirmLogin') ?? '').trim()
         if (!reason || (action === 'revoke' && confirmLogin !== account.loginId)) {
@@ -650,10 +950,19 @@ function AccountActions({
         <input name="confirmLogin" placeholder={`永久撤销时输入 ${account.loginId}`} />
       </label>
       <div>
-        {account.qualificationStatus === 'ACTIVE' ? (
-          <button className="button ghost" name="action" value="suspend" disabled={busy}>
-            停用
+        {account.qualificationStatus === 'PENDING' ? (
+          <button className="button ghost" name="action" value="reissue" disabled={busy}>
+            重新签发
           </button>
+        ) : account.qualificationStatus === 'ACTIVE' ? (
+          <>
+            <button className="button ghost" name="action" value="reset" disabled={busy}>
+              签发密码重置
+            </button>
+            <button className="button ghost" name="action" value="suspend" disabled={busy}>
+              停用
+            </button>
+          </>
         ) : (
           <button className="button ghost" name="action" value="reactivate" disabled={busy}>
             恢复

@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.util.Base64;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
@@ -27,6 +29,15 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
     private final String databaseUrl;
     private final String databaseUsername;
     private final String databasePassword;
+    private final boolean privateContactEnabled;
+    private final String privateValueCurrentKeyId;
+    private final String privateValueKeys;
+    private final boolean communityGateEnabled;
+    private final int communityGrantMinutes;
+    private final String communityInviteHmacSecret;
+    private final boolean passwordSelfServiceEnabled;
+    private final String smtpHost;
+    private final String passwordRecoveryMailFrom;
 
     public ProductionConfigurationValidator(
             @Value("${voidhaven.public-base-url:}") String publicBaseUrl,
@@ -39,7 +50,16 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
             @Value("${voidhaven.cookie-secure:false}") boolean cookieSecure,
             @Value("${spring.datasource.url:}") String databaseUrl,
             @Value("${spring.datasource.username:}") String databaseUsername,
-            @Value("${spring.datasource.password:}") String databasePassword) {
+            @Value("${spring.datasource.password:}") String databasePassword,
+            @Value("${voidhaven.private-contact-enabled:false}") boolean privateContactEnabled,
+            @Value("${voidhaven.private-value-current-key-id:}") String privateValueCurrentKeyId,
+            @Value("${voidhaven.private-value-keys:}") String privateValueKeys,
+            @Value("${voidhaven.community-gate-enabled:false}") boolean communityGateEnabled,
+            @Value("${voidhaven.community-grant-minutes:30}") int communityGrantMinutes,
+            @Value("${voidhaven.community-invite-hmac-secret:}") String communityInviteHmacSecret,
+            @Value("${voidhaven.password-self-service-enabled:false}") boolean passwordSelfServiceEnabled,
+            @Value("${spring.mail.host:}") String smtpHost,
+            @Value("${voidhaven.password-recovery-mail-from:}") String passwordRecoveryMailFrom) {
         this.publicBaseUrl = publicBaseUrl;
         this.mediaEndpoint = mediaEndpoint;
         this.mediaAccessKey = mediaAccessKey;
@@ -51,6 +71,15 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
         this.databaseUrl = databaseUrl;
         this.databaseUsername = databaseUsername;
         this.databasePassword = databasePassword;
+        this.privateContactEnabled = privateContactEnabled;
+        this.privateValueCurrentKeyId = privateValueCurrentKeyId;
+        this.privateValueKeys = privateValueKeys;
+        this.communityGateEnabled = communityGateEnabled;
+        this.communityGrantMinutes = communityGrantMinutes;
+        this.communityInviteHmacSecret = communityInviteHmacSecret;
+        this.passwordSelfServiceEnabled = passwordSelfServiceEnabled;
+        this.smtpHost = smtpHost;
+        this.passwordRecoveryMailFrom = passwordRecoveryMailFrom;
     }
 
     @Override
@@ -67,6 +96,9 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
         }
         if (!cookieSecure) throw invalid("Production session cookies must be Secure");
         validateDatabase();
+        validateCommunityGate();
+        validatePrivateValues();
+        validatePasswordRecovery();
     }
 
     private void validateDatabase() {
@@ -81,6 +113,62 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
             throw invalid("VOIDHAVEN_DB_USERNAME must be a least-privilege account");
         }
         requireSecret(databasePassword, "VOIDHAVEN_DB_PASSWORD", 16);
+    }
+
+    private void validatePrivateValues() {
+        if (!privateContactEnabled && !communityGateEnabled && !passwordSelfServiceEnabled) return;
+        requireText(privateValueCurrentKeyId, "VOIDHAVEN_PRIVATE_VALUE_CURRENT_KEY_ID");
+        String normalizedCurrentKeyId = privateValueCurrentKeyId.toLowerCase(Locale.ROOT);
+        if (normalizedCurrentKeyId.contains("local") || normalizedCurrentKeyId.contains("test")) {
+            throw invalid("VOIDHAVEN_PRIVATE_VALUE_CURRENT_KEY_ID must not be a local or test key");
+        }
+        requireSecret(privateValueKeys, "VOIDHAVEN_PRIVATE_VALUE_KEYS", 40);
+        boolean currentKeyPresent = false;
+        Set<String> keyIds = new HashSet<>();
+        for (String entry : privateValueKeys.split(",")) {
+            String[] parts = entry.trim().split(":", 2);
+            if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must use keyId:base64(32bytes) entries");
+            }
+            if (!keyIds.add(parts[0])) {
+                throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must use unique key ids");
+            }
+            byte[] decoded;
+            try {
+                decoded = Base64.getDecoder().decode(parts[1]);
+            } catch (IllegalArgumentException error) {
+                throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must contain valid base64 values");
+            }
+            if (decoded.length != 32) {
+                throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must contain 32-byte AES-256 keys");
+            }
+            if (parts[0].equals(privateValueCurrentKeyId)) currentKeyPresent = true;
+        }
+        if (!currentKeyPresent) throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must include the current key id");
+    }
+
+    private void validatePasswordRecovery() {
+        if (!passwordSelfServiceEnabled) return;
+        requireText(smtpHost, "VOIDHAVEN_SMTP_HOST");
+        String normalizedHost = smtpHost.trim().toLowerCase(Locale.ROOT);
+        if (LOCAL_HOSTS.contains(normalizedHost) || normalizedHost.endsWith(".invalid")) {
+            throw invalid("VOIDHAVEN_SMTP_HOST must target an approved non-local SMTP service");
+        }
+        requireText(passwordRecoveryMailFrom, "VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM");
+        if (!passwordRecoveryMailFrom.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw invalid("VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM must be a valid sender address");
+        }
+    }
+
+    private void validateCommunityGate() {
+        if (!communityGateEnabled) return;
+        if (communityGrantMinutes < 1 || communityGrantMinutes > 120) {
+            throw invalid("VOIDHAVEN_COMMUNITY_GRANT_MINUTES must be between 1 and 120");
+        }
+        requireSecret(communityInviteHmacSecret, "VOIDHAVEN_COMMUNITY_INVITE_HMAC_SECRET", 32);
+        if (communityInviteHmacSecret.toLowerCase(Locale.ROOT).contains("local-development")) {
+            throw invalid("VOIDHAVEN_COMMUNITY_INVITE_HMAC_SECRET must not use the local development placeholder");
+        }
     }
 
     private void requireHttps(String value, String name) {

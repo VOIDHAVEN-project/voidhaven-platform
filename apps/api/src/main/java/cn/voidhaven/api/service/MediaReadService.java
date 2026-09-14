@@ -30,4 +30,10 @@ public class MediaReadService {
         if (key == null) throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "媒体不存在或当前不可见。");
         return storage.get(key);
     }
+
+    public MediaStorage.StoredObject loadCommunity(String assetId) {
+        String key = jdbc.query("select ma.storage_key from media_assets ma where ma.id = ? and ma.lifecycle_state = 'ACTIVE' and (exists(select 1 from community_entries ce where ce.media_asset_id = ma.id and ce.active = true) or exists(select 1 from content_action_entries ca join content_items c on c.published_revision_id = ca.revision_id where ca.media_asset_id = ma.id and ca.enabled = true and ca.access_level = 'COMMUNITY_GATED' and c.visibility = 'PUBLIC' and c.record_state = 'ACTIVE'))", result -> result.next() ? result.getString(1) : null, assetId);
+        if (key == null) throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "媒体不存在或当前不可见。");
+        return storage.get(key);
+    }
 }

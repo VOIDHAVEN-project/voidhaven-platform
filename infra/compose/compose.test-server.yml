@@ -91,7 +91,7 @@ services:
       VOIDHAVEN_TRUST_PROXY_HEADERS: 'true'
       VOIDHAVEN_TRUSTED_PROXY_NETWORKS: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:-172.29.20.0/24}
       VOIDHAVEN_PUBLIC_BASE_URL: ${VOIDHAVEN_PUBLIC_BASE_URL:?Set the public HTTP base URL}
-      VOIDHAVEN_DB_URL: jdbc:mysql://mysql:3306/voidhaven?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      VOIDHAVEN_DB_URL: jdbc:mysql://mysql:3306/voidhaven?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC
       VOIDHAVEN_DB_USERNAME: ${VOIDHAVEN_DB_USERNAME:?Set the application database user}
       VOIDHAVEN_DB_PASSWORD: ${VOIDHAVEN_DB_PASSWORD:?Set the application database password}
       VOIDHAVEN_RATE_LIMIT_SECRET: ${VOIDHAVEN_RATE_LIMIT_SECRET:?Set the rate-limit secret}

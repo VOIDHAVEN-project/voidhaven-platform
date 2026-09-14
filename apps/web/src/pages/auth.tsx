@@ -115,10 +115,13 @@ export function SignInPage() {
             进入工作台 <ArrowRight size={15} />
           </BusyLabel>
         </button>
+        <Link className="text-link" to="/auth/forgot-password">
+          忘记密码？使用恢复邮箱
+        </Link>
         <Notice value={notice} />
         <p className="form-foot">
           <KeyRound size={14} />
-          首次激活请使用管理员提供的一次性链接。
+          首次激活请使用管理员提供的一次性链接；未绑定恢复邮箱时仍可联系管理员人工重置。
         </p>
       </form>
     </AuthShell>
@@ -210,6 +213,157 @@ export function ActivationPage() {
             前往登录 <ArrowRight size={15} />
           </Link>
         )}
+      </form>
+    </AuthShell>
+  )
+}
+
+export function PasswordResetPage() {
+  usePageTitle('重置密码')
+  const [show, setShow] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const data = new FormData(form)
+    if (data.get('newPassword') !== data.get('confirm')) {
+      setNotice({ tone: 'error', text: '两次输入的密码不一致。' })
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await api.consumePasswordReset(
+        String(data.get('token')).trim(),
+        String(data.get('newPassword')),
+      )
+      form.reset()
+      setDone(true)
+      setNotice({ tone: 'success', text: `账号 ${result.loginId} 的密码已重置，所有旧会话均已注销。` })
+    } catch (error) {
+      setNotice({ tone: 'error', text: message(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <AuthShell activation>
+      <form className="auth-card" onSubmit={submit}>
+        <p className="eyebrow">密码重置</p>
+        <h2>{done ? '密码已更新' : '使用一次性凭据'}</h2>
+        {!done ? (
+          <>
+            <p className="muted">
+              粘贴恢复邮件或管理员人工交付的 30 分钟一次性凭据。凭据不会写入 URL 或浏览器存储。
+            </p>
+            <label>
+              重置凭据
+              <input
+                name="token"
+                required
+                minLength={32}
+                maxLength={256}
+                autoComplete="off"
+                disabled={busy}
+              />
+            </label>
+            <label>
+              新密码
+              <span className="password-field">
+                <input
+                  name="newPassword"
+                  type={show ? 'text' : 'password'}
+                  required
+                  minLength={12}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  disabled={busy}
+                />
+                <button type="button" onClick={() => setShow(!show)}>
+                  {show ? '隐藏' : '显示'}
+                </button>
+              </span>
+            </label>
+            <label>
+              确认密码
+              <input
+                name="confirm"
+                type={show ? 'text' : 'password'}
+                required
+                minLength={12}
+                maxLength={128}
+                autoComplete="new-password"
+                disabled={busy}
+              />
+            </label>
+            <button className="button primary" disabled={busy}>
+              <BusyLabel busy={busy}>重置密码</BusyLabel>
+            </button>
+          </>
+        ) : (
+          <Link className="button primary" to="/auth/sign-in">
+            前往登录 <ArrowRight size={15} />
+          </Link>
+        )}
+        <Notice value={notice} />
+      </form>
+    </AuthShell>
+  )
+}
+
+export function ForgotPasswordPage() {
+  usePageTitle('找回密码')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy || done) return
+    const loginId = String(new FormData(event.currentTarget).get('loginId') ?? '').trim()
+    setBusy(true)
+    setNotice(null)
+    try {
+      const result = await api.requestPasswordReset(loginId)
+      setDone(true)
+      setNotice({ tone: 'success', text: result.message })
+    } catch (error) {
+      setNotice({ tone: 'error', text: message(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <AuthShell activation>
+      <form className="auth-card" onSubmit={submit}>
+        <p className="eyebrow">SELF-SERVICE RECOVERY</p>
+        <h2>找回密码</h2>
+        <p className="muted">
+          输入受控账号。如果已绑定并验证恢复邮箱，系统会发送一次性重置凭据；页面不会透露账号是否存在。
+        </p>
+        <label>
+          账号
+          <input
+            name="loginId"
+            autoComplete="username"
+            required
+            minLength={4}
+            maxLength={100}
+            pattern="[A-Za-z0-9._-]{4,100}"
+            disabled={busy || done}
+          />
+        </label>
+        {!done ? (
+          <button className="button primary" disabled={busy}>
+            <BusyLabel busy={busy}>发送重置凭据</BusyLabel>
+          </button>
+        ) : (
+          <Link className="button primary" to="/auth/reset-password">
+            输入重置凭据 <ArrowRight size={15} />
+          </Link>
+        )}
+        <Notice value={notice} />
+        <p className="form-foot">未绑定邮箱或无法收信时，请联系管理员使用人工交付通道。</p>
       </form>
     </AuthShell>
   )

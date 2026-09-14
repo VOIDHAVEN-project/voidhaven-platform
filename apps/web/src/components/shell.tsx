@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   BookOpen,
   Compass,
+  ClipboardCheck,
   Feather,
   Home,
   Info,
@@ -21,8 +22,9 @@ export const publicNav = [
   { path: '/competitions', label: '竞赛', icon: Compass, kind: 'COMPETITION' as const },
   { path: '/recruitments', label: '团队招募', icon: Users, kind: 'RECRUITMENT' as const },
   { path: '/resources', label: '学习资源', icon: BookOpen, kind: 'RESOURCE' as const },
-  { path: '/feedback', label: '投稿 / 反馈', icon: MessageSquare },
-  { path: '/join', label: '加入我们', icon: Feather },
+  { path: '/submit', label: '投稿 / 反馈', icon: MessageSquare },
+  { path: '/status', label: '进度查询', icon: ClipboardCheck },
+  { path: '/join', label: '加入社群', icon: Feather },
   { path: '/about', label: '关于', icon: Info },
 ]
 
@@ -358,8 +360,10 @@ export function PublicShell() {
             <FooterColumn
               title="参与"
               links={[
-                { label: '投稿 / 反馈', path: '/feedback' },
-                { label: '加入我们', path: '/join' },
+                { label: '投稿 / 反馈', path: '/submit' },
+                { label: '进度查询', path: '/status' },
+                { label: '加入社群', path: '/join' },
+                { label: '合作方申请', path: '/partners/apply' },
               ]}
             />
             <FooterColumn

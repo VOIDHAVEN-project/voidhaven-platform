@@ -107,6 +107,15 @@ export const statusText: Record<string, string> = {
   FEEDBACK: '产品反馈',
   COPYRIGHT: '版权请求',
   PENDING: '待处理',
+  RECEIVED: '已接收',
+  IN_PROGRESS: '处理中',
+  WAITING_FOR_REQUESTER: '等待补充',
+  WAITING_FOR_APPLICANT: '等待申请人',
+  IN_REVIEW: '申请审核中',
+  RESOLVED: '已解决',
+  ACTIVATION_PENDING: '待交付激活',
+  ACTIVATED: '已激活',
+  CLOSED: '已关闭',
 }
 export function Badge({ value }: { value: string }) {
   return <span className={`badge badge-${value.toLowerCase()}`}>{statusText[value] ?? value}</span>

@@ -1,10 +1,35 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowUpRight, Feather, ShieldCheck } from 'lucide-react'
-import { ApiFailure, api, type Submission } from '../lib/api'
+import { ArrowUpRight, Copy, Feather, ShieldCheck, Users } from 'lucide-react'
+import {
+  ApiFailure,
+  api,
+  type CommunityEntry,
+  type CreatedCase,
+  type ProductCapabilities,
+  type Submission,
+} from '../lib/api'
+import { ControlledCommunityImage } from '../components/controlled-community-image'
 import { BusyLabel, Notice, message, type NoticeValue } from '../components/ui'
 import { usePageTitle } from '../lib/hooks'
 import { createIdempotencyKey } from '../lib/secure-id'
+
+function useProductCapabilities() {
+  const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    api
+      .capabilities(controller.signal)
+      .then(setCapabilities)
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true)
+      })
+    return () => controller.abort()
+  }, [])
+  return { capabilities, failed }
+}
+
 export function FeedbackPage() {
   usePageTitle('投稿 / 反馈')
   const [params] = useSearchParams()
@@ -12,6 +37,9 @@ export function FeedbackPage() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [receipt, setReceipt] = useState<CreatedCase | null>(null)
+  const { capabilities, failed: capabilitiesFailed } = useProductCapabilities()
+  const privateContactEnabled = capabilities?.privateContactEnabled === true
   const idempotencyKey = useRef<string | null>(null)
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -20,6 +48,10 @@ export function FeedbackPage() {
     const data = new FormData(form)
     const title = String(data.get('title')).trim()
     const text = String(data.get('message')).trim()
+    if (type === 'COPYRIGHT' && !privateContactEnabled) {
+      setNotice({ tone: 'error', text: '版权请求暂不可提交：私密联系方式能力尚未安全启用。' })
+      return
+    }
     if (!title || !text) {
       setNotice({ tone: 'error', text: '请填写标题和内容，不能只输入空格。' })
       return
@@ -30,21 +62,23 @@ export function FeedbackPage() {
     try {
       const key = idempotencyKey.current ?? createIdempotencyKey()
       idempotencyKey.current = key
-      await api.submit(
+      const created = await api.submit(
         {
           submissionType: type,
           title,
           message: text,
           linkUrl: String(data.get('linkUrl')).trim() || undefined,
           imageDescription: String(data.get('imageDescription')).trim() || undefined,
+          contact: String(data.get('contact') ?? '').trim() || undefined,
         },
         key,
       )
       form.reset()
+      setReceipt(created)
       idempotencyKey.current = null
       setNotice({
         tone: 'success',
-        text: '已收到。你的内容会进入审核流程，不会直接公开。感谢你让这里更可靠。',
+        text: '已收到。请立即保存下方回执号和查询码；查询码关闭页面后无法找回。',
       })
     } catch (err) {
       if (err instanceof ApiFailure) setFieldErrors(err.fieldErrors)
@@ -93,9 +127,13 @@ export function FeedbackPage() {
                     name="submissionType"
                     value={value}
                     checked={value === type}
+                    disabled={value === 'COPYRIGHT' && !privateContactEnabled}
                     onChange={() => setType(value)}
                   />
-                  <span>{label}</span>
+                  <span>
+                    {label}
+                    {value === 'COPYRIGHT' && !privateContactEnabled ? '（暂不可用）' : ''}
+                  </span>
                 </label>
               ))}
             </fieldset>
@@ -139,8 +177,22 @@ export function FeedbackPage() {
               图片说明 <small>可选，不上传图片</small>
               <input name="imageDescription" maxLength={1000} placeholder="用文字说明图片的内容与来源" />
             </label>
+            {privateContactEnabled ? (
+              <label>
+                联系方式 <small>{type === 'COPYRIGHT' ? '版权请求必填' : '可选'}</small>
+                <input
+                  name="contact"
+                  required={type === 'COPYRIGHT'}
+                  maxLength={500}
+                  placeholder="邮箱、微信或其他可联系到你的方式"
+                />
+                {fieldErrors.contact ? <small className="field-error">{fieldErrors.contact}</small> : null}
+              </label>
+            ) : null}
             <p className="field-help">
-              请不要填写微信、手机号、私人邮箱等不必要的个人信息。公开投稿不接受正文图片上传。
+              {privateContactEnabled
+                ? '联系方式仅用于处理当前事项，不会公开；普通反馈可不填写。公开投稿不接受正文图片上传。'
+                : '当前仅接受不含联系方式的内容线索和产品反馈；版权请求将在私密信息能力启用后开放。'}
             </p>
             <button className="button primary" disabled={busy}>
               <BusyLabel busy={busy}>
@@ -148,7 +200,11 @@ export function FeedbackPage() {
               </BusyLabel>
             </button>
           </fieldset>
+          {receipt ? <ReceiptCard receipt={receipt} /> : null}
           <Notice value={notice} />
+          {capabilitiesFailed ? (
+            <Notice value={{ tone: 'error', text: '功能状态暂时无法确认，请稍后刷新页面。' }} />
+          ) : null}
         </form>
         <aside className="form-aside">
           <Feather size={30} strokeWidth={1.2} />
@@ -162,7 +218,7 @@ export function FeedbackPage() {
           <p>
             希望长期维护内容？
             <br />
-            <Link to="/join">
+            <Link to="/partners/apply">
               申请成为合作方 <ArrowUpRight size={13} />
             </Link>
           </p>
@@ -171,11 +227,14 @@ export function FeedbackPage() {
     </>
   )
 }
-export function JoinPage() {
-  usePageTitle('加入我们')
+export function PartnerApplyPage() {
+  usePageTitle('合作方申请')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [receipt, setReceipt] = useState<CreatedCase | null>(null)
+  const { capabilities, failed: capabilitiesFailed } = useProductCapabilities()
+  const available = capabilities?.privateContactEnabled === true
   const idempotencyKey = useRef<string | null>(null)
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -184,8 +243,13 @@ export function JoinPage() {
     const data = new FormData(form)
     const displayName = String(data.get('displayName')).trim()
     const introduction = String(data.get('introduction')).trim()
-    if (!displayName || !introduction) {
-      setNotice({ tone: 'error', text: '请填写展示名称和内容介绍，不能只输入空格。' })
+    const contact = String(data.get('contact')).trim()
+    if (!available) {
+      setNotice({ tone: 'error', text: '合作申请暂未开放：私密联系方式能力尚未安全启用。' })
+      return
+    }
+    if (!displayName || !introduction || !contact) {
+      setNotice({ tone: 'error', text: '请填写展示名称、内容介绍和联系方式，不能只输入空格。' })
       return
     }
     setBusy(true)
@@ -194,19 +258,21 @@ export function JoinPage() {
     try {
       const key = idempotencyKey.current ?? createIdempotencyKey()
       idempotencyKey.current = key
-      await api.partnerApply(
+      const created = await api.partnerApply(
         {
           displayName,
           introduction,
           portfolioUrl: String(data.get('portfolioUrl')).trim() || undefined,
+          contact,
         },
         key,
       )
       form.reset()
+      setReceipt(created)
       idempotencyKey.current = null
       setNotice({
         tone: 'success',
-        text: '申请已进入审核队列。通过后，管理员会以受控方式交付账号及首次激活链接。',
+        text: '申请已进入审核队列。请立即保存回执号和查询码；通过后管理员会人工交付激活凭据。',
       })
     } catch (err) {
       if (err instanceof ApiFailure) setFieldErrors(err.fieldErrors)
@@ -244,7 +310,7 @@ export function JoinPage() {
           }}
         >
           <h2>申请成为合作方</h2>
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy || !available}>
             <legend className="sr-only">合作方申请信息</legend>
             <label>
               展示名称
@@ -273,14 +339,28 @@ export function JoinPage() {
                 <small className="field-error">{fieldErrors.portfolioUrl}</small>
               ) : null}
             </label>
-            <p className="field-help">请勿填写不必要的私人联系方式。账号与首次激活由管理员受控交付。</p>
+            <label>
+              联系方式 <small>必填，不会公开</small>
+              <input name="contact" required maxLength={500} placeholder="邮箱、微信或其他可联系到你的方式" />
+              {fieldErrors.contact ? <small className="field-error">{fieldErrors.contact}</small> : null}
+            </label>
+            <p className="field-help">
+              联系方式只用于申请审核和人工交付账号；账号与首次激活由管理员受控交付。
+            </p>
             <button className="button primary" disabled={busy}>
               <BusyLabel busy={busy}>
                 提交合作方申请 <ArrowUpRight size={16} />
               </BusyLabel>
             </button>
           </fieldset>
+          {receipt ? <ReceiptCard receipt={receipt} /> : null}
           <Notice value={notice} />
+          {!available && capabilities ? (
+            <Notice value={{ tone: 'error', text: '合作申请暂未开放，请联系运营人员完成安全配置。' }} />
+          ) : null}
+          {capabilitiesFailed ? (
+            <Notice value={{ tone: 'error', text: '功能状态暂时无法确认，请稍后刷新页面。' }} />
+          ) : null}
         </form>
         <aside className="form-aside">
           <ShieldCheck size={30} strokeWidth={1.2} />
@@ -291,9 +371,221 @@ export function JoinPage() {
           </h2>
           <p>合作方负责受控投稿和维护，后续沟通与组队仍在社群中完成。</p>
           <p>站内不保存社群成员、聊天、报名或筛选记录。真实社群入口由受控流程提供。</p>
-          <button className="button ghost" disabled>
-            社群入口尚未配置
+          <Link className="button ghost" to="/join">
+            使用邀请码加入社群
+          </Link>
+        </aside>
+      </div>
+    </>
+  )
+}
+
+function ReceiptCard({ receipt }: { receipt: CreatedCase }) {
+  const text = `回执号：${receipt.id}\n查询码：${receipt.queryCode}`
+  return (
+    <section className="token-card" aria-label="事项查询凭据">
+      <ShieldCheck size={21} />
+      <div>
+        <strong>请立即保存查询凭据</strong>
+        <code>{receipt.id}</code>
+        <code>{receipt.queryCode}</code>
+        <small>服务端不会保存查询码明文。关闭或刷新页面后无法找回，可在“进度查询”中使用。</small>
+        <button
+          className="button ghost"
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(text)}
+        >
+          <Copy size={14} /> 复制回执和查询码
+        </button>
+      </div>
+    </section>
+  )
+}
+
+export function JoinPage() {
+  usePageTitle('加入社群')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  const [entries, setEntries] = useState<CommunityEntry[]>([])
+  const [grantToken, setGrantToken] = useState('')
+  const { capabilities, failed: capabilitiesFailed } = useProductCapabilities()
+  const available = capabilities?.communityGateEnabled === true
+  async function verify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const inviteCode = String(new FormData(form).get('inviteCode') ?? '').trim()
+    if (!inviteCode) return
+    if (!available) {
+      setNotice({ tone: 'error', text: '社群入口暂未开放，请等待运营人员完成配置。' })
+      return
+    }
+    setBusy(true)
+    setNotice(null)
+    try {
+      const grant = await api.verifyCommunityInvite(inviteCode)
+      setGrantToken(grant.grant)
+      setEntries(await api.communityEntries(grant.grant))
+      form.reset()
+      setNotice({
+        tone: 'success',
+        text: `验证成功，本次页面授权有效至 ${new Date(grant.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}。`,
+      })
+    } catch (error) {
+      setEntries([])
+      setGrantToken('')
+      setNotice({ tone: 'error', text: message(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <header className="page-heading">
+        <p className="eyebrow">CONTINUE IN THE COMMUNITY</p>
+        <h1>
+          验证一次，
+          <br />
+          <span>找到可靠的下一步。</span>
+        </h1>
+        <p>使用工作人员提供的批次邀请码查看当前有效的校内社群入口。</p>
+      </header>
+      <div className="public-form-layout">
+        <form className="paper-form" onSubmit={verify}>
+          <h2>验证邀请码</h2>
+          <fieldset disabled={busy || !available}>
+            <label>
+              邀请码
+              <input name="inviteCode" required minLength={8} maxLength={256} autoComplete="off" />
+            </label>
+            <p className="field-help">邀请码不会写入浏览器存储；页面刷新后需要重新验证。</p>
+            <button className="button primary" disabled={busy}>
+              <BusyLabel busy={busy}>
+                查看社群入口 <ArrowUpRight size={16} />
+              </BusyLabel>
+            </button>
+          </fieldset>
+          <Notice value={notice} />
+          {!available && capabilities ? (
+            <Notice value={{ tone: 'error', text: '邀请码入口暂未开放；这不是邀请码错误。' }} />
+          ) : null}
+          {capabilitiesFailed ? (
+            <Notice value={{ tone: 'error', text: '功能状态暂时无法确认，请稍后刷新页面。' }} />
+          ) : null}
+        </form>
+        <aside className="form-aside">
+          <Users size={30} strokeWidth={1.2} />
+          <h2>
+            多个入口，
+            <br />
+            一个主要去处。
+          </h2>
+          {entries.length ? (
+            entries.map((entry) => (
+              <article key={entry.id} className="community-entry">
+                <strong>
+                  {entry.primary ? '主入口 · ' : ''}
+                  {entry.name}
+                </strong>
+                {entry.description ? <p>{entry.description}</p> : null}
+                {entry.value?.startsWith('https://') ? (
+                  <a className="button ghost" href={entry.value} target="_blank" rel="noreferrer">
+                    打开入口 <ArrowUpRight size={14} />
+                  </a>
+                ) : entry.value ? (
+                  <code>{entry.value}</code>
+                ) : null}
+                {entry.mediaUrl && grantToken ? (
+                  <ControlledCommunityImage
+                    path={entry.mediaUrl}
+                    grant={grantToken}
+                    alt={`${entry.name}二维码`}
+                  />
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <p>验证成功后，当前有效入口会显示在这里。</p>
+          )}
+        </aside>
+      </div>
+    </>
+  )
+}
+
+export function CaseStatusPage() {
+  usePageTitle('进度查询')
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.submissionStatus>> | null>(null)
+  async function query(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    try {
+      const id = String(data.get('id') ?? '').trim()
+      const queryCode = String(data.get('queryCode') ?? '').trim()
+      const status =
+        data.get('caseType') === 'PARTNER_APPLICATION'
+          ? await api.partnerApplicationStatus(id, queryCode)
+          : await api.submissionStatus(id, queryCode)
+      setResult(status)
+      setNotice(null)
+    } catch (error) {
+      setResult(null)
+      setNotice({ tone: 'error', text: message(error) })
+    }
+  }
+  return (
+    <>
+      <header className="page-heading">
+        <p className="eyebrow">TRACK THE NEXT STEP</p>
+        <h1>
+          知道事项，
+          <br />
+          <span>走到了哪里。</span>
+        </h1>
+        <p>查询码只用于本次事项，不需要注册账号。</p>
+      </header>
+      <div className="public-form-layout">
+        <form className="paper-form" onSubmit={query}>
+          <label>
+            事项类型
+            <select name="caseType">
+              <option value="SUBMISSION">投稿 / 反馈 / 版权请求</option>
+              <option value="PARTNER_APPLICATION">合作方申请</option>
+            </select>
+          </label>
+          <label>
+            回执号
+            <input name="id" required minLength={26} maxLength={26} autoComplete="off" />
+          </label>
+          <label>
+            查询码
+            <input name="queryCode" required minLength={16} maxLength={256} autoComplete="off" />
+          </label>
+          <button className="button primary">
+            查询进度 <ArrowUpRight size={16} />
           </button>
+          <Notice value={notice} />
+        </form>
+        <aside className="form-aside">
+          <ShieldCheck size={30} strokeWidth={1.2} />
+          {result ? (
+            <>
+              <h2>{result.status}</h2>
+              <p>{result.publicResult || '事项正在处理中，暂时没有新的公开答复。'}</p>
+              {result.dueAt ? (
+                <small>预计处理时间：{new Date(result.dueAt).toLocaleString('zh-CN')}</small>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <h2>
+                回执与查询码，
+                <br />
+                缺一不可。
+              </h2>
+              <p>为了避免泄露，失败结果不会提示某个回执是否真实存在。</p>
+            </>
+          )}
         </aside>
       </div>
     </>

@@ -6,7 +6,7 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   datasource:
-    url: ${VOIDHAVEN_DB_URL:jdbc:mysql://localhost:3306/voidhaven?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
+    url: ${VOIDHAVEN_DB_URL:jdbc:mysql://localhost:3306/voidhaven?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC}
     username: ${VOIDHAVEN_DB_USERNAME:voidhaven_app}
     password: ${VOIDHAVEN_DB_PASSWORD:change-me-local-only}
   jpa:
@@ -14,19 +14,28 @@ spring:
     hibernate:
       ddl-auto: validate
     properties:
-      hibernate.jdbc.time_zone: Asia/Shanghai
+      hibernate.jdbc.time_zone: UTC
   flyway:
     enabled: true
   session:
-    # Persist sessions in MySQL so a single-instance restart/redeploy does not
-    # invalidate every logged-in admin/partner. Still not a multi-replica solution
-    # on its own (see docs/runbooks/release-and-rollback.md for the remaining blockers).
+    # Persist sessions in MySQL so a restart/redeploy or additional API replica
+    # can share login state. Horizontal scale still requires a non-mixed cutover
+    # (see docs/runbooks/release-and-rollback.md).
     store-type: jdbc
     timeout: 8h
     jdbc:
       initialize-schema: never
   jackson:
     default-property-inclusion: non_null
+  mail:
+    host: ${VOIDHAVEN_SMTP_HOST:localhost}
+    port: ${VOIDHAVEN_SMTP_PORT:1025}
+    username: ${VOIDHAVEN_SMTP_USERNAME:}
+    password: ${VOIDHAVEN_SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${VOIDHAVEN_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${VOIDHAVEN_SMTP_STARTTLS:false}
+    test-connection: false
 server:
   port: ${SERVER_PORT:8081}
   servlet:
@@ -66,13 +75,24 @@ voidhaven:
   bootstrap-partner-login: ${VOIDHAVEN_BOOTSTRAP_PARTNER_LOGIN:}
   bootstrap-partner-password: ${VOIDHAVEN_BOOTSTRAP_PARTNER_PASSWORD:}
   community-gate-enabled: ${VOIDHAVEN_COMMUNITY_GATE_ENABLED:false}
+  community-grant-minutes: ${VOIDHAVEN_COMMUNITY_GRANT_MINUTES:30}
+  community-invite-hmac-secret: ${VOIDHAVEN_COMMUNITY_INVITE_HMAC_SECRET:local-development-community-secret}
+  private-contact-enabled: ${VOIDHAVEN_PRIVATE_CONTACT_ENABLED:false}
+  private-value-current-key-id: ${VOIDHAVEN_PRIVATE_VALUE_CURRENT_KEY_ID:}
+  private-value-keys: ${VOIDHAVEN_PRIVATE_VALUE_KEYS:}
   public-write-rate-limit-secret: ${VOIDHAVEN_RATE_LIMIT_SECRET:local-development-rate-limit-secret}
   public-write-rate-limit-max-requests: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT:8}
   public-write-rate-limit-window-seconds: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT_WINDOW_SECONDS:3600}
+  public-status-query-rate-limit-max-requests: ${VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT:60}
+  public-status-query-rate-limit-window-seconds: ${VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT_WINDOW_SECONDS:3600}
   auth-login-failure-limit: ${VOIDHAVEN_AUTH_LOGIN_FAILURE_LIMIT:5}
   auth-login-network-limit: ${VOIDHAVEN_AUTH_LOGIN_NETWORK_LIMIT:20}
   auth-activation-network-limit: ${VOIDHAVEN_AUTH_ACTIVATION_NETWORK_LIMIT:10}
+  auth-password-reset-login-limit: ${VOIDHAVEN_AUTH_PASSWORD_RESET_LOGIN_LIMIT:3}
+  auth-password-reset-network-limit: ${VOIDHAVEN_AUTH_PASSWORD_RESET_NETWORK_LIMIT:10}
   auth-rate-limit-window-minutes: ${VOIDHAVEN_AUTH_RATE_LIMIT_WINDOW_MINUTES:15}
+  password-self-service-enabled: ${VOIDHAVEN_PASSWORD_SELF_SERVICE_ENABLED:false}
+  password-recovery-mail-from: ${VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM:}
   idempotency-in-progress-seconds: ${VOIDHAVEN_IDEMPOTENCY_IN_PROGRESS_SECONDS:86400}
   trust-proxy-headers: ${VOIDHAVEN_TRUST_PROXY_HEADERS:false}
   trusted-proxy-networks: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:127.0.0.1/32,::1/128}

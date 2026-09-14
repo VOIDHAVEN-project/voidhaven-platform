@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+  type ReactNode,
+} from 'react'
 import { Link, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowUpRight,
@@ -19,7 +27,16 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
-import { api, type Identity, type ManagedContent, type ProvisionedPartner } from '../lib/api'
+import {
+  api,
+  type CommunityEntrySummary,
+  type ContentActionInput,
+  type Identity,
+  type ManagedAction,
+  type ManagedContent,
+  type ProvisionedPartner,
+} from '../lib/api'
+import { parseHomepagePlacementText } from '../lib/homepage-placements'
 import { useCollapsed, usePageTitle, useResource } from '../lib/hooks'
 import { ThemeButton } from '../components/theme'
 import { MobileDrawer } from '../components/shell'
@@ -114,12 +131,16 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
         { id: 'submissions', label: '公开输入', icon: Inbox },
         { id: 'applications', label: '合作方申请', icon: Users },
         { id: 'partners', label: '合作方与归属', icon: Settings2 },
+        { id: 'homepage', label: '首页编排', icon: LayoutDashboard },
+        ...(isSuperAdmin ? [{ id: 'community', label: '社群入口', icon: Users }] : []),
         ...(isSuperAdmin ? [{ id: 'accounts', label: '账号治理', icon: UserCog }] : []),
         { id: 'audit', label: '审计记录', icon: ScrollText },
+        { id: 'security', label: '账号安全', icon: KeyRound },
       ]
     : [
         { id: 'overview', label: '概览', icon: LayoutDashboard },
         { id: 'content', label: '我的内容', icon: FileText },
+        { id: 'security', label: '账号安全', icon: KeyRound },
       ]
   const section = editorRoute
     ? 'content'
@@ -253,7 +274,12 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
           </div>
         </header>
         <Notice value={notice} />
-        {editorRoute ? (
+        {section === 'security' ? (
+          <div className="security-panels">
+            <PasswordChangePanel />
+            <RecoveryEmailPanel />
+          </div>
+        ) : editorRoute ? (
           <WorkspaceEditorPage
             identity={identity}
             contentId={editEditor?.params.contentId}
@@ -268,6 +294,10 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
             <ApplicationsPanel />
           ) : section === 'partners' ? (
             <PartnerOperations />
+          ) : section === 'homepage' ? (
+            <HomepageManagementPanel />
+          ) : section === 'community' && isSuperAdmin ? (
+            <CommunityManagementPanel />
           ) : section === 'accounts' && isSuperAdmin ? (
             <AccountsPanel currentLoginId={identity.loginId} />
           ) : section === 'audit' ? (
@@ -337,6 +367,273 @@ function WorkspaceEditorPage({
   )
 }
 
+function RecruitmentActionEditor({
+  contentId,
+  initialVersion,
+  isAdmin,
+  onVersionChange,
+}: {
+  contentId: string
+  initialVersion: number
+  isAdmin: boolean
+  onVersionChange?: (version: number) => void
+}) {
+  const loader = useCallback(
+    () => (isAdmin ? api.adminActions(contentId) : api.partnerActions(contentId)),
+    [contentId, isAdmin],
+  )
+  const state = useResource(loader)
+  const [rows, setRows] = useState<ContentActionInput[]>([])
+  const [qrFiles, setQrFiles] = useState<Record<number, { file: File; preview: string }>>({})
+  const qrFilesRef = useRef(qrFiles)
+  qrFilesRef.current = qrFiles
+  const [version, setVersion] = useState(initialVersion)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  useEffect(() => {
+    if (state.data) setRows(state.data.map(fromManagedAction))
+  }, [state.data])
+  useEffect(() => {
+    setVersion(initialVersion)
+  }, [initialVersion])
+  useEffect(
+    () => () => {
+      Object.values(qrFilesRef.current).forEach((item) => URL.revokeObjectURL(item.preview))
+    },
+    [],
+  )
+  if (state.loading)
+    return (
+      <section className="panel">
+        <LoadingRows />
+      </section>
+    )
+  if (state.error)
+    return (
+      <section className="panel">
+        <ErrorState error={state.error} retry={state.reload} />
+      </section>
+    )
+  const update = (index: number, field: keyof ContentActionInput, value: string | boolean | number) =>
+    setRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row)),
+    )
+  const setQrFile = (index: number, file: File | null) => {
+    setQrFiles((current) => {
+      const next = { ...current }
+      if (next[index]) URL.revokeObjectURL(next[index].preview)
+      if (file) next[index] = { file, preview: URL.createObjectURL(file) }
+      else delete next[index]
+      return next
+    })
+  }
+  return (
+    <section className="panel action-editor-panel">
+      <PanelHeading eyebrow="RECRUITMENT ACTIONS" title="招募行动入口" />
+      <p className="panel-help">
+        正式发布前至少配置一项。报名链接和公开邮箱可直接显示；微信、QQ、群号和二维码必须经邀请码验证。
+      </p>
+      {rows.map((row, index) => (
+        <fieldset className="action-editor-row" key={index} disabled={busy}>
+          <label>
+            类型
+            <select
+              value={row.actionType}
+              onChange={(event) => {
+                const nextType = event.target.value
+                setRows((current) =>
+                  current.map((item, rowIndex) =>
+                    rowIndex === index
+                      ? {
+                          ...item,
+                          actionType: nextType as ContentActionInput['actionType'],
+                          accessLevel: gatedRecruitmentAction(nextType)
+                            ? 'COMMUNITY_GATED'
+                            : item.accessLevel,
+                        }
+                      : item,
+                  ),
+                )
+                if (nextType !== 'QR_CODE') setQrFile(index, null)
+              }}
+            >
+              <option value="APPLICATION_URL">报名链接</option>
+              <option value="PUBLIC_EMAIL">公开邮箱</option>
+              <option value="WECHAT">微信</option>
+              <option value="QQ">QQ</option>
+              <option value="WECHAT_GROUP">微信群</option>
+              <option value="QQ_GROUP">QQ群</option>
+              <option value="QR_CODE">二维码</option>
+            </select>
+          </label>
+          <label>
+            展示名称
+            <input
+              value={row.label}
+              maxLength={120}
+              onChange={(event) => update(index, 'label', event.target.value)}
+            />
+          </label>
+          <label>
+            访问级别
+            <select
+              value={row.accessLevel}
+              onChange={(event) => update(index, 'accessLevel', event.target.value)}
+              disabled={gatedRecruitmentAction(row.actionType)}
+            >
+              {gatedRecruitmentAction(row.actionType) ? null : <option value="PUBLIC">公开</option>}
+              <option value="COMMUNITY_GATED">邀请码验证后</option>
+            </select>
+          </label>
+          {row.actionType === 'QR_CODE' ? (
+            <label>
+              二维码图片
+              <small>
+                {row.mediaAssetId
+                  ? '已有图片，重新选择会在保存时替换。'
+                  : '从本机选择一张不超过 5 MB 的 png / jpeg / webp。'}
+              </small>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setQrFile(index, event.target.files?.[0] ?? null)}
+              />
+              {qrFiles[index] ? (
+                <img className="community-qr" src={qrFiles[index].preview} alt="待保存的招募二维码预览" />
+              ) : null}
+            </label>
+          ) : (
+            <label>
+              入口内容
+              <input
+                value={row.value ?? ''}
+                maxLength={2048}
+                onChange={(event) => update(index, 'value', event.target.value)}
+              />
+            </label>
+          )}
+          <button
+            className="button ghost"
+            type="button"
+            onClick={() => {
+              setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))
+              setQrFiles((current) => {
+                const remapped: Record<number, { file: File; preview: string }> = {}
+                Object.entries(current).forEach(([key, value]) => {
+                  const from = Number(key)
+                  if (from === index) URL.revokeObjectURL(value.preview)
+                  else remapped[from < index ? from : from - 1] = value
+                })
+                return remapped
+              })
+            }}
+          >
+            移除
+          </button>
+        </fieldset>
+      ))}
+      <div className="button-row">
+        <button
+          className="button ghost"
+          type="button"
+          onClick={() =>
+            setRows((current) => [
+              ...current,
+              {
+                actionType: 'APPLICATION_URL',
+                accessLevel: 'PUBLIC',
+                label: '立即报名',
+                value: '',
+                enabled: true,
+                sortOrder: current.length,
+              },
+            ])
+          }
+        >
+          添加入口
+        </button>
+        <button
+          className="button primary"
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true)
+            setNotice(null)
+            try {
+              const prepared = rows.map((row) =>
+                gatedRecruitmentAction(row.actionType)
+                  ? { ...row, accessLevel: 'COMMUNITY_GATED' as const }
+                  : { ...row },
+              )
+              for (let index = 0; index < prepared.length; index += 1) {
+                const row = prepared[index]
+                if (row.actionType !== 'QR_CODE') continue
+                const pending = qrFiles[index]
+                if (pending) {
+                  if (pending.file.size > 5 * 1024 * 1024) {
+                    setNotice({ tone: 'error', text: '二维码图片不能超过 5 MB。' })
+                    return
+                  }
+                  const uploaded = await api.uploadContentMedia(
+                    contentId,
+                    pending.file,
+                    row.label.trim() || '招募二维码',
+                  )
+                  prepared[index] = { ...row, mediaAssetId: uploaded.id, value: undefined }
+                }
+                if (!prepared[index].mediaAssetId) {
+                  setNotice({ tone: 'error', text: '二维码行动入口请先选择一张图片。' })
+                  return
+                }
+              }
+              const result = isAdmin
+                ? await api.adminReplaceActions(contentId, version, prepared)
+                : await api.partnerReplaceActions(contentId, version, prepared)
+              setRows(prepared)
+              setQrFiles((current) => {
+                Object.values(current).forEach((item) => URL.revokeObjectURL(item.preview))
+                return {}
+              })
+              setVersion(result.version)
+              onVersionChange?.(result.version)
+              setNotice({ tone: 'success', text: '招募行动入口已保存，内容版本已同步，可继续编辑正文。' })
+            } catch (error) {
+              setNotice({ tone: 'error', text: message(error) })
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy ? '保存中…' : '保存行动入口'}
+        </button>
+      </div>
+      <Notice value={notice} />
+    </section>
+  )
+}
+
+function gatedRecruitmentAction(actionType: string) {
+  return (
+    actionType === 'QR_CODE' ||
+    actionType === 'WECHAT' ||
+    actionType === 'QQ' ||
+    actionType === 'WECHAT_GROUP' ||
+    actionType === 'QQ_GROUP'
+  )
+}
+
+function fromManagedAction(action: ManagedAction): ContentActionInput {
+  return {
+    actionType: action.actionType,
+    accessLevel: action.accessLevel,
+    label: action.label,
+    value: action.value,
+    mediaAssetId: action.mediaAssetId,
+    enabled: action.enabled,
+    sortOrder: action.sortOrder,
+  }
+}
+
 function LoadedWorkspaceEditor({
   contentId,
   isAdmin,
@@ -355,6 +652,10 @@ function LoadedWorkspaceEditor({
     [contentId, isAdmin],
   )
   const state = useResource(loader)
+  const [revisionOverride, setRevision] = useState<number | null>(null)
+  useEffect(() => {
+    setRevision(null)
+  }, [contentId])
   if (state.loading)
     return (
       <section className="content-editor-page">
@@ -368,27 +669,42 @@ function LoadedWorkspaceEditor({
       </section>
     )
   const editing = state.data
+  const revision = revisionOverride ?? editing.revision
+  const recruitment =
+    editing.draft.kind === 'RECRUITMENT' || editing.draft.moduleKey?.startsWith('recruitment')
   return (
-    <ContentEditor
-      editing={editing}
-      onClose={close}
-      onDirtyChange={onDirtyChange}
-      onSave={async (draft) => {
-        const result = isAdmin
-          ? await api.adminRevise(editing.id, editing.revision, draft)
-          : await api.partnerRevise(editing.id, editing.revision, draft)
-        savedMessage.current = `“${result.title}”已保存。`
-      }}
-      onSaveAndSubmit={
-        !isAdmin
-          ? async (draft) => {
-              const result = await api.partnerRevise(editing.id, editing.revision, draft)
-              await api.partnerSubmit(result.id)
-              savedMessage.current = `“${result.title}”已保存并送审。`
-            }
-          : undefined
-      }
-    />
+    <>
+      <ContentEditor
+        editing={{ ...editing, revision }}
+        onClose={close}
+        onDirtyChange={onDirtyChange}
+        onSave={async (draft) => {
+          const result = isAdmin
+            ? await api.adminRevise(editing.id, revision, draft)
+            : await api.partnerRevise(editing.id, revision, draft)
+          setRevision(result.revision)
+          savedMessage.current = `“${result.title}”已保存。`
+        }}
+        onSaveAndSubmit={
+          !isAdmin
+            ? async (draft) => {
+                const result = await api.partnerRevise(editing.id, revision, draft)
+                await api.partnerSubmit(result.id)
+                setRevision(result.revision)
+                savedMessage.current = `“${result.title}”已保存并送审。`
+              }
+            : undefined
+        }
+      />
+      {recruitment ? (
+        <RecruitmentActionEditor
+          contentId={editing.id}
+          initialVersion={revision}
+          isAdmin={isAdmin}
+          onVersionChange={setRevision}
+        />
+      ) : null}
+    </>
   )
 }
 type Action =
@@ -542,6 +858,706 @@ function Overview({
           </li>
         </ol>
       </article>
+      {!quota ? <OperationalTasks /> : null}
+    </section>
+  )
+}
+
+function OperationalTasks() {
+  const state = useResource(api.adminTasks)
+  if (state.loading)
+    return (
+      <article className="metric-card">
+        <RefreshCw size={20} />
+        <span>运营待办加载中</span>
+      </article>
+    )
+  if (state.error)
+    return (
+      <article className="metric-card">
+        <Inbox size={20} />
+        <span>运营待办暂时不可用</span>
+        <button className="text-link" onClick={state.reload}>
+          重试
+        </button>
+      </article>
+    )
+  return (
+    <>
+      {state.data
+        ?.filter((task) => task.count > 0)
+        .map((task) => (
+          <Link className={`metric-card task-card ${task.severity}`} to={task.href} key={task.code}>
+            <ClipboardCheck size={20} />
+            <span>{task.label}</span>
+            <strong>{task.count}</strong>
+          </Link>
+        ))}
+    </>
+  )
+}
+
+function CommunityManagementPanel() {
+  const loader = useCallback(async () => {
+    const [entries, invites, capabilities] = await Promise.all([
+      api.adminCommunityEntries(),
+      api.adminCommunityInvites(),
+      api.capabilities(),
+    ])
+    return { entries, invites, capabilities }
+  }, [])
+  const state = useResource(loader)
+  const [credential, setCredential] = useState<{
+    label: string
+    inviteCode: string
+    expiresAt: string
+  } | null>(null)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  const [entryType, setEntryType] = useState('URL')
+  const [qrFile, setQrFile] = useState<File | null>(null)
+  const [qrPreview, setQrPreview] = useState('')
+  const [qrMediaId, setQrMediaId] = useState('')
+  const [uploadingQr, setUploadingQr] = useState(false)
+  if (state.loading) return <LoadingRows />
+  if (state.error || !state.data)
+    return <ErrorState error={state.error || '社群管理数据不可用。'} retry={state.reload} />
+  const operationsEnabled = state.data.capabilities.communityGateEnabled
+  return (
+    <section className="workspace-stack">
+      <PanelHeading eyebrow="COMMUNITY OPERATIONS" title="社群入口与邀请码" />
+      {credential ? (
+        <section className="token-card">
+          <KeyRound size={21} />
+          <div>
+            <strong>邀请码批次 · {credential.label}</strong>
+            <code>{credential.inviteCode}</code>
+            <small>
+              只在当前页面显示一次，有效至 {new Date(credential.expiresAt).toLocaleString('zh-CN')}。
+            </small>
+            <button
+              className="button ghost"
+              onClick={() => void navigator.clipboard.writeText(credential.inviteCode)}
+            >
+              复制邀请码
+            </button>
+          </div>
+        </section>
+      ) : null}
+      <Notice value={notice} />
+      {!operationsEnabled ? (
+        <Notice
+          value={{
+            tone: 'error',
+            text: '社群与受控招募尚未完整配置。请先在运行环境启用功能开关并配置邀请码 HMAC 与 AES-256 密钥。',
+          }}
+        />
+      ) : null}
+      <form
+        className="panel"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const data = new FormData(form)
+          if (!operationsEnabled) return
+          try {
+            const created = await api.adminCreateCommunityInvite(
+              String(data.get('label') ?? '').trim(),
+              Number(data.get('days') || 30),
+              Number(data.get('uses') || 500),
+            )
+            setCredential(created)
+            form.reset()
+            state.reload()
+          } catch (error) {
+            setNotice({ tone: 'error', text: message(error) })
+          }
+        }}
+      >
+        <h3>创建批次共享邀请码</h3>
+        <label>
+          批次名称
+          <input name="label" required maxLength={120} />
+        </label>
+        <label>
+          有效天数
+          <input name="days" type="number" min={1} max={90} defaultValue={30} required />
+        </label>
+        <label>
+          最大使用次数
+          <input name="uses" type="number" min={1} max={10000} defaultValue={500} required />
+        </label>
+        <button className="button primary" disabled={!operationsEnabled}>
+          创建并显示一次性邀请码
+        </button>
+      </form>
+      <div className="data-list">
+        {state.data.invites.map((invite) => (
+          <article className="data-row" key={invite.id}>
+            <div>
+              <Badge value={invite.state} />
+              <h3>{invite.label}</h3>
+              <p>
+                {invite.useCount} / {invite.maxUses} · 到期{' '}
+                {new Date(invite.expiresAt).toLocaleDateString('zh-CN')}
+              </p>
+            </div>
+            {invite.state === 'ACTIVE' ? (
+              <button
+                className="button danger"
+                onClick={async () => {
+                  const reason = window.prompt('请输入撤销原因')?.trim()
+                  if (!reason) return
+                  try {
+                    await api.adminRevokeCommunityInvite(invite.id, reason)
+                    state.reload()
+                  } catch (error) {
+                    setNotice({ tone: 'error', text: message(error) })
+                  }
+                }}
+              >
+                撤销
+              </button>
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <form
+        className="panel"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const data = new FormData(form)
+          if (!operationsEnabled) return
+          try {
+            let mediaAssetId = qrMediaId.trim()
+            if (entryType === 'QR_CODE') {
+              if (!mediaAssetId && qrFile) {
+                setUploadingQr(true)
+                const uploaded = await api.adminUploadCommunityMedia(
+                  qrFile,
+                  String(data.get('name') ?? '').trim() || '社群二维码',
+                )
+                mediaAssetId = uploaded.id
+                setQrMediaId(uploaded.id)
+              }
+              if (!mediaAssetId) {
+                setNotice({ tone: 'error', text: '二维码入口请先选择一张图片。' })
+                return
+              }
+            }
+            await api.adminCreateCommunityEntry({
+              name: String(data.get('name') ?? '').trim(),
+              description: String(data.get('description') ?? '').trim() || undefined,
+              entryType,
+              value: String(data.get('value') ?? '').trim() || undefined,
+              mediaAssetId: mediaAssetId || undefined,
+              primary: data.get('primary') === 'on',
+              sortOrder: Number(data.get('sortOrder') || 0),
+            })
+            form.reset()
+            setEntryType('URL')
+            setQrFile(null)
+            setQrPreview('')
+            setQrMediaId('')
+            state.reload()
+            setNotice({ tone: 'success', text: '社群入口已创建。' })
+          } catch (error) {
+            setNotice({ tone: 'error', text: message(error) })
+          } finally {
+            setUploadingQr(false)
+          }
+        }}
+      >
+        <h3>新增社群入口</h3>
+        <label>
+          名称
+          <input name="name" required maxLength={120} />
+        </label>
+        <label>
+          说明
+          <input name="description" maxLength={1000} />
+        </label>
+        <label>
+          类型
+          <select name="entryType" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
+            <option value="URL">链接</option>
+            <option value="WECHAT">微信</option>
+            <option value="QQ_GROUP">QQ群</option>
+            <option value="TEXT">文字</option>
+            <option value="QR_CODE">二维码</option>
+          </select>
+        </label>
+        {entryType === 'QR_CODE' ? (
+          <label>
+            二维码图片
+            <small>从本机选择一张不超过 5 MB 的图片，创建时会自动上传。</small>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                setQrFile(file)
+                setQrMediaId('')
+                setQrPreview((current) => {
+                  if (current) URL.revokeObjectURL(current)
+                  return file ? URL.createObjectURL(file) : ''
+                })
+              }}
+            />
+            {qrPreview ? <img className="community-qr" src={qrPreview} alt="待上传的社群二维码预览" /> : null}
+          </label>
+        ) : (
+          <label>
+            入口内容
+            <input name="value" maxLength={2048} />
+          </label>
+        )}
+        <label>
+          排序
+          <input name="sortOrder" type="number" min={0} max={1000} defaultValue={0} />
+        </label>
+        <label className="checkbox-row">
+          <input name="primary" type="checkbox" /> 设为主入口
+        </label>
+        <button className="button primary" disabled={uploadingQr || !operationsEnabled}>
+          {uploadingQr ? '上传并创建中…' : '创建入口'}
+        </button>
+      </form>
+      <div className="data-list">
+        {state.data.entries.map((entry) => (
+          <article className="data-row" key={entry.id}>
+            <div>
+              <div className="row-meta">
+                <Badge value={entry.active ? 'ACTIVE' : 'INACTIVE'} />
+                {entry.primary ? <Badge value="PRIMARY" /> : null}
+              </div>
+              <h3>{entry.name}</h3>
+              <p>
+                {entry.entryType} · 顺序 {entry.sortOrder}
+              </p>
+            </div>
+            {entry.active ? (
+              <CommunityEntryActions
+                entry={entry}
+                operationsEnabled={operationsEnabled}
+                onDone={(text) => {
+                  state.reload()
+                  setNotice({ tone: 'success', text })
+                }}
+                onError={(error) => setNotice({ tone: 'error', text: message(error) })}
+              />
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommunityEntryActions({
+  entry,
+  operationsEnabled,
+  onDone,
+  onError,
+}: {
+  entry: CommunityEntrySummary
+  operationsEnabled: boolean
+  onDone: (text: string) => void
+  onError: (error: unknown) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editType, setEditType] = useState(entry.entryType)
+  async function run(work: () => Promise<void>, success: string) {
+    setBusy(true)
+    try {
+      await work()
+      onDone(success)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <div className="button-row">
+        <button
+          className="button ghost"
+          type="button"
+          disabled={busy || !operationsEnabled}
+          onClick={() => setEditing((current) => !current)}
+        >
+          {editing ? '取消编辑' : '编辑'}
+        </button>
+        {!entry.primary ? (
+          <button
+            className="button ghost"
+            type="button"
+            disabled={busy || !operationsEnabled}
+            onClick={() =>
+              operationsEnabled &&
+              void run(async () => {
+                await api.adminUpdateCommunityEntry(entry.id, entry.version, {
+                  name: entry.name,
+                  description: entry.description ?? undefined,
+                  entryType: entry.entryType,
+                  mediaAssetId: entry.mediaAssetId ?? undefined,
+                  primary: true,
+                  sortOrder: entry.sortOrder,
+                })
+              }, '已切换为主入口。')
+            }
+          >
+            设为主入口
+          </button>
+        ) : null}
+        <button
+          className="button danger"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            const reason = window.prompt('请输入停用原因')?.trim()
+            if (!reason) return
+            void run(async () => {
+              await api.adminDeactivateCommunityEntry(entry.id, entry.version, reason)
+            }, '社群入口已停用。')
+          }}
+        >
+          停用
+        </button>
+      </div>
+      {editing ? (
+        <form
+          className="decision-inline"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const data = new FormData(event.currentTarget)
+            void run(async () => {
+              await api.adminUpdateCommunityEntry(entry.id, entry.version, {
+                name: String(data.get('name') ?? '').trim(),
+                description: String(data.get('description') ?? '').trim() || undefined,
+                entryType: editType,
+                value: String(data.get('value') ?? '').trim() || undefined,
+                mediaAssetId: String(data.get('mediaAssetId') ?? '').trim() || undefined,
+                primary: data.get('primary') === 'on',
+                sortOrder: Number(data.get('sortOrder') || 0),
+              })
+              setEditing(false)
+            }, '社群入口已更新。')
+          }}
+        >
+          <label>
+            名称
+            <input name="name" required maxLength={120} defaultValue={entry.name} />
+          </label>
+          <label>
+            说明
+            <input name="description" maxLength={1000} defaultValue={entry.description ?? ''} />
+          </label>
+          <label>
+            类型
+            <select name="entryType" value={editType} onChange={(event) => setEditType(event.target.value)}>
+              <option value="URL">链接</option>
+              <option value="WECHAT">微信</option>
+              <option value="QQ_GROUP">QQ群</option>
+              <option value="TEXT">文字</option>
+              <option value="QR_CODE">二维码</option>
+            </select>
+          </label>
+          {editType === 'QR_CODE' ? (
+            <label>
+              二维码媒体 ID <small>留空保留原图片；替换图片可先新建入口后停用旧入口。</small>
+              <input name="mediaAssetId" maxLength={26} defaultValue={entry.mediaAssetId ?? ''} />
+            </label>
+          ) : (
+            <label>
+              新入口内容 <small>留空保留原有受保护内容。</small>
+              <input name="value" maxLength={2048} autoComplete="off" />
+            </label>
+          )}
+          <label>
+            排序
+            <input name="sortOrder" type="number" min={0} max={1000} defaultValue={entry.sortOrder} />
+          </label>
+          <label className="checkbox-row">
+            <input name="primary" type="checkbox" defaultChecked={entry.primary} /> 设为主入口
+          </label>
+          <button className="button primary" disabled={busy || !operationsEnabled}>
+            保存入口
+          </button>
+        </form>
+      ) : null}
+    </>
+  )
+}
+
+function HomepageManagementPanel() {
+  const state = useResource(useCallback(() => api.adminHomepagePlacements(), []))
+  const [text, setText] = useState('')
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  useEffect(() => {
+    if (state.data)
+      setText(state.data.map((item) => `${item.slot},${item.contentItemId},${item.sortOrder}`).join('\n'))
+  }, [state.data])
+  if (state.loading) return <LoadingRows />
+  if (state.error) return <ErrorState error={state.error} retry={state.reload} />
+  return (
+    <section className="workspace-stack">
+      <PanelHeading eyebrow="HOMEPAGE CURATION" title="首页人工编排" />
+      <p className="panel-help">
+        每行填写“栏目,内容ID,顺序”。栏目可用
+        FOCUS、RECRUITMENT、RESOURCE；留空保存后，未配置栏目会回退到最新公开内容。
+      </p>
+      {!state.data?.length && !text.trim() ? (
+        <p className="field-help">当前没有人工编排。保存空清单将使用自动回退。</p>
+      ) : null}
+      <form
+        className="panel"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const parsed = parseHomepagePlacementText(text)
+          if (parsed.errors.length) {
+            setNotice({ tone: 'error', text: parsed.errors.join(' ') })
+            return
+          }
+          try {
+            await api.adminReplaceHomepagePlacements(parsed.placements)
+            state.reload()
+            setNotice({
+              tone: 'success',
+              text: parsed.placements.length
+                ? `首页编排已保存，共 ${parsed.placements.length} 条。`
+                : '已清空人工编排，公开首页将回退最新内容。',
+            })
+          } catch (error) {
+            setNotice({ tone: 'error', text: message(error) })
+          }
+        }}
+      >
+        <label>
+          编排清单
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            rows={10}
+            spellCheck={false}
+            placeholder="FOCUS,01HZXC0V4K7N9PQRSTVWXY0001,0"
+          />
+        </label>
+        <button className="button primary">保存首页编排</button>
+        <Notice value={notice} />
+      </form>
+    </section>
+  )
+}
+
+function PasswordChangePanel() {
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    const next = String(data.get('newPassword') ?? '')
+    if (next !== String(data.get('confirm') ?? '')) {
+      setNotice({ tone: 'error', text: '两次输入的新密码不一致。' })
+      return
+    }
+    setBusy(true)
+    try {
+      await api.changePassword(String(data.get('currentPassword') ?? ''), next)
+      window.location.assign('/auth/sign-in')
+    } catch (error) {
+      setNotice({ tone: 'error', text: message(error) })
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="workspace-card narrow-card">
+      <PanelHeading eyebrow="ACCOUNT SECURITY" title="修改密码" />
+      <p className="panel-help">修改成功后，当前账号在所有设备上的会话都会失效，需要使用新密码重新登录。</p>
+      <form className="paper-form" onSubmit={submit}>
+        <fieldset disabled={busy}>
+          <label>
+            当前密码
+            <input
+              name="currentPassword"
+              type="password"
+              required
+              maxLength={128}
+              autoComplete="current-password"
+            />
+          </label>
+          <label>
+            新密码
+            <input
+              name="newPassword"
+              type="password"
+              required
+              minLength={12}
+              maxLength={128}
+              autoComplete="new-password"
+            />
+          </label>
+          <label>
+            确认新密码
+            <input
+              name="confirm"
+              type="password"
+              required
+              minLength={12}
+              maxLength={128}
+              autoComplete="new-password"
+            />
+          </label>
+          <button className="button primary" disabled={busy}>
+            {busy ? '修改中…' : '修改密码并注销全部会话'}
+          </button>
+        </fieldset>
+        <Notice value={notice} />
+      </form>
+    </section>
+  )
+}
+
+function RecoveryEmailPanel() {
+  const state = useResource(api.recoveryEmailStatus)
+  const [busy, setBusy] = useState(false)
+  const [awaitingCode, setAwaitingCode] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  if (state.loading)
+    return (
+      <section className="workspace-card narrow-card">
+        <LoadingRows />
+      </section>
+    )
+  if (state.error)
+    return (
+      <section className="workspace-card narrow-card">
+        <ErrorState error={state.error} retry={state.reload} />
+      </section>
+    )
+  const status = state.data
+  return (
+    <section className="workspace-card narrow-card">
+      <PanelHeading eyebrow="PASSWORD RECOVERY" title="恢复邮箱" />
+      {!status?.available ? (
+        <p className="panel-help">自助恢复尚未安全配置。忘记密码时请继续联系超级管理员人工交付。</p>
+      ) : (
+        <>
+          <p className="panel-help">
+            {status.verified
+              ? `已验证：${status.maskedEmail}。忘记密码时可自行接收一次性重置凭据。`
+              : '绑定并验证邮箱后，可以在无法登录时自行接收一次性重置凭据。'}
+          </p>
+          <form
+            className="paper-form"
+            onSubmit={async (event) => {
+              event.preventDefault()
+              const form = event.currentTarget
+              const data = new FormData(form)
+              setBusy(true)
+              setNotice(null)
+              try {
+                const result = await api.requestRecoveryEmailVerification(
+                  String(data.get('currentPassword') ?? ''),
+                  String(data.get('email') ?? '').trim(),
+                )
+                form.reset()
+                setAwaitingCode(true)
+                setNotice({
+                  tone: 'success',
+                  text: `验证码已发送，有效至 ${new Date(result.expiresAt).toLocaleString()}。`,
+                })
+              } catch (error) {
+                setNotice({ tone: 'error', text: message(error) })
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            <fieldset disabled={busy}>
+              <label>
+                {status.verified ? '新的恢复邮箱' : '恢复邮箱'}
+                <input name="email" type="email" required maxLength={254} autoComplete="email" />
+              </label>
+              <label>
+                当前密码
+                <input
+                  name="currentPassword"
+                  type="password"
+                  required
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </label>
+              <button className="button primary">发送邮箱验证码</button>
+            </fieldset>
+          </form>
+          {awaitingCode ? (
+            <form
+              className="paper-form"
+              onSubmit={async (event) => {
+                event.preventDefault()
+                const token = String(new FormData(event.currentTarget).get('token') ?? '').trim()
+                setBusy(true)
+                try {
+                  await api.verifyRecoveryEmail(token)
+                  setAwaitingCode(false)
+                  setNotice({ tone: 'success', text: '恢复邮箱已验证并启用。' })
+                  state.reload()
+                } catch (error) {
+                  setNotice({ tone: 'error', text: message(error) })
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <label>
+                邮箱验证码
+                <input name="token" required minLength={32} maxLength={256} autoComplete="one-time-code" />
+              </label>
+              <button className="button primary" disabled={busy}>
+                验证并启用
+              </button>
+            </form>
+          ) : null}
+          {status.verified ? (
+            <form
+              className="paper-form"
+              onSubmit={async (event) => {
+                event.preventDefault()
+                const currentPassword = String(new FormData(event.currentTarget).get('currentPassword') ?? '')
+                setBusy(true)
+                try {
+                  await api.removeRecoveryEmail(currentPassword)
+                  setNotice({ tone: 'success', text: '恢复邮箱已移除，人工重置通道仍然可用。' })
+                  state.reload()
+                } catch (error) {
+                  setNotice({ tone: 'error', text: message(error) })
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <label>
+                移除前确认当前密码
+                <input
+                  name="currentPassword"
+                  type="password"
+                  required
+                  maxLength={128}
+                  autoComplete="current-password"
+                />
+              </label>
+              <button className="button danger" disabled={busy}>
+                移除恢复邮箱
+              </button>
+            </form>
+          ) : null}
+        </>
+      )}
+      <Notice value={notice} />
     </section>
   )
 }
@@ -581,6 +1597,7 @@ function AdminContent({ section }: { section: string }) {
             编辑
           </Link>
         )}
+      <VerificationControl item={item} />
       {availableActions(item).map((action) => (
         <button
           className={`button ${action === 'publish' || action === 'approve' ? 'primary' : 'ghost'}`}
@@ -698,6 +1715,86 @@ function AdminContent({ section }: { section: string }) {
       )}
       <ConfirmationView value={confirmation} close={() => setConfirmation(null)} />
     </>
+  )
+}
+
+function VerificationControl({ item }: { item: ManagedContent }) {
+  const [latest, setLatest] = useState<
+    Awaited<ReturnType<typeof api.adminContentVerifications>>[number] | null
+  >(null)
+  const [loaded, setLoaded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<NoticeValue>(null)
+  return (
+    <details
+      className="verification-control"
+      onToggle={async (event) => {
+        if (!event.currentTarget.open || loaded) return
+        try {
+          const values = await api.adminContentVerifications(item.id)
+          setLatest(values[0] ?? null)
+          setLoaded(true)
+        } catch (error) {
+          setNotice({ tone: 'error', text: message(error) })
+        }
+      }}
+    >
+      <summary className="button ghost">来源核验</summary>
+      <form
+        className="verification-form"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const data = new FormData(form)
+          const outcome = String(data.get('outcome')) as 'VALID' | 'INVALID' | 'NEEDS_REVIEW'
+          const detailSummary = String(data.get('detailSummary') ?? '').trim()
+          const nextCheck = String(data.get('nextCheckAt') ?? '')
+          setBusy(true)
+          setNotice(null)
+          try {
+            const saved = await api.adminRecordContentVerification(item.id, {
+              outcome,
+              detailSummary: detailSummary || undefined,
+              nextCheckAt: nextCheck ? new Date(`${nextCheck}T00:00:00`).toISOString() : undefined,
+            })
+            setLatest(saved)
+            setNotice({ tone: 'success', text: '核验结果已保存并进入后续待办规则。' })
+          } catch (error) {
+            setNotice({ tone: 'error', text: message(error) })
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        {latest ? (
+          <small>
+            最近：{latest.outcome} · {new Date(latest.checkedAt).toLocaleString()}
+          </small>
+        ) : (
+          <small>尚无核验记录</small>
+        )}
+        <label>
+          结果
+          <select name="outcome" defaultValue="VALID" disabled={busy}>
+            <option value="VALID">有效</option>
+            <option value="INVALID">失效</option>
+            <option value="NEEDS_REVIEW">待复核</option>
+          </select>
+        </label>
+        <label>
+          核验说明
+          <input name="detailSummary" maxLength={1000} placeholder="失效或待复核时必填" disabled={busy} />
+        </label>
+        <label>
+          下次复核日期
+          <input name="nextCheckAt" type="date" disabled={busy} />
+        </label>
+        <button className="button primary" disabled={busy}>
+          {busy ? '保存中…' : '保存核验结果'}
+        </button>
+        <Notice value={notice} />
+      </form>
+    </details>
   )
 }
 function PartnerContent({ section }: { section: string }) {

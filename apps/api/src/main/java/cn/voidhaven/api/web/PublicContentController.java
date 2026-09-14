@@ -9,11 +9,14 @@ import java.util.*;
 public class PublicContentController {
     private final ContentService content;
     private final ContentModuleRegistry modules;
-    public PublicContentController(ContentService content, ContentModuleRegistry modules) { this.content = content; this.modules = modules; }
+    private final cn.voidhaven.api.service.ContentActionService actions;
+    public PublicContentController(ContentService content, ContentModuleRegistry modules, cn.voidhaven.api.service.ContentActionService actions) { this.content = content; this.modules = modules; this.actions = actions; }
     @GetMapping("/home") ApiResponse<Map<String, Object>> home(HttpServletRequest req) { return ok(content.home(), req); }
     @GetMapping("/content-modules") ApiResponse<tools.jackson.databind.JsonNode> moduleDefinitions(HttpServletRequest req) { return ok(modules.publicDefinitions(), req); }
     @GetMapping("/content") ApiResponse<ContentService.PublicPage> content(@RequestParam String module, @RequestParam(defaultValue = "20") int pageSize, @RequestParam(required = false) String cursor, @RequestParam(required = false, name = "q") String query, @RequestParam(required = false) String filterKey, @RequestParam(required = false) String filterValue, HttpServletRequest req) { return ok(content.listPublicModule(module, pageSize, cursor, query, filterKey, filterValue), req); }
     @GetMapping("/content/{id}") ApiResponse<PublicContentDto> detail(@PathVariable String id, HttpServletRequest req) { return ok(content.publicDetail(id), req); }
+    @GetMapping("/content/{id}/related") ApiResponse<ContentService.PublicPage> related(@PathVariable String id, HttpServletRequest req) { return ok(content.related(id), req); }
+    @GetMapping("/content/{id}/gated-actions") ApiResponse<List<cn.voidhaven.api.service.ContentActionService.PublicAction>> gatedActions(@PathVariable String id, @RequestHeader("X-Community-Grant") String grant, HttpServletRequest req) { return ok(actions.gatedActions(id, grant), req); }
     @GetMapping("/competitions") ApiResponse<ContentService.PublicPage> competitions(@RequestParam(defaultValue = "20") int pageSize, @RequestParam(required = false) String cursor, @RequestParam(required = false, name = "q") String query, HttpServletRequest req) { return ok(content.listPublicPage(ContentKind.COMPETITION, pageSize, cursor, query), req); }
     @GetMapping("/competitions/{id}") ApiResponse<PublicContentDto> competition(@PathVariable String id, HttpServletRequest req) { return ok(content.publicDetail(ContentKind.COMPETITION, id), req); }
     @GetMapping("/resources") ApiResponse<ContentService.PublicPage> resources(@RequestParam(defaultValue = "20") int pageSize, @RequestParam(required = false) String cursor, @RequestParam(required = false, name = "q") String query, HttpServletRequest req) { return ok(content.listPublicPage(ContentKind.RESOURCE, pageSize, cursor, query), req); }

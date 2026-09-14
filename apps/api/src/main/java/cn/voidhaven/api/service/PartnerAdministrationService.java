@@ -24,6 +24,8 @@ public class PartnerAdministrationService {
     private final AuditService audit;
     private final AccountRepository accounts;
 
+    private AccountLockService accountLocks;
+
     public PartnerAdministrationService(PartnerProfileRepository profiles, ContentItemRepository items, JdbcTemplate jdbc, AuditService audit, AccountRepository accounts) {
         this.profiles = profiles;
         this.items = items;
@@ -31,6 +33,9 @@ public class PartnerAdministrationService {
         this.audit = audit;
         this.accounts = accounts;
     }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccountLocks(AccountLockService accountLocks) { this.accountLocks = accountLocks; }
 
     @Transactional(readOnly = true)
     public List<ProfileView> listProfiles() {
@@ -50,6 +55,7 @@ public class PartnerAdministrationService {
 
     @Transactional
     public ProfileView setQuota(String profileId, int quota, String reason, String actorId, String role, String requestId) {
+        if (accountLocks != null) accountLocks.requireActiveActor(actorId);
         if (quota < 0 || quota > 5) throw new ApiException(HttpStatus.BAD_REQUEST, "PARTNER_QUOTA_INVALID", "公开内容配额必须在 0 到 5 之间。");
         PartnerProfile profile = profiles.findByIdForUpdate(profileId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PARTNER_PROFILE_NOT_FOUND", "合作方档案不存在。"));
         int before = profile.getContentQuota();
@@ -61,6 +67,7 @@ public class PartnerAdministrationService {
 
     @Transactional
     public void transferOwnership(String contentId, String toProfileId, String reason, String actorId, String role, String requestId) {
+        if (accountLocks != null) accountLocks.requireActiveActor(actorId);
         ContentItem item = items.findByIdForUpdate(contentId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
         PartnerProfile destination = profiles.findByIdForUpdate(toProfileId).filter(PartnerProfile::isActive).orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "PARTNER_PROFILE_INACTIVE", "目标合作方档案不可用。"));
         String fromProfileId = item.getOwnerPartnerProfileId();

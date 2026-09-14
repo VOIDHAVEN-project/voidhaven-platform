@@ -1,84 +1,74 @@
 package cn.voidhaven.api.service;
 
-import cn.voidhaven.api.support.Ids;
-import cn.voidhaven.api.web.ApiException;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.sql.Timestamp;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.Duration;
 import java.util.HexFormat;
 
 @Service
 public class AuthenticationRateLimiter {
     private static final String HMAC = "HmacSHA256";
-    private final JdbcTemplate jdbc;
+    private final RateLimitLockService locks;
     private final String secret;
     private final int loginFailureLimit;
     private final int loginNetworkLimit;
     private final int activationNetworkLimit;
-    private final long windowMinutes;
+    private final int passwordResetLoginLimit;
+    private final int passwordResetNetworkLimit;
+    private final Duration window;
 
-    public AuthenticationRateLimiter(JdbcTemplate jdbc,
+    public AuthenticationRateLimiter(RateLimitLockService locks,
             @Value("${voidhaven.public-write-rate-limit-secret:local-development-rate-limit-secret}") String secret,
             @Value("${voidhaven.auth-login-failure-limit:5}") int loginFailureLimit,
             @Value("${voidhaven.auth-login-network-limit:20}") int loginNetworkLimit,
             @Value("${voidhaven.auth-activation-network-limit:10}") int activationNetworkLimit,
+            @Value("${voidhaven.auth-password-reset-login-limit:3}") int passwordResetLoginLimit,
+            @Value("${voidhaven.auth-password-reset-network-limit:10}") int passwordResetNetworkLimit,
             @Value("${voidhaven.auth-rate-limit-window-minutes:15}") long windowMinutes) {
-        if (loginFailureLimit < 1 || loginNetworkLimit < 1 || activationNetworkLimit < 1 || windowMinutes < 1) {
+        if (loginFailureLimit < 1 || loginNetworkLimit < 1 || activationNetworkLimit < 1
+                || passwordResetLoginLimit < 1 || passwordResetNetworkLimit < 1 || windowMinutes < 1) {
             throw new IllegalStateException("Authentication rate-limit configuration is invalid");
         }
-        this.jdbc = jdbc;
+        this.locks = locks;
         this.secret = secret;
         this.loginFailureLimit = loginFailureLimit;
         this.loginNetworkLimit = loginNetworkLimit;
         this.activationNetworkLimit = activationNetworkLimit;
-        this.windowMinutes = windowMinutes;
+        this.passwordResetLoginLimit = passwordResetLoginLimit;
+        this.passwordResetNetworkLimit = passwordResetNetworkLimit;
+        this.window = Duration.ofMinutes(windowMinutes);
     }
 
-    public void beginLogin(String loginId, String networkSubject) {
-        cleanup();
+    public String beginLogin(String loginId, String networkSubject) {
         String networkHash = hash("network:" + networkSubject);
         String loginHash = hash("login:" + loginId.trim().toLowerCase());
-        requireBelow("LOGIN_NETWORK", networkHash, loginNetworkLimit);
-        requireBelow("LOGIN_ID", loginHash, loginFailureLimit);
-        record("LOGIN_NETWORK", networkHash, "ATTEMPT");
+        locks.reserveAuth(RateLimitLockService.LOGIN_NETWORK, networkHash, loginNetworkLimit, window, "ATTEMPT");
+        return locks.reserveAuth(RateLimitLockService.LOGIN_ID, loginHash, loginFailureLimit, window, "ATTEMPT");
     }
 
-    public void loginFailed(String loginId) {
-        record("LOGIN_ID", hash("login:" + loginId.trim().toLowerCase()), "FAILURE");
+    public void loginFailed(String attemptId) {
+        locks.completeLoginAttempt(attemptId, false);
     }
 
-    public void loginSucceeded(String loginId) {
-        String subject = hash("login:" + loginId.trim().toLowerCase());
-        jdbc.update("delete from auth_rate_limit_events where scope = 'LOGIN_ID' and subject_hash = ?", subject);
-        record("LOGIN_ID", subject, "SUCCESS");
+    public void loginSucceeded(String attemptId) {
+        locks.completeLoginAttempt(attemptId, true);
     }
 
     public void beginActivation(String networkSubject) {
-        cleanup();
         String networkHash = hash("activation:" + networkSubject);
-        requireBelow("ACTIVATION_NETWORK", networkHash, activationNetworkLimit);
-        record("ACTIVATION_NETWORK", networkHash, "ATTEMPT");
+        locks.reserveAuth(RateLimitLockService.ACTIVATION_NETWORK, networkHash, activationNetworkLimit, window, "ATTEMPT");
     }
 
-    private void requireBelow(String scope, String subjectHash, int maximum) {
-        Integer count = jdbc.queryForObject("select count(*) from auth_rate_limit_events where scope = ? and subject_hash = ? and outcome in ('ATTEMPT','FAILURE') and expires_at > current_timestamp(6)", Integer.class, scope, subjectHash);
-        if (count != null && count >= maximum) throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "AUTH_RATE_LIMITED", "尝试过于频繁，请在 15 分钟后重试。");
+    public void beginPasswordReset(String loginId, String networkSubject) {
+        locks.reserveAuth(RateLimitLockService.PASSWORD_RESET_NETWORK, hash("password-reset-network:" + networkSubject),
+                passwordResetNetworkLimit, window, "ATTEMPT");
+        locks.reserveAuth(RateLimitLockService.PASSWORD_RESET_LOGIN, hash("password-reset-login:" + loginId.trim().toLowerCase()),
+                passwordResetLoginLimit, window, "ATTEMPT");
     }
-
-    private void record(String scope, String subjectHash, String outcome) {
-        jdbc.update("insert into auth_rate_limit_events (id, scope, subject_hash, outcome, expires_at) values (?, ?, ?, ?, ?)",
-                Ids.ulid(), scope, subjectHash, outcome, Timestamp.from(Instant.now().plus(windowMinutes, ChronoUnit.MINUTES)));
-    }
-
-    private void cleanup() { jdbc.update("delete from auth_rate_limit_events where expires_at < current_timestamp(6)"); }
 
     private String hash(String value) {
         try {

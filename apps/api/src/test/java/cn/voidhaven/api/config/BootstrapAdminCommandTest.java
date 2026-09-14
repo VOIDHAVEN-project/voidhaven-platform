@@ -18,6 +18,7 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -72,7 +73,8 @@ class BootstrapAdminCommandTest {
         when(fixture.roles.findByCode("SUPER_ADMIN")).thenReturn(Optional.empty());
         when(fixture.roles.save(any(Role.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fixture.accounts.saveAndFlush(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(fixture.activations.issue(any(String.class))).thenReturn("single-use-test-token");
+        when(fixture.activations.issueLocked(any(Account.class))).thenReturn(
+                new ActivationService.IssuedActivation("single-use-test-token", Instant.now().plusSeconds(3600)));
 
         fixture.command.run(new DefaultApplicationArguments(new String[0]));
 

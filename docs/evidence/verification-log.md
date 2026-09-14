@@ -39,5 +39,9 @@
 | 2026-09-05 | 网关容器替换恢复 | 通过 | 修复 Nginx 缓存旧 Compose 服务地址导致的 502；API 容器单独替换后，未重启网关即可恢复 `/healthz` HTTP 200。 |
 | 2026-09-10 | 组织仓库快速质量门 | 通过 | GitHub Actions 在提交 `6d71725` 上完成 Web 格式、lint、19 项单元测试、生产构建、OpenAPI lint、API Maven Verify、Compose 配置和仓库边界检查；[运行记录](https://github.com/VOIDHAVEN-project/voidhaven-platform/actions/runs/34386275480)。 |
 | 2026-09-10 | 组织仓库完整发布候选门 | 通过 | GitHub Actions 在提交 `6d71725` 上完成 50/50 API 测试、MySQL 8.4/MinIO Testcontainers、Flyway V1～V10、Compose 冷启动、`/healthz`、22/22 Playwright、候选镜像构建、干净源码包与校验文件上传；[运行记录](https://github.com/VOIDHAVEN-project/voidhaven-platform/actions/runs/34386307092)。 |
+| 2026-09-11 | 线上 test08 同步到正式工作区 | 通过（本地 Docker 集成待复跑） | 核对线上当前为 `20260911-voidhaven-test-08`；产品实现从该不可变发布快照同步，保留正式仓库治理与 CI 增强。Web 格式、lint、25 项单元测试、生产构建、OpenAPI lint 和 22/22 Playwright 通过。API Maven Verify 构建成功，59 项测试通过；本机 Docker 不可用，MySQL/MinIO 与分布式安全集成测试各跳过 1 项。未复制 Secret、数据备份、崩溃转储或构建产物，未部署、提交或推送。 |
+| 2026-09-15 | 上线服务闭环与双通道密码恢复 | 通过 | 修正首页合作申请入口，补齐内容来源核验创建/历史/公开状态/异常待办；保留超级管理员人工重置并新增恢复邮箱验证、自助申请和一次性重置。人工与自助凭据签发互不覆盖，任一凭据成功改密后均撤销两类剩余凭据及全部会话。 |
+| 2026-09-15 | 当前 Web、契约与浏览器门禁 | 通过 | Web 格式、lint、27 项 Vitest、TypeScript/Vite 生产构建及 OpenAPI lint 通过。全新隔离 Compose 栈运行 25/25 Playwright，真实全栈场景覆盖公开回执、合作方申请/激活、社群入口、招募行动、来源核验、待办、改密、人工重置、恢复邮箱邮件验证、自助重置和新密码登录。验收后已删除临时容器及 MySQL/MinIO 数据卷。 |
+| 2026-09-15 | 当前 API 与迁移门禁 | 通过 | 低内存 JVM 参数下从清理状态执行 `mvnw clean verify` 成功；83 项单元/集成测试与 1 项分布式安全测试无失败。Testcontainers 使用 MySQL 8.4/MinIO 验证空库 V1～V18、含保留夹具的 V11～V18 升级、共享限流、邀请码并发、后台任务互斥和媒体租约。 |
 
 本记录只保留最小命令结果，不包含凭据、真实个人资料或私密正文。

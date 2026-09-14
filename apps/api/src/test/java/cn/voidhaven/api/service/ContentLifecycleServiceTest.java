@@ -25,6 +25,7 @@ class ContentLifecycleServiceTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AuditService audit = mock(AuditService.class);
         when(items.findTimedPublicItems()).thenReturn(List.of(item));
+        when(items.findByIdForUpdate(item.getId())).thenReturn(java.util.Optional.of(item));
         Map<String, Object> detail = new HashMap<>();
         detail.put("deadline_at", null);
         detail.put("deadline_date", Date.valueOf("2026-09-02"));

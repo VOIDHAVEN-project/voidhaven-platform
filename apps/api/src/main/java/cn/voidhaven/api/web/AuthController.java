@@ -2,6 +2,7 @@ package cn.voidhaven.api.web;
 
 import cn.voidhaven.api.service.ActivationService;
 import cn.voidhaven.api.service.AuthenticationRateLimiter;
+import cn.voidhaven.api.service.PasswordService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -26,23 +27,30 @@ public class AuthController {
     private final ActivationService activations;
     private final AuthenticationRateLimiter rateLimiter;
     private final ClientNetworkSubject networkSubject;
+    private final PasswordService passwords;
 
     public AuthController(AuthenticationConfiguration configuration, ActivationService activations,
-                          AuthenticationRateLimiter rateLimiter, ClientNetworkSubject networkSubject) throws Exception {
+                          AuthenticationRateLimiter rateLimiter, ClientNetworkSubject networkSubject,
+                          PasswordService passwords) throws Exception {
         this.authenticationManager = configuration.getAuthenticationManager();
         this.activations = activations;
         this.rateLimiter = rateLimiter;
         this.networkSubject = networkSubject;
+        this.passwords = passwords;
     }
 
     record LoginRequest(@NotBlank @Size(max = 100) String loginId, @NotBlank @Size(max = 128) String password) { }
     record Identity(String loginId, List<String> roles) { }
     record ActivationRequest(@NotBlank @Size(max = 256) String token, @NotBlank @Size(min = 12, max = 128) String password) { }
     record CsrfPayload(String headerName, String token) { }
+    record PasswordChangeRequest(@NotBlank @Size(max = 128) String currentPassword,
+                                 @NotBlank @Size(min = 12, max = 128) String newPassword) { }
+    record PasswordResetRequest(@NotBlank @Size(max = 256) String token,
+                                @NotBlank @Size(min = 12, max = 128) String newPassword) { }
 
     @PostMapping("/session")
     ApiResponse<Identity> login(@Valid @RequestBody LoginRequest body, HttpServletRequest request) {
-        rateLimiter.beginLogin(body.loginId(), networkSubject.resolve(request));
+        String attemptId = rateLimiter.beginLogin(body.loginId(), networkSubject.resolve(request));
         HttpSession session = request.getSession(true);
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -54,10 +62,10 @@ public class AuthController {
             session = request.getSession(false);
             if (session == null) throw new IllegalStateException("Authenticated session is unavailable");
             session.setAttribute("SPRING_SECURITY_CONTEXT", context);
-            rateLimiter.loginSucceeded(body.loginId());
+            rateLimiter.loginSucceeded(attemptId);
             return new ApiResponse<>(identity(authentication), requestId(request));
         } catch (AuthenticationException error) {
-            rateLimiter.loginFailed(body.loginId());
+            rateLimiter.loginFailed(attemptId);
             SecurityContextHolder.clearContext();
             session.invalidate();
             throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", "账号或密码不正确，或账号当前不可用。");
@@ -87,6 +95,19 @@ public class AuthController {
         rateLimiter.beginActivation(networkSubject.resolve(request));
         var account = activations.consume(body.token(), body.password());
         return new ApiResponse<>(Map.of("loginId", account.getLoginId(), "message", "账号已激活，请使用新密码登录。"), requestId(request));
+    }
+
+    @PostMapping("/password/change")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void changePassword(@Valid @RequestBody PasswordChangeRequest body, Authentication authentication, HttpServletRequest request) {
+        passwords.change(authentication.getName(), body.currentPassword(), body.newPassword(), requestId(request));
+        SecurityContextHolder.clearContext();
+    }
+
+    @PostMapping("/password-reset/consume")
+    ApiResponse<Map<String, String>> resetPassword(@Valid @RequestBody PasswordResetRequest body, HttpServletRequest request) {
+        String loginId = passwords.consumeReset(body.token(), body.newPassword());
+        return new ApiResponse<>(Map.of("loginId", loginId, "message", "密码已重置，请使用新密码登录。"), requestId(request));
     }
 
     private Identity identity(Authentication authentication) {

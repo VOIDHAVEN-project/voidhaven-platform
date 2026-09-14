@@ -26,11 +26,14 @@ public class AdminController {
     private final AuditQueryService auditQuery;
     private final AccountAdministrationService accountAdministration;
     private final PublicInputAdministrationService publicInputAdministration;
+    private final PublicCaseAdministrationService publicCases;
+    private final ContentActionService contentActions;
 
     public AdminController(ContentManagementService content, IdempotencyService idempotency, AccountRepository accounts,
                            PartnerAccountProvisioningService provisioning, PartnerAdministrationService partnerAdministration,
                            AuditQueryService auditQuery, AccountAdministrationService accountAdministration,
-                           PublicInputAdministrationService publicInputAdministration) {
+                           PublicInputAdministrationService publicInputAdministration,
+                           PublicCaseAdministrationService publicCases, ContentActionService contentActions) {
         this.content = content;
         this.idempotency = idempotency;
         this.accounts = accounts;
@@ -39,6 +42,8 @@ public class AdminController {
         this.auditQuery = auditQuery;
         this.accountAdministration = accountAdministration;
         this.publicInputAdministration = publicInputAdministration;
+        this.publicCases = publicCases;
+        this.contentActions = contentActions;
     }
 
     record ReviewDecision(@NotBlank @Pattern(regexp = "APPROVE|CHANGES_REQUESTED|REJECT") String decision,
@@ -46,6 +51,8 @@ public class AdminController {
     record ActionReason(@NotBlank @Size(max = 1000) String reason) { }
     record ApprovePartnerApplication(@NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{4,100}") String loginId,
                                      @NotBlank @Size(max = 1000) String reason) { }
+    record CreateAdminAccount(@NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{4,100}") String loginId,
+                              @NotBlank @Size(max = 1000) String reason) { }
     record QuotaChange(@Min(0) @Max(5) int quota, @NotBlank @Size(max = 1000) String reason) { }
     record OwnershipTransfer(@NotBlank String contentItemId, @NotBlank String toPartnerProfileId,
                              @NotBlank @Size(max = 1000) String reason) { }
@@ -54,6 +61,11 @@ public class AdminController {
                                @NotBlank @Size(max = 1000) String reason) { }
     record PartnerApplicationDecision(@NotBlank @Pattern(regexp = "REJECT") String decision,
                                       @NotBlank @Size(max = 1000) String reason) { }
+    record PublicCaseTransition(@NotBlank @Size(max = 32) String status, @Size(max = 2000) String publicResult,
+                                java.time.Instant dueAt, @NotBlank @Size(max = 1000) String reason) { }
+    record ActionSetRequest(@NotNull @Size(max = 10) List<ContentActionService.ActionInput> actions) { }
+    record OperationalStatusChange(@NotBlank @Pattern(regexp = "OPEN|PAUSED|FILLED|EXPIRED|CANCELLED") String status,
+                                   @NotBlank @Size(max = 1000) String reason) { }
 
     @GetMapping("/review-queue")
     ApiResponse<PageResult<ContentManagementService.Managed>> queue(@RequestParam(required = false) String cursor,
@@ -116,8 +128,17 @@ public class AdminController {
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @GetMapping("/accounts")
     ApiResponse<PageResult<AccountAdministrationService.AccountStatus>> accountList(@RequestParam(required = false) String cursor,
-            @RequestParam(required = false, name = "q") String query, @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
-        return ok(accountAdministration.page(cursor, query, pageSize), request);
+            @RequestParam(required = false, name = "q") String query, @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "20") int pageSize, HttpServletRequest request) {
+        return ok(accountAdministration.page(cursor, query, status, pageSize), request);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PostMapping("/accounts")
+    ApiResponse<AccountAdministrationService.CreatedAccount> createAdmin(@RequestHeader("Idempotency-Key") String key,
+            @Valid @RequestBody CreateAdminAccount body, Authentication auth, HttpServletRequest request) {
+        return ok(idempotency.executeSingleDelivery(key, Map.of("loginId", body.loginId(), "reason", body.reason()),
+                () -> accountAdministration.createAdmin(body.loginId(), body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
     @PostMapping("/content-items")
@@ -195,6 +216,29 @@ public class AdminController {
                 () -> content.restore(id, body.reason().trim(), accountId(auth), role(auth), requestId(request))), request);
     }
 
+    @PutMapping("/content-items/{id}/actions")
+    ApiResponse<ContentActionService.ActionSet> replaceActions(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
+            @Valid @RequestBody ActionSetRequest body, Authentication auth, HttpServletRequest request) {
+        long expected = version(version);
+        return ok(idempotency.executeSingleDelivery(key, Map.of("id", id, "version", expected, "actions", body.actions()),
+                () -> contentActions.replace(id, null, expected, body.actions(), accountId(auth), role(auth), requestId(request))), request);
+    }
+
+    @GetMapping("/content-items/{id}/actions")
+    ApiResponse<List<ContentActionService.ManagedAction>> actions(@PathVariable String id, HttpServletRequest request) {
+        return ok(contentActions.managedActions(id, null), request);
+    }
+
+    @PostMapping("/content-items/{id}/operational-status")
+    ApiResponse<ContentManagementService.Managed> operationalStatus(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
+            @Valid @RequestBody OperationalStatusChange body, Authentication auth, HttpServletRequest request) {
+        long expected = version(version);
+        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "reason", body.reason()), ContentManagementService.Managed.class,
+                () -> content.changeOperationalStatus(id, body.status(), body.reason(), expected, accountId(auth), role(auth), requestId(request))), request);
+    }
+
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/content-items/{id}/delete")
     ApiResponse<ContentManagementService.Managed> delete(@PathVariable String id, @RequestHeader("Idempotency-Key") String key,
@@ -219,12 +263,46 @@ public class AdminController {
                 () -> provisioning.decideApplication(id, body.decision(), body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
+    @PostMapping("/partner-applications/{id}/transition")
+    ApiResponse<PublicCaseAdministrationService.TransitionResult> transitionPartnerApplication(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
+            @Valid @RequestBody PublicCaseTransition body, Authentication auth, HttpServletRequest request) {
+        long expected = version(version);
+        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
+                () -> publicCases.transitionPartnerApplication(id, body.status(), body.publicResult(), body.dueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
+    }
+
+    @PostMapping("/partner-applications/{id}/contact")
+    ApiResponse<PublicCaseAdministrationService.ContactView> partnerContact(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
+            Authentication auth, HttpServletRequest request) {
+        return ok(idempotency.executeSingleDelivery(key, Map.of("id", id, "reason", body.reason()),
+                () -> publicCases.revealPartnerContact(id, body.reason(), accountId(auth), role(auth), requestId(request))), request);
+    }
+
     @PostMapping("/submissions/{id}/decision")
     ApiResponse<PublicInputAdministrationService.DecisionResult> decideSubmission(@PathVariable String id,
             @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody PublicInputDecision body,
             Authentication auth, HttpServletRequest request) {
         return ok(idempotency.execute(key, Map.of("id", id, "decision", body.decision(), "reason", body.reason()), PublicInputAdministrationService.DecisionResult.class,
                 () -> publicInputAdministration.decideSubmission(id, body.decision(), body.reason(), accountId(auth), role(auth), requestId(request))), request);
+    }
+
+    @PostMapping("/submissions/{id}/transition")
+    ApiResponse<PublicCaseAdministrationService.TransitionResult> transitionSubmission(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
+            @Valid @RequestBody PublicCaseTransition body, Authentication auth, HttpServletRequest request) {
+        long expected = version(version);
+        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
+                () -> publicCases.transitionSubmission(id, body.status(), body.publicResult(), body.dueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
+    }
+
+    @PostMapping("/submissions/{id}/contact")
+    ApiResponse<PublicCaseAdministrationService.ContactView> submissionContact(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
+            Authentication auth, HttpServletRequest request) {
+        return ok(idempotency.executeSingleDelivery(key, Map.of("id", id, "reason", body.reason()),
+                () -> publicCases.revealSubmissionContact(id, body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
     @PatchMapping("/partner-profiles/{id}/content-quota")
@@ -242,6 +320,15 @@ public class AdminController {
             partnerAdministration.transferOwnership(body.contentItemId(), body.toPartnerProfileId(), body.reason().trim(), accountId(auth), role(auth), requestId(request));
             return new OwnershipTransferred(body.contentItemId(), body.toPartnerProfileId());
         }), request);
+    }
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PostMapping("/accounts/{id}/activation-links")
+    ApiResponse<AccountAdministrationService.IssuedActivationLink> reissueActivation(@PathVariable String id,
+            @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
+            Authentication auth, HttpServletRequest request) {
+        return ok(idempotency.executeSingleDelivery(key, Map.of("id", id, "action", "REISSUE_ACTIVATION", "reason", body.reason()),
+                () -> accountAdministration.reissueActivation(id, body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")

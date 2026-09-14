@@ -57,7 +57,7 @@ public class BootstrapAdminCommand implements ApplicationRunner {
         if (adminLogin == null || adminLogin.isBlank()) {
             throw new IllegalStateException("VOIDHAVEN_BOOTSTRAP_ADMIN_LOGIN is required");
         }
-        String token = transactions.execute(status -> {
+        String issued = transactions.execute(status -> {
             if (accounts.count() > 0) {
                 throw new IllegalStateException("Bootstrap refused because the accounts table is not empty");
             }
@@ -67,20 +67,20 @@ public class BootstrapAdminCommand implements ApplicationRunner {
             account.addRole(adminRole);
             account.addRole(superAdminRole);
             accounts.saveAndFlush(account);
-            String issued = activations.issue(account.getId());
+            String token = activations.issueLocked(account).token();
             String syntheticRequestId = Ids.ulid();
             audit.record("SYSTEM", "SYSTEM", "PRODUCTION_BOOTSTRAP_ADMIN_CREATED", "ACCOUNT", account.getId(),
                     "{}", "{\"qualificationStatus\":\"PENDING\"}", null, syntheticRequestId);
-            return issued;
+            return token;
         });
-        if (token == null) throw new IllegalStateException("Bootstrap transaction did not issue an activation token");
+        if (issued == null) throw new IllegalStateException("Bootstrap transaction did not issue an activation token");
 
         String base = publicBaseUrl.replaceAll("/$", "");
         // Deliberately use the attached one-shot command output rather than SLF4J. Run this
         // only with an ephemeral `docker compose run --rm` process and never pipe the output
         // into application logging or evidence files.
         System.out.println("One-time activation URL (valid for 24 hours; do not record it):");
-        System.out.println(base + "/auth/activate?token=" + token);
+        System.out.println(base + "/auth/activate?token=" + issued);
     }
 
     static boolean isApprovedEnvironment(String[] profiles) {
