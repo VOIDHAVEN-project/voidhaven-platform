@@ -867,6 +867,14 @@ function RecruitmentActions({ item }: { item: PublicContent }) {
 }
 
 function RecruitmentAction({ action, grant }: { action: PublicAction; grant?: string }) {
+  if (action.mediaUrl && action.accessLevel === 'PUBLIC') {
+    return (
+      <figure className="recruitment-qr">
+        <figcaption>{action.label}</figcaption>
+        <img src={action.mediaUrl} alt={`${action.label}二维码`} />
+      </figure>
+    )
+  }
   if (action.mediaUrl && grant) {
     return (
       <figure className="recruitment-qr">
@@ -877,7 +885,22 @@ function RecruitmentAction({ action, grant }: { action: PublicAction; grant?: st
   }
   if (action.mediaUrl) return <span className="button ghost">{action.label}（验证邀请码后显示二维码）</span>
   if (!action.value) return null
-  const href = action.actionType === 'PUBLIC_EMAIL' ? `mailto:${action.value}` : safeUrl(action.value)
+  const href =
+    action.contactChannel === 'EMAIL'
+      ? `mailto:${action.value}`
+      : action.contactChannel === 'PHONE'
+        ? `tel:${action.value}`
+        : action.presentationType === 'LINK'
+          ? safeUrl(action.value)
+          : null
+  const label =
+    action.contactChannel === 'EMAIL'
+      ? '发送邮件'
+      : action.contactChannel === 'PHONE'
+        ? '拨打电话'
+        : action.presentationType === 'LINK'
+          ? '打开入口'
+          : `复制${action.label}`
   return href ? (
     <a
       className="button primary"
@@ -885,11 +908,11 @@ function RecruitmentAction({ action, grant }: { action: PublicAction; grant?: st
       target={href.startsWith('http') ? '_blank' : undefined}
       rel="noreferrer"
     >
-      {action.label} <ArrowUpRight size={14} />
+      {label} <ArrowUpRight size={14} />
     </a>
   ) : (
     <button className="button ghost" type="button" onClick={() => void copyText(action.value ?? '')}>
-      {action.label}：{action.value}
+      {label}：{action.value}
     </button>
   )
 }

@@ -242,6 +242,12 @@ public class ContentManagementService {
     @Transactional(readOnly = true) public long publicActiveCount(String profileId) { return items.countPublicActiveByOwnerPartnerProfileId(profileId); }
     @Transactional(readOnly = true)
     public PageResult<Managed> managedPage(String ownerProfileId, String requiredStatus, String moduleKey, String query, String cursor, int requestedSize) {
+        return managedPage(ownerProfileId, requiredStatus, moduleKey, query, null, cursor, requestedSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<Managed> managedPage(String ownerProfileId, String requiredStatus, String moduleKey, String query,
+                                           String verification, String cursor, int requestedSize) {
         int pageSize = Math.max(1, Math.min(requestedSize, 50));
         StringBuilder sql = new StringBuilder("select c.id from content_items c join content_revisions r on r.id = c.current_revision_id where 1=1");
         List<Object> arguments = new ArrayList<>();
@@ -249,6 +255,12 @@ public class ContentManagementService {
         if (!blank(requiredStatus)) { try { WorkflowStatus.valueOf(requiredStatus); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_STATUS_INVALID", "内容状态筛选无效。"); } sql.append(" and c.workflow_status = ?"); arguments.add(requiredStatus); }
         if (!blank(moduleKey)) { modules.requireKnown(moduleKey); sql.append(" and c.module_key = ?"); arguments.add(moduleKey); }
         if (!blank(query)) { sql.append(" and (lower(r.title) like ? or lower(r.summary) like ?)"); String pattern = "%" + query.trim().toLowerCase(Locale.ROOT) + "%"; arguments.add(pattern); arguments.add(pattern); }
+        if (!blank(verification)) {
+            if (!Set.of("attention", "due").contains(verification)) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VERIFICATION_FILTER_INVALID", "来源核验筛选无效。");
+            sql.append(" and c.record_state = 'ACTIVE' and exists (select 1 from content_verification_records v where v.content_item_id = c.id and not exists (select 1 from content_verification_records newer where newer.content_item_id = v.content_item_id and (newer.checked_at > v.checked_at or (newer.checked_at = v.checked_at and newer.id > v.id)))");
+            if ("attention".equals(verification)) sql.append(" and v.outcome in ('INVALID','NEEDS_REVIEW'))");
+            else sql.append(" and v.outcome = 'VALID' and v.next_check_at is not null and v.next_check_at <= current_timestamp(6))");
+        }
         if (!blank(cursor)) { sql.append(" and c.id < ?"); arguments.add(cursor); }
         sql.append(" order by c.id desc limit ?"); arguments.add(pageSize + 1);
         List<Managed> values = jdbc.query(sql.toString(), (row, index) -> row.getString(1), arguments.toArray()).stream().map(id -> managed(find(id))).toList();

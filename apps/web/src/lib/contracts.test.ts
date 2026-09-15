@@ -99,6 +99,13 @@ describe('v0 contract protection', () => {
       '/api/v1/public/resources?pageSize=20&q=hello+world&cursor=cursor%2Fnext',
     )
   })
+  it('forwards verification filters to the managed content list', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { items: [], nextCursor: null } })))
+    await api.adminContentItems({ verification: 'due' })
+    expect(String(fetcher.mock.calls[0][0])).toBe('/api/v1/admin/content-items?pageSize=20&verification=due')
+  })
   it('extracts stable document headings from text and rich inlines', () => {
     const headings = extractDocumentHeadings({
       version: 2,

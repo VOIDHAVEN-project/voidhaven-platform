@@ -17,8 +17,6 @@ public class AuthenticationRateLimiter {
     private final int loginFailureLimit;
     private final int loginNetworkLimit;
     private final int activationNetworkLimit;
-    private final int passwordResetLoginLimit;
-    private final int passwordResetNetworkLimit;
     private final Duration window;
 
     public AuthenticationRateLimiter(RateLimitLockService locks,
@@ -26,11 +24,8 @@ public class AuthenticationRateLimiter {
             @Value("${voidhaven.auth-login-failure-limit:5}") int loginFailureLimit,
             @Value("${voidhaven.auth-login-network-limit:20}") int loginNetworkLimit,
             @Value("${voidhaven.auth-activation-network-limit:10}") int activationNetworkLimit,
-            @Value("${voidhaven.auth-password-reset-login-limit:3}") int passwordResetLoginLimit,
-            @Value("${voidhaven.auth-password-reset-network-limit:10}") int passwordResetNetworkLimit,
             @Value("${voidhaven.auth-rate-limit-window-minutes:15}") long windowMinutes) {
-        if (loginFailureLimit < 1 || loginNetworkLimit < 1 || activationNetworkLimit < 1
-                || passwordResetLoginLimit < 1 || passwordResetNetworkLimit < 1 || windowMinutes < 1) {
+        if (loginFailureLimit < 1 || loginNetworkLimit < 1 || activationNetworkLimit < 1 || windowMinutes < 1) {
             throw new IllegalStateException("Authentication rate-limit configuration is invalid");
         }
         this.locks = locks;
@@ -38,8 +33,6 @@ public class AuthenticationRateLimiter {
         this.loginFailureLimit = loginFailureLimit;
         this.loginNetworkLimit = loginNetworkLimit;
         this.activationNetworkLimit = activationNetworkLimit;
-        this.passwordResetLoginLimit = passwordResetLoginLimit;
-        this.passwordResetNetworkLimit = passwordResetNetworkLimit;
         this.window = Duration.ofMinutes(windowMinutes);
     }
 
@@ -61,13 +54,6 @@ public class AuthenticationRateLimiter {
     public void beginActivation(String networkSubject) {
         String networkHash = hash("activation:" + networkSubject);
         locks.reserveAuth(RateLimitLockService.ACTIVATION_NETWORK, networkHash, activationNetworkLimit, window, "ATTEMPT");
-    }
-
-    public void beginPasswordReset(String loginId, String networkSubject) {
-        locks.reserveAuth(RateLimitLockService.PASSWORD_RESET_NETWORK, hash("password-reset-network:" + networkSubject),
-                passwordResetNetworkLimit, window, "ATTEMPT");
-        locks.reserveAuth(RateLimitLockService.PASSWORD_RESET_LOGIN, hash("password-reset-login:" + loginId.trim().toLowerCase()),
-                passwordResetLoginLimit, window, "ATTEMPT");
     }
 
     private String hash(String value) {

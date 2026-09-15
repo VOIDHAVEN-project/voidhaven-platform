@@ -44,6 +44,22 @@ public class MediaController {
         return new ApiResponse<>(uploaded, requestId(request));
     }
 
+    @PostMapping(path = "/api/v1/media/action-uploads", consumes = "multipart/form-data")
+    ApiResponse<MediaService.Uploaded> uploadAction(@RequestHeader("Idempotency-Key") String key,
+            @RequestParam @NotBlank String contentItemId, @RequestParam @NotBlank @Size(max = 240) String altText,
+            @RequestParam("file") MultipartFile file, Authentication auth, HttpServletRequest request) {
+        String accountId = accountId(auth);
+        boolean administrator = isAdministrator(auth);
+        String role = auth.getAuthorities().stream().anyMatch(value -> "ROLE_SUPER_ADMIN".equals(value.getAuthority())) ? "SUPER_ADMIN" : administrator ? "ADMIN" : "PARTNER";
+        byte[] bytes;
+        try { bytes = file.getBytes(); } catch (Exception error) { throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "MEDIA_REJECTED", "图片无法读取，请重新选择文件。"); }
+        MediaService.Uploaded uploaded = idempotency.execute(key,
+                new UploadIntent(contentItemId, altText, file.getOriginalFilename(), sha256(bytes)),
+                MediaService.Uploaded.class,
+                () -> media.uploadAction(contentItemId, altText, bytes, accountId, role, administrator, requestId(request)));
+        return new ApiResponse<>(uploaded, requestId(request));
+    }
+
     record UploadIntent(String contentItemId, String altText, String originalFilename, String contentHash) { }
     private String accountId(Authentication auth) { return accounts.findByLoginId(auth.getName()).filter(account -> account.isActive()).orElseThrow(() -> new ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED, "ACCOUNT_INACTIVE", "当前账号已停用或资格不可用。")).getId(); }
     private boolean isAdministrator(Authentication auth) { return auth.getAuthorities().stream().anyMatch(value -> "ROLE_ADMIN".equals(value.getAuthority()) || "ROLE_SUPER_ADMIN".equals(value.getAuthority())); }

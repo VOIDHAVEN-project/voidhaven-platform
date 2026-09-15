@@ -16,7 +16,7 @@ class MediaOrphanCleanupServiceTest {
         MediaStorage storage = mock(MediaStorage.class);
         when(jdbc.query(startsWith("select ma.id"), org.mockito.ArgumentMatchers.<RowMapper<MediaOrphanCleanupService.Orphan>>any()))
                 .thenReturn(List.of(new MediaOrphanCleanupService.Orphan("01JMEDIA00000000000000000", "content/revision/asset.jpg")));
-        when(jdbc.update(startsWith("update media_assets set lifecycle_state = 'DELETION_PENDING'"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"))).thenReturn(1);
+        when(jdbc.update(startsWith("update media_assets set lifecycle_state = 'DELETION_PENDING'"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"), eq("01JMEDIA00000000000000000"))).thenReturn(1);
         when(jdbc.update(contains("locked_by = ?"), startsWith("instance-a:"))).thenReturn(1);
         when(jdbc.query(startsWith("select id, media_asset_id"), org.mockito.ArgumentMatchers.<RowMapper<MediaOrphanCleanupService.DeletionJob>>any(), startsWith("instance-a:")))
                 .thenReturn(List.of(new MediaOrphanCleanupService.DeletionJob("01JJOB0000000000000000000", "01JMEDIA00000000000000000", "content/revision/asset.jpg")));

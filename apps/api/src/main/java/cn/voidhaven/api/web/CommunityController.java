@@ -27,7 +27,7 @@ public class CommunityController {
     }
 
     @GetMapping("/community/entries")
-    ApiResponse<List<CommunityService.Entry>> entries(@RequestHeader("X-Community-Grant") String grant, HttpServletRequest request) {
+    ApiResponse<List<CommunityService.Entry>> entries(@RequestHeader(value = "X-Community-Grant", required = false) String grant, HttpServletRequest request) {
         return ok(community.publicEntries(grant), request);
     }
 

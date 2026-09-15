@@ -1,9 +1,8 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 const enabled = process.env.VOIDHAVEN_E2E_REAL === '1'
 const adminLogin = process.env.VOIDHAVEN_E2E_ADMIN_LOGIN || 'local-admin'
 const adminPassword = process.env.VOIDHAVEN_E2E_ADMIN_PASSWORD || 'change-me-before-first-local-run'
-const mailpitUrl = process.env.VOIDHAVEN_E2E_MAILPIT_URL || 'http://127.0.0.1:18025'
 
 test.skip(!enabled, '仅在隔离的真实 API、MySQL 和 MinIO 环境中运行')
 
@@ -21,20 +20,7 @@ async function readReceipt(page: Page) {
   return { id: values[0].trim(), queryCode: values[1].trim() }
 }
 
-async function readLatestMailToken(request: APIRequestContext, recipient: string) {
-  const query = encodeURIComponent(`to:${recipient}`)
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await request.get(`${mailpitUrl}/view/latest.txt?query=${query}`)
-    if (response.ok()) {
-      const token = (await response.text()).match(/[A-Za-z0-9_-]{40,}/)?.[0]
-      if (token) return token
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-  throw new Error(`没有收到发往 ${recipient} 的测试邮件`)
-}
-
-test('真实产品闭环：回执、合作激活、社群、招募、核验、待办与双通道密码恢复', async ({
+test('真实产品闭环：回执、合作激活、社群、招募审核、核验、待办与人工密码恢复', async ({
   page,
   browser,
   request,
@@ -51,10 +37,13 @@ test('真实产品闭环：回执、合作激活、社群、招募、核验、�
   const activationPassword = `Partner-Activate-${suffix}!`
   const changedPassword = `Partner-Changed-${suffix}!`
   const resetPassword = `Partner-Reset-${suffix}!`
-  const selfResetPassword = `Partner-Self-Reset-${suffix}!`
-  const recoveryEmail = `recovery-${suffix}@example.test`
   const communityName = `端到端社群-${suffix}`
   const actionLabel = `端到端报名-${suffix}`
+  const qrLabel = `端到端二维码-${suffix}`
+  const qrPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  )
 
   await page.goto('/')
   await expect(page.getByRole('link', { name: '申请成为合作方' })).toHaveAttribute('href', '/partners/apply')
@@ -156,14 +145,54 @@ test('真实产品闭环：回执、合作激活、社群、招募、核验、�
   await actions.getByRole('button', { name: '添加入口' }).click()
   const actionRow = actions.locator('.action-editor-row').last()
   await actionRow.getByLabel('展示名称').fill(actionLabel)
+  await actionRow.getByLabel('访问级别').selectOption('PUBLIC')
   await actionRow.getByLabel('入口内容').fill('https://github.com/voidhaven')
+  await actions.getByRole('button', { name: '添加入口' }).click()
+  const qrRow = actions.locator('.action-editor-row').last()
+  await qrRow.getByLabel('展示形式').selectOption('QR_CODE')
+  await qrRow.getByLabel('展示名称').fill(qrLabel)
+  await qrRow.getByLabel('访问级别').selectOption('PUBLIC')
+  await qrRow.getByText('我确认该联系方式或二维码将对所有访客公开').check()
+  await qrRow.getByLabel('二维码图片').setInputFiles({
+    name: 'qr.png',
+    mimeType: 'image/png',
+    buffer: qrPng,
+  })
+  const uploadResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/media/action-uploads') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+  )
   await actions.getByRole('button', { name: '保存行动入口' }).click()
-  await expect(actions.getByText('招募行动入口已保存')).toBeVisible()
+  const uploaded = await (await uploadResponse).json()
+  const qrId = uploaded.data.id as string
+  await expect(actions.getByText('已创建候选版本，当前线上入口尚未改变')).toBeVisible()
+  const editable = await page.request.get(`/api/v1/admin/content-items/${contentId}`)
+  expect(editable.ok()).toBeTruthy()
+  const editableBody = await editable.json()
+  expect((editableBody.data.media ?? []).map((item: { id: string }) => item.id)).not.toContain(qrId)
 
   await page.goto(`/content/${contentId}`)
-  await expect(page.getByRole('link', { name: new RegExp(actionLabel) })).toHaveAttribute(
-    'href',
-    'https://github.com/voidhaven',
+  await expect(page.locator('.recruitment-actions a[href="https://github.com/voidhaven"]')).toHaveCount(0)
+  await expect(page.getByRole('img', { name: new RegExp(qrLabel) })).toHaveCount(0)
+
+  await page.goto('/workspace?section=content')
+  const candidateRow = page.locator('.data-row').filter({ hasText: '数据可视化小组招募（示例）' })
+  await candidateRow.getByRole('button', { name: '送审', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '确认送审' }).click()
+  await candidateRow.getByRole('link', { name: '查看原文并审核' }).click()
+  await page.getByLabel('审核决定').selectOption('APPROVE')
+  await page.getByRole('button', { name: '保存审核决定', exact: true }).click()
+  await page.getByRole('button', { name: '执行检查', exact: true }).click()
+  await page.getByRole('button', { name: '正式发布', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: '内容已公开发布' })).toBeVisible()
+
+  await page.goto(`/content/${contentId}`)
+  await expect(page.locator('.recruitment-actions a[href="https://github.com/voidhaven"]')).toBeVisible()
+  await expect(page.getByRole('img', { name: new RegExp(qrLabel) })).toHaveAttribute(
+    'src',
+    new RegExp(`/api/v1/public/media/${qrId}$`),
   )
   await expect(page.getByText(/最近来源核验/)).toBeVisible()
   await expect(page.getByText(/有效/)).toBeVisible()
@@ -202,34 +231,6 @@ test('真实产品闭环：回执、合作激活、社群、招募、核验、�
   await resetPage.getByRole('button', { name: '重置密码' }).click()
   await expect(resetPage.getByText(`账号 ${partnerLogin} 的密码已重置`)).toBeVisible()
   await signIn(resetPage, partnerLogin, resetPassword)
-
-  await resetPage.goto('/workspace?section=security')
-  const recoveryPanel = resetPage.locator('.workspace-card').filter({ hasText: '恢复邮箱' })
-  await recoveryPanel.getByLabel('恢复邮箱').fill(recoveryEmail)
-  await recoveryPanel.getByLabel('当前密码').fill(resetPassword)
-  await recoveryPanel.getByRole('button', { name: '发送邮箱验证码' }).click()
-  await expect(recoveryPanel.getByText('验证码已发送')).toBeVisible()
-  const verificationToken = await readLatestMailToken(request, recoveryEmail)
-  await recoveryPanel.getByLabel('邮箱验证码').fill(verificationToken)
-  await recoveryPanel.getByRole('button', { name: '验证并启用' }).click()
-  await expect(recoveryPanel.getByText('恢复邮箱已验证并启用')).toBeVisible()
-
-  const selfServiceContext = await browser.newContext({ baseURL: process.env.VOIDHAVEN_E2E_BASE_URL })
-  const selfServicePage = await selfServiceContext.newPage()
-  await selfServicePage.goto('/auth/forgot-password')
-  await selfServicePage.getByLabel('账号').fill(partnerLogin)
-  await selfServicePage.getByRole('button', { name: '发送重置凭据' }).click()
-  await expect(selfServicePage.getByText('如果账号存在且已绑定恢复邮箱')).toBeVisible()
-  const selfResetToken = await readLatestMailToken(request, recoveryEmail)
-  expect(selfResetToken).not.toBe(verificationToken)
-  await selfServicePage.getByRole('link', { name: '输入重置凭据' }).click()
-  await selfServicePage.getByLabel('重置凭据').fill(selfResetToken)
-  await selfServicePage.locator('input[name="newPassword"]').fill(selfResetPassword)
-  await selfServicePage.locator('input[name="confirm"]').fill(selfResetPassword)
-  await selfServicePage.getByRole('button', { name: '重置密码' }).click()
-  await expect(selfServicePage.getByText(`账号 ${partnerLogin} 的密码已重置`)).toBeVisible()
-  await signIn(selfServicePage, partnerLogin, selfResetPassword)
-  await selfServiceContext.close()
   await resetContext.close()
   await partnerContext.close()
 })

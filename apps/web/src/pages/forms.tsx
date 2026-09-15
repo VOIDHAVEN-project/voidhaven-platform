@@ -11,6 +11,7 @@ import {
 } from '../lib/api'
 import { ControlledCommunityImage } from '../components/controlled-community-image'
 import { BusyLabel, Notice, message, type NoticeValue } from '../components/ui'
+import { copyText } from '../lib/copy-text'
 import { usePageTitle } from '../lib/hooks'
 import { createIdempotencyKey } from '../lib/secure-id'
 
@@ -410,6 +411,20 @@ export function JoinPage() {
   const [grantToken, setGrantToken] = useState('')
   const { capabilities, failed: capabilitiesFailed } = useProductCapabilities()
   const available = capabilities?.communityGateEnabled === true
+  useEffect(() => {
+    let active = true
+    api
+      .communityEntries()
+      .then((publicEntries) => {
+        if (active) setEntries(publicEntries)
+      })
+      .catch(() => {
+        if (active) setNotice({ tone: 'error', text: '公开社群入口暂时无法加载，请稍后刷新。' })
+      })
+    return () => {
+      active = false
+    }
+  }, [])
   async function verify(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
@@ -431,7 +446,10 @@ export function JoinPage() {
         text: `验证成功，本次页面授权有效至 ${new Date(grant.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}。`,
       })
     } catch (error) {
-      setEntries([])
+      api
+        .communityEntries()
+        .then(setEntries)
+        .catch(() => setEntries([]))
       setGrantToken('')
       setNotice({ tone: 'error', text: message(error) })
     } finally {
@@ -447,7 +465,7 @@ export function JoinPage() {
           <br />
           <span>找到可靠的下一步。</span>
         </h1>
-        <p>使用工作人员提供的批次邀请码查看当前有效的校内社群入口。</p>
+        <p>公开入口可直接查看；使用工作人员提供的批次邀请码后，还可查看受控入口。</p>
       </header>
       <div className="public-form-layout">
         <form className="paper-form" onSubmit={verify}>
@@ -487,14 +505,10 @@ export function JoinPage() {
                   {entry.name}
                 </strong>
                 {entry.description ? <p>{entry.description}</p> : null}
-                {entry.value?.startsWith('https://') ? (
-                  <a className="button ghost" href={entry.value} target="_blank" rel="noreferrer">
-                    打开入口 <ArrowUpRight size={14} />
-                  </a>
-                ) : entry.value ? (
-                  <code>{entry.value}</code>
-                ) : null}
-                {entry.mediaUrl && grantToken ? (
+                {entry.value ? <CommunityEntryValue entry={entry} /> : null}
+                {entry.mediaUrl && entry.accessLevel === 'PUBLIC' ? (
+                  <img className="community-qr" src={entry.mediaUrl} alt={`${entry.name}二维码`} />
+                ) : entry.mediaUrl && grantToken ? (
                   <ControlledCommunityImage
                     path={entry.mediaUrl}
                     grant={grantToken}
@@ -504,11 +518,41 @@ export function JoinPage() {
               </article>
             ))
           ) : (
-            <p>验证成功后，当前有效入口会显示在这里。</p>
+            <p>当前没有公开入口；验证成功后，受控入口会显示在这里。</p>
           )}
         </aside>
       </div>
     </>
+  )
+}
+
+function CommunityEntryValue({ entry }: { entry: CommunityEntry }) {
+  const href =
+    entry.contactChannel === 'EMAIL'
+      ? `mailto:${entry.value}`
+      : entry.contactChannel === 'PHONE'
+        ? `tel:${entry.value}`
+        : entry.presentationType === 'LINK'
+          ? entry.value
+          : null
+  return href ? (
+    <a
+      className="button ghost"
+      href={href ?? undefined}
+      target={href.startsWith('https://') ? '_blank' : undefined}
+      rel="noreferrer"
+    >
+      {entry.contactChannel === 'EMAIL'
+        ? '发送邮件'
+        : entry.contactChannel === 'PHONE'
+          ? '拨打电话'
+          : '打开入口'}{' '}
+      <ArrowUpRight size={14} />
+    </a>
+  ) : (
+    <button className="button ghost" type="button" onClick={() => void copyText(entry.value ?? '')}>
+      <Copy size={14} /> 复制{entry.name}
+    </button>
   )
 }
 

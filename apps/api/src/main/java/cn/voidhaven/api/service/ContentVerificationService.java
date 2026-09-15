@@ -70,6 +70,9 @@ public class ContentVerificationService {
         String actorRole = actor.hasRole("SUPER_ADMIN") ? "SUPER_ADMIN" : "ADMIN";
         String id = Ids.ulid();
         Instant checkedAt = Instant.now();
+        if (nextCheckAt != null && !nextCheckAt.isAfter(checkedAt)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VERIFICATION_NEXT_CHECK_INVALID", "下次复核时间必须晚于本次核验时间。");
+        }
         jdbc.update("insert into content_verification_records (id, content_item_id, outcome, detail_summary, checked_by_account_id, checked_at, next_check_at) values (?, ?, ?, ?, ?, ?, ?)",
                 id, contentItemId, normalizedOutcome, detail, actorId, Timestamp.from(checkedAt),
                 nextCheckAt == null ? null : Timestamp.from(nextCheckAt));

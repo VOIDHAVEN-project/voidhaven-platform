@@ -4,7 +4,7 @@ import { ThemeProvider } from './components/theme'
 import { PublicShell, ScrollManager } from './components/shell'
 import { HomePage, CatalogPage, DetailPage, SearchPage, AboutPage, NotFoundPage } from './pages/public'
 import { CaseStatusPage, FeedbackPage, JoinPage, PartnerApplyPage } from './pages/forms'
-import { SignInPage, ActivationPage, ForgotPasswordPage, PasswordResetPage } from './pages/auth'
+import { SignInPage, ActivationPage, PasswordResetPage } from './pages/auth'
 import { Workspace } from './pages/workspace'
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -74,7 +74,6 @@ export default function App() {
             <Route path="/auth/sign-in" element={<SignInPage />} />
             <Route path="/auth/activate" element={<ActivationPage />} />
             <Route path="/auth/reset-password" element={<PasswordResetPage />} />
-            <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/workspace/*" element={<Workspace />} />
           </Routes>
         </RouteErrorBoundary>

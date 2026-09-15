@@ -51,12 +51,6 @@ public class PasswordService {
         return issueReset(accountId, "PASSWORD_RESET", reason, actorId, role, requestId, "PASSWORD_RESET_ISSUED");
     }
 
-    @Transactional
-    public IssuedReset issueSelfServiceReset(String accountId, String requestId) {
-        return issueReset(accountId, "PASSWORD_RESET_SELF_SERVICE", "已验证恢复邮箱", null, "ANONYMOUS", requestId,
-                "PASSWORD_RESET_SELF_SERVICE_ISSUED");
-    }
-
     private IssuedReset issueReset(String accountId, String tokenType, String reason, String actorId, String role, String requestId,
                                    String auditAction) {
         Account account = accounts.findByIdForUpdate(accountId).filter(Account::isActive)
@@ -74,14 +68,12 @@ public class PasswordService {
     public String consumeReset(String rawToken, String newPassword) {
         ActivationToken token = tokens.findByTokenHashForUpdate(SecureTokens.sha256(rawToken)).orElseThrow(this::invalidReset);
         Instant now = Instant.now();
-        if (!("PASSWORD_RESET".equals(token.getTokenType()) || "PASSWORD_RESET_SELF_SERVICE".equals(token.getTokenType()))
-                || !token.isUsableAt(now)) throw invalidReset();
+        if (!"PASSWORD_RESET".equals(token.getTokenType()) || !token.isUsableAt(now)) throw invalidReset();
         Account account = accounts.findByIdForUpdate(token.getAccountId()).filter(Account::isActive).orElseThrow(this::invalidReset);
         if (passwords.matches(newPassword, account.getPasswordHash())) throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_UNCHANGED", "新密码不能与当前密码相同。");
         account.changePassword(passwords.encode(newPassword));
         token.consume(now);
         tokens.invalidateUnusedByTypeExcept(account.getId(), "PASSWORD_RESET", token.getId(), now);
-        tokens.invalidateUnusedByTypeExcept(account.getId(), "PASSWORD_RESET_SELF_SERVICE", token.getId(), now);
         deleteSessions(account.getLoginId());
         return account.getLoginId();
     }

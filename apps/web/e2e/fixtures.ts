@@ -184,16 +184,6 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
       if (path === '/auth/password-reset/consume') {
         return reply({ loginId: 'isolated-user', message: '密码已重置' })
       }
-      if (path === '/auth/password-reset/request') {
-        return reply({ message: '如果账号存在且已绑定恢复邮箱，系统会发送一次性密码重置凭据。' }, 202)
-      }
-      if (path === '/auth/recovery-email/request-verification') {
-        return reply({ expiresAt: '2030-01-01T10:15:00Z' })
-      }
-      if (path === '/auth/recovery-email/verify') {
-        return reply({ available: true, verified: true, maskedEmail: 'is***@example.com' })
-      }
-      if (path === '/auth/recovery-email/remove') return route.fulfill({ status: 204 })
       if (path.endsWith('/verifications')) {
         return reply({
           id: '01JVERIFY000000000000000001',
@@ -247,6 +237,18 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
       if (path.startsWith('/public/')) {
         return reply({ id: '01JRECEIPT0000000000000001', queryCode: 'isolated-query-code-value' }, 201)
       }
+      if (method === 'PUT' && path.endsWith('/actions')) {
+        return reply({
+          contentId: id,
+          version: content.revision + 1,
+          workflowStatus: state.status === 'PUBLISHED' ? 'DRAFT' : state.status,
+          candidateCreated: state.status === 'PUBLISHED',
+          actions: (body.actions ?? []).map((action: object, index: number) => ({
+            id: `01JACTION0000000000000000${index}`,
+            ...action,
+          })),
+        })
+      }
       if (method === 'PATCH' && path.includes('/content-items/')) {
         if (state.conflict) return reply({ code: 'REVISION_MISMATCH' }, 412)
         return reply(managed())
@@ -283,6 +285,15 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           },
           201,
         )
+      if (path === '/media/action-uploads')
+        return reply({
+          id: '01HZX9Z8NQ2J3K4M5P6R7S8T9V',
+          url: '/api/v1/media/01HZX9Z8NQ2J3K4M5P6R7S8T9V/preview',
+          mediaType: 'image/png',
+          width: 240,
+          height: 240,
+          altText: '招募二维码',
+        })
       if (path === '/admin/accounts') {
         if (state.conflict)
           return reply(
@@ -397,11 +408,9 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
         communityGateEnabled: true,
         gatedRecruitmentEnabled: true,
         statusQueryEnabled: true,
-        passwordSelfServiceEnabled: true,
       })
     }
     if (path === '/content-modules') return reply(modules)
-    if (path === '/auth/recovery-email') return reply({ available: true, verified: false, maskedEmail: null })
     if (path.endsWith('/verifications')) return reply([])
     if (path === '/admin/content-items') return reply({ items: [managed()], nextCursor: null })
     if (path === '/admin/review-queue')
@@ -414,6 +423,7 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
         publicActiveCount: state.visibility === 'PUBLIC' ? 1 : 0,
         contentItems: { items: [managed()], nextCursor: null },
       })
+    if (path.endsWith('/actions')) return reply([])
     if (path.includes('/content-items/'))
       return reply({ ...managed(), draft: content, media: [], reviews: [] })
     if (path === '/public/community/entries') {
@@ -422,7 +432,9 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           id: '01JENTRY0000000000000000001',
           name: '主社群',
           description: '隔离测试入口',
-          entryType: 'URL',
+          presentationType: 'LINK',
+          contactChannel: 'URL',
+          accessLevel: 'COMMUNITY_GATED',
           value: 'https://example.com/community',
           primary: true,
           sortOrder: 0,
@@ -436,7 +448,9 @@ export async function mockApi(page: Page, role: 'ADMIN' | 'SUPER_ADMIN' | 'PARTN
           id: '01JENTRY0000000000000000001',
           name: '主社群',
           description: '隔离测试入口',
-          entryType: 'URL',
+          presentationType: 'LINK',
+          contactChannel: 'URL',
+          accessLevel: 'COMMUNITY_GATED',
           mediaAssetId: null,
           primary: true,
           active: true,

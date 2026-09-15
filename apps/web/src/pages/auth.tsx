@@ -115,13 +115,10 @@ export function SignInPage() {
             进入工作台 <ArrowRight size={15} />
           </BusyLabel>
         </button>
-        <Link className="text-link" to="/auth/forgot-password">
-          忘记密码？使用恢复邮箱
-        </Link>
         <Notice value={notice} />
         <p className="form-foot">
           <KeyRound size={14} />
-          首次激活请使用管理员提供的一次性链接；未绑定恢复邮箱时仍可联系管理员人工重置。
+          首次激活或忘记密码时，请联系超级管理员获取一次性凭据。
         </p>
       </form>
     </AuthShell>
@@ -255,7 +252,7 @@ export function PasswordResetPage() {
         {!done ? (
           <>
             <p className="muted">
-              粘贴恢复邮件或管理员人工交付的 30 分钟一次性凭据。凭据不会写入 URL 或浏览器存储。
+              粘贴超级管理员人工交付的 30 分钟一次性凭据。凭据不会写入 URL 或浏览器存储。
             </p>
             <label>
               重置凭据
@@ -307,63 +304,6 @@ export function PasswordResetPage() {
           </Link>
         )}
         <Notice value={notice} />
-      </form>
-    </AuthShell>
-  )
-}
-
-export function ForgotPasswordPage() {
-  usePageTitle('找回密码')
-  const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState(false)
-  const [notice, setNotice] = useState<NoticeValue>(null)
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (busy || done) return
-    const loginId = String(new FormData(event.currentTarget).get('loginId') ?? '').trim()
-    setBusy(true)
-    setNotice(null)
-    try {
-      const result = await api.requestPasswordReset(loginId)
-      setDone(true)
-      setNotice({ tone: 'success', text: result.message })
-    } catch (error) {
-      setNotice({ tone: 'error', text: message(error) })
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <AuthShell activation>
-      <form className="auth-card" onSubmit={submit}>
-        <p className="eyebrow">SELF-SERVICE RECOVERY</p>
-        <h2>找回密码</h2>
-        <p className="muted">
-          输入受控账号。如果已绑定并验证恢复邮箱，系统会发送一次性重置凭据；页面不会透露账号是否存在。
-        </p>
-        <label>
-          账号
-          <input
-            name="loginId"
-            autoComplete="username"
-            required
-            minLength={4}
-            maxLength={100}
-            pattern="[A-Za-z0-9._-]{4,100}"
-            disabled={busy || done}
-          />
-        </label>
-        {!done ? (
-          <button className="button primary" disabled={busy}>
-            <BusyLabel busy={busy}>发送重置凭据</BusyLabel>
-          </button>
-        ) : (
-          <Link className="button primary" to="/auth/reset-password">
-            输入重置凭据 <ArrowRight size={15} />
-          </Link>
-        )}
-        <Notice value={notice} />
-        <p className="form-foot">未绑定邮箱或无法收信时，请联系管理员使用人工交付通道。</p>
       </form>
     </AuthShell>
   )

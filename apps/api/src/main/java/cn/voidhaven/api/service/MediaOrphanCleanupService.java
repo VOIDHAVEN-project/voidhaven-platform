@@ -28,11 +28,11 @@ public class MediaOrphanCleanupService {
     @Transactional
     public int queueUnattachedAssets() {
         List<Orphan> orphans = jdbc.query(
-                "select ma.id, ma.storage_key from media_assets ma where ma.lifecycle_state = 'ACTIVE' and ma.storage_key not like 'community/%' and not exists (select 1 from revision_media rm where rm.media_asset_id = ma.id) and not exists (select 1 from community_entries ce where ce.media_asset_id = ma.id) and not exists (select 1 from content_action_entries ca where ca.media_asset_id = ma.id) for update",
+                "select ma.id, ma.storage_key from media_assets ma where ma.lifecycle_state = 'ACTIVE' and ma.storage_key not like 'community/%' and not exists (select 1 from revision_media rm where rm.media_asset_id = ma.id) and not exists (select 1 from community_entries ce where ce.media_asset_id = ma.id) and not exists (select 1 from content_action_entries ca where ca.media_asset_id = ma.id) and not exists (select 1 from content_action_media_reservations r where r.media_asset_id = ma.id and r.consumed_at is null and r.expires_at > current_timestamp(6)) for update",
                 (row, index) -> new Orphan(row.getString("id"), row.getString("storage_key")));
         int queued = 0;
         for (Orphan orphan : orphans) {
-            int marked = jdbc.update("update media_assets set lifecycle_state = 'DELETION_PENDING' where id = ? and lifecycle_state = 'ACTIVE' and storage_key not like 'community/%' and not exists (select 1 from revision_media where media_asset_id = ?) and not exists (select 1 from community_entries where media_asset_id = ?) and not exists (select 1 from content_action_entries where media_asset_id = ?)", orphan.id(), orphan.id(), orphan.id(), orphan.id());
+            int marked = jdbc.update("update media_assets set lifecycle_state = 'DELETION_PENDING' where id = ? and lifecycle_state = 'ACTIVE' and storage_key not like 'community/%' and not exists (select 1 from revision_media where media_asset_id = ?) and not exists (select 1 from community_entries where media_asset_id = ?) and not exists (select 1 from content_action_entries where media_asset_id = ?) and not exists (select 1 from content_action_media_reservations where media_asset_id = ? and consumed_at is null and expires_at > current_timestamp(6))", orphan.id(), orphan.id(), orphan.id(), orphan.id(), orphan.id());
             if (marked == 0) continue;
             jdbc.update("insert into media_deletion_jobs (id, media_asset_id, storage_key) values (?, ?, ?)", Ids.ulid(), orphan.id(), orphan.storageKey());
             queued++;

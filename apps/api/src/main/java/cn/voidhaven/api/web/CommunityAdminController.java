@@ -20,8 +20,11 @@ import java.util.Map;
 @PreAuthorize("hasRole('SUPER_ADMIN')")
 public class CommunityAdminController {
     record EntryRequest(@NotBlank @Size(max = 120) String name, @Size(max = 1000) String description,
-                        @NotBlank @Pattern(regexp = "URL|WECHAT|QQ_GROUP|QR_CODE|TEXT") String entryType,
+                        @NotBlank @Pattern(regexp = "LINK|QR_CODE|TEXT") String presentationType,
+                        @NotBlank @Pattern(regexp = "URL|EMAIL|WECHAT|QQ|PHONE|OTHER") String contactChannel,
+                        @NotBlank @Pattern(regexp = "PUBLIC|COMMUNITY_GATED") String accessLevel,
                         @Size(max = 2048) String value, @Size(max = 26) String mediaAssetId,
+                        boolean publicExposureConfirmed,
                         boolean primary, @Min(0) @Max(1000) int sortOrder) { }
     record InviteRequest(@NotBlank @Size(max = 120) String label, @Min(0) @Max(90) int expiresInDays,
                          @Min(0) @Max(10000) int maxUses) { }
@@ -60,7 +63,9 @@ public class CommunityAdminController {
     ApiResponse<CommunityService.EntrySummary> createEntry(@RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody EntryRequest body, Authentication auth, HttpServletRequest request) {
         return ok(idempotency.execute(key, body, CommunityService.EntrySummary.class,
-                () -> community.createEntry(body.name(), body.description(), body.entryType(), body.value(), body.mediaAssetId(), body.primary(), body.sortOrder(), accountId(auth), "SUPER_ADMIN", requestId(request))), request);
+                () -> community.createEntry(body.name(), body.description(), body.presentationType(), body.contactChannel(),
+                        body.accessLevel(), body.value(), body.mediaAssetId(), body.publicExposureConfirmed(),
+                        body.primary(), body.sortOrder(), accountId(auth), "SUPER_ADMIN", requestId(request))), request);
     }
 
     @PatchMapping("/entries/{id}")
@@ -68,8 +73,10 @@ public class CommunityAdminController {
             @RequestHeader("If-Match") String version, @Valid @RequestBody EntryRequest body, Authentication auth, HttpServletRequest request) {
         long expected = version(version);
         return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "body", body), CommunityService.EntrySummary.class,
-                () -> community.updateEntry(id, expected, body.name(), body.description(), body.entryType(), body.value(),
-                        body.mediaAssetId(), body.primary(), body.sortOrder(), accountId(auth), "SUPER_ADMIN", requestId(request))), request);
+                () -> community.updateEntry(id, expected, body.name(), body.description(), body.presentationType(),
+                        body.contactChannel(), body.accessLevel(), body.value(), body.mediaAssetId(),
+                        body.publicExposureConfirmed(), body.primary(), body.sortOrder(), accountId(auth),
+                        "SUPER_ADMIN", requestId(request))), request);
     }
 
     @PostMapping("/entries/{id}/deactivate")

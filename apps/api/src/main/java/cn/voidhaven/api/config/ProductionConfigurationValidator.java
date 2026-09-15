@@ -35,9 +35,6 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
     private final boolean communityGateEnabled;
     private final int communityGrantMinutes;
     private final String communityInviteHmacSecret;
-    private final boolean passwordSelfServiceEnabled;
-    private final String smtpHost;
-    private final String passwordRecoveryMailFrom;
 
     public ProductionConfigurationValidator(
             @Value("${voidhaven.public-base-url:}") String publicBaseUrl,
@@ -56,10 +53,7 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
             @Value("${voidhaven.private-value-keys:}") String privateValueKeys,
             @Value("${voidhaven.community-gate-enabled:false}") boolean communityGateEnabled,
             @Value("${voidhaven.community-grant-minutes:30}") int communityGrantMinutes,
-            @Value("${voidhaven.community-invite-hmac-secret:}") String communityInviteHmacSecret,
-            @Value("${voidhaven.password-self-service-enabled:false}") boolean passwordSelfServiceEnabled,
-            @Value("${spring.mail.host:}") String smtpHost,
-            @Value("${voidhaven.password-recovery-mail-from:}") String passwordRecoveryMailFrom) {
+            @Value("${voidhaven.community-invite-hmac-secret:}") String communityInviteHmacSecret) {
         this.publicBaseUrl = publicBaseUrl;
         this.mediaEndpoint = mediaEndpoint;
         this.mediaAccessKey = mediaAccessKey;
@@ -77,9 +71,6 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
         this.communityGateEnabled = communityGateEnabled;
         this.communityGrantMinutes = communityGrantMinutes;
         this.communityInviteHmacSecret = communityInviteHmacSecret;
-        this.passwordSelfServiceEnabled = passwordSelfServiceEnabled;
-        this.smtpHost = smtpHost;
-        this.passwordRecoveryMailFrom = passwordRecoveryMailFrom;
     }
 
     @Override
@@ -98,7 +89,6 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
         validateDatabase();
         validateCommunityGate();
         validatePrivateValues();
-        validatePasswordRecovery();
     }
 
     private void validateDatabase() {
@@ -116,7 +106,7 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
     }
 
     private void validatePrivateValues() {
-        if (!privateContactEnabled && !communityGateEnabled && !passwordSelfServiceEnabled) return;
+        if (!privateContactEnabled && !communityGateEnabled) return;
         requireText(privateValueCurrentKeyId, "VOIDHAVEN_PRIVATE_VALUE_CURRENT_KEY_ID");
         String normalizedCurrentKeyId = privateValueCurrentKeyId.toLowerCase(Locale.ROOT);
         if (normalizedCurrentKeyId.contains("local") || normalizedCurrentKeyId.contains("test")) {
@@ -145,19 +135,6 @@ public class ProductionConfigurationValidator implements ApplicationRunner {
             if (parts[0].equals(privateValueCurrentKeyId)) currentKeyPresent = true;
         }
         if (!currentKeyPresent) throw invalid("VOIDHAVEN_PRIVATE_VALUE_KEYS must include the current key id");
-    }
-
-    private void validatePasswordRecovery() {
-        if (!passwordSelfServiceEnabled) return;
-        requireText(smtpHost, "VOIDHAVEN_SMTP_HOST");
-        String normalizedHost = smtpHost.trim().toLowerCase(Locale.ROOT);
-        if (LOCAL_HOSTS.contains(normalizedHost) || normalizedHost.endsWith(".invalid")) {
-            throw invalid("VOIDHAVEN_SMTP_HOST must target an approved non-local SMTP service");
-        }
-        requireText(passwordRecoveryMailFrom, "VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM");
-        if (!passwordRecoveryMailFrom.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
-            throw invalid("VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM must be a valid sender address");
-        }
     }
 
     private void validateCommunityGate() {

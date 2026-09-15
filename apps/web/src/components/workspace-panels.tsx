@@ -42,6 +42,12 @@ function instant(value: FormDataEntryValue | null) {
   const date = new Date(String(value))
   return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
+function localDateTime(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
 
 function PagedPanel<T>({
   eyebrow,
@@ -396,14 +402,23 @@ export function SubmissionsPanel() {
               <CaseWorkflow
                 statuses={['IN_PROGRESS', 'WAITING_FOR_REQUESTER', 'RESOLVED', 'REJECTED', 'CLOSED']}
                 contactAvailable={item.contactAvailable}
+                dueAt={item.dueAt}
                 deliverySubject={{
                   subjectType: 'SUBMISSION',
                   subjectId: item.id,
                   ready: Boolean(item.publicResult),
                 }}
                 onReveal={(reason) => api.adminRevealSubmissionContact(item.id, reason)}
-                onRun={async (status, publicResult, reason) => {
-                  await api.adminTransitionSubmission(item.id, item.version, status, publicResult, reason)
+                onRun={async (status, publicResult, dueAt, clearDueAt, reason) => {
+                  await api.adminTransitionSubmission(
+                    item.id,
+                    item.version,
+                    status,
+                    publicResult,
+                    dueAt,
+                    clearDueAt,
+                    reason,
+                  )
                   reload()
                   setNotice({ tone: 'success', text: '公开输入处理结果已保存。' })
                 }}
@@ -419,14 +434,22 @@ export function SubmissionsPanel() {
 function CaseWorkflow({
   statuses,
   contactAvailable,
+  dueAt,
   onReveal,
   onRun,
   deliverySubject,
 }: {
   statuses: string[]
   contactAvailable: boolean
+  dueAt?: string | null
   onReveal: (reason: string) => Promise<{ contact: string }>
-  onRun: (status: string, publicResult: string, reason: string) => Promise<void>
+  onRun: (
+    status: string,
+    publicResult: string,
+    dueAt: string | undefined,
+    clearDueAt: boolean,
+    reason: string,
+  ) => Promise<void>
   deliverySubject?: {
     subjectType: 'SUBMISSION' | 'PARTNER_APPLICATION'
     subjectId: string
@@ -436,6 +459,7 @@ function CaseWorkflow({
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
   const [contact, setContact] = useState('')
+  const [clearDueAt, setClearDueAt] = useState(false)
   return (
     <form
       className="decision-inline"
@@ -446,6 +470,12 @@ function CaseWorkflow({
         const reason = String(data.get('reason') ?? '').trim()
         const status = String(data.get('status') ?? '')
         const publicResult = String(data.get('publicResult') ?? '').trim()
+        const submittedDueAt = String(data.get('dueAt') ?? '')
+        const originalDueAt = localDateTime(dueAt)
+        const dueAtValue =
+          clearDueAt || !submittedDueAt || submittedDueAt === originalDueAt
+            ? undefined
+            : instant(submittedDueAt) || undefined
         if (!reason) {
           setNotice({ tone: 'error', text: '请填写审核原因。' })
           return
@@ -463,7 +493,7 @@ function CaseWorkflow({
               note: reason,
             })
             setNotice({ tone: 'success', text: '已记录本次用户可见结果的人工通知。' })
-          } else await onRun(status, publicResult, reason)
+          } else await onRun(status, publicResult, dueAtValue, clearDueAt, reason)
         } catch (error) {
           setNotice({ tone: 'error', text: message(error) })
         } finally {
@@ -488,6 +518,24 @@ function CaseWorkflow({
       <label>
         用户可见答复
         <textarea name="publicResult" maxLength={2000} rows={3} />
+      </label>
+      <label>
+        处理截止时间
+        <input
+          name="dueAt"
+          type="datetime-local"
+          defaultValue={localDateTime(dueAt)}
+          disabled={clearDueAt || busy}
+        />
+      </label>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={clearDueAt}
+          onChange={(event) => setClearDueAt(event.target.checked)}
+          disabled={busy}
+        />
+        明确清除处理截止时间
       </label>
       <div>
         {contactAvailable ? (
@@ -645,18 +693,21 @@ export function ApplicationsPanel() {
                   'CLOSED',
                 ]}
                 contactAvailable={item.contactAvailable}
+                dueAt={item.dueAt}
                 deliverySubject={{
                   subjectType: 'PARTNER_APPLICATION',
                   subjectId: item.id,
                   ready: Boolean(item.publicResult),
                 }}
                 onReveal={(reason) => api.adminRevealPartnerContact(item.id, reason)}
-                onRun={async (status, publicResult, reason) => {
+                onRun={async (status, publicResult, dueAt, clearDueAt, reason) => {
                   await api.adminTransitionPartnerApplication(
                     item.id,
                     item.version,
                     status,
                     publicResult,
+                    dueAt,
+                    clearDueAt,
                     reason,
                   )
                   reload()

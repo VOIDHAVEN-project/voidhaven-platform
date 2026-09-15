@@ -3,6 +3,7 @@ package cn.voidhaven.api.integration;
 import cn.voidhaven.api.service.AuthenticationRateLimiter;
 import cn.voidhaven.api.service.AuditService;
 import cn.voidhaven.api.service.CommunityService;
+import cn.voidhaven.api.service.ContentSourcePolicy;
 import cn.voidhaven.api.service.MysqlAdvisoryLock;
 import cn.voidhaven.api.service.PrivateValueCipher;
 import cn.voidhaven.api.service.RateLimitLockService;
@@ -44,7 +45,7 @@ class DistributedSafetyIT {
             JdbcTemplate jdbc = new JdbcTemplate(dataSource);
             DataSourceTransactionManager transactions = new DataSourceTransactionManager(dataSource);
             RateLimitLockService locks = new RateLimitLockService(jdbc, transactions);
-            AuthenticationRateLimiter auth = new AuthenticationRateLimiter(locks, "test-secret", 5, 20, 10, 3, 10, 15);
+            AuthenticationRateLimiter auth = new AuthenticationRateLimiter(locks, "test-secret", 5, 20, 10, 15);
 
             ExecutorService pool = Executors.newFixedThreadPool(8);
             CyclicBarrier start = new CyclicBarrier(8);
@@ -124,8 +125,8 @@ class DistributedSafetyIT {
             jdbc.update("insert into community_invite_batches (id, label, code_hmac, valid_from, expires_at, max_uses, created_by_account_id) values (?, 'concurrency', ?, current_timestamp(6), date_add(current_timestamp(6), interval 1 day), 2, ?)",
                     "01JINVITE00000000000000000", SecureTokens.hmacSha256(communitySecret, inviteCode), communityActor);
             PrivateValueCipher privateValues = mock(PrivateValueCipher.class);
-            CommunityService community = new CommunityService(jdbc, privateValues, mock(AuditService.class), true,
-                    30, communitySecret, new MockEnvironment());
+            CommunityService community = new CommunityService(jdbc, privateValues, mock(ContentSourcePolicy.class),
+                    mock(AuditService.class), true, 30, communitySecret, new MockEnvironment());
             CyclicBarrier inviteStart = new CyclicBarrier(8);
             AtomicInteger inviteAllowed = new AtomicInteger();
             AtomicInteger inviteRejected = new AtomicInteger();

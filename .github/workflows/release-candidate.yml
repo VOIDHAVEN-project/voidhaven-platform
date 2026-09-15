@@ -19,7 +19,6 @@ jobs:
     env:
       VOIDHAVEN_E2E_REAL: '1'
       VOIDHAVEN_E2E_BASE_URL: http://127.0.0.1:18080
-      VOIDHAVEN_E2E_MAILPIT_URL: http://127.0.0.1:18025
       VOIDHAVEN_E2E_ADMIN_LOGIN: release-admin
       VOIDHAVEN_E2E_ADMIN_PASSWORD: ci-only-admin-password
       VOIDHAVEN_E2E_PARTNER_LOGIN: release-partner
@@ -27,7 +26,6 @@ jobs:
       VOIDHAVEN_E2E_MAX_FRAME_LATENCY_MS: '500'
       VOIDHAVEN_E2E_MAX_LONG_TASK_MS: '1000'
       VOIDHAVEN_HTTP_PORT: '18080'
-      VOIDHAVEN_MAILPIT_HTTP_PORT: '18025'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,10 +78,6 @@ jobs:
           VOIDHAVEN_MEDIA_ACCESS_KEY=release-media
           VOIDHAVEN_MEDIA_SECRET_KEY=ci-only-media-secret
           VOIDHAVEN_MEDIA_BUCKET=voidhaven-media
-          VOIDHAVEN_PASSWORD_SELF_SERVICE_ENABLED=true
-          VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM=no-reply@voidhaven.local
-          VOIDHAVEN_SMTP_HOST=mailpit
-          VOIDHAVEN_SMTP_PORT=1025
           EOF
       - name: Full-stack cold start
         run: docker compose --project-name voidhavenrelease --env-file .verification/release-ci.env -f infra/compose/compose.local.yml up --build --detach --wait

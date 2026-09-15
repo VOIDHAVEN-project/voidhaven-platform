@@ -32,8 +32,8 @@ class MySqlAndMinioIntegrationTest {
             Startables.deepStart(Stream.of(mysql, upgradeMysql, minio)).join();
             Flyway flyway = Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()).locations("classpath:db/migration").load();
             flyway.migrate();
-            assertThat(flyway.info().applied()).hasSize(18);
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("18");
+            assertThat(flyway.info().applied()).hasSize(21);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
             try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "media_deletion_jobs", null).next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "auth_rate_limit_events", null).next()).isTrue();
@@ -53,6 +53,9 @@ class MySqlAndMinioIntegrationTest {
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "homepage_placements", null).next()).isTrue();
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "activation_tokens", "token_type").next()).isTrue();
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "community_entries", "primary_slot").next()).isTrue();
+                assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "content_action_entries", "presentation_type").next()).isTrue();
+                assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "community_entries", "contact_channel").next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "content_action_media_reservations", null).next()).isTrue();
                 try (var defaults = connection.createStatement().executeQuery("select COLUMN_DEFAULT from information_schema.columns where table_schema = database() and table_name = 'content_submissions' and column_name = 'state'")) {
                     defaults.next();
                     assertThat(defaults.getString(1)).contains("RECEIVED");
@@ -91,7 +94,7 @@ class MySqlAndMinioIntegrationTest {
                     .locations("classpath:db/migration")
                     .load();
             upgraded.migrate();
-            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("18");
+            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("21");
             try (var connection = DriverManager.getConnection(upgradeMysql.getJdbcUrl(), upgradeMysql.getUsername(), upgradeMysql.getPassword());
                  var migrated = connection.createStatement().executeQuery("select state from content_submissions where id = '01JSUBMISSION0000000000001'")) {
                 migrated.next();
@@ -101,7 +104,7 @@ class MySqlAndMinioIntegrationTest {
                     assertThat(partner.getString(1)).isEqualTo("RECEIVED");
                 }
             } catch (Exception error) {
-                throw new AssertionError("V11 to V18 public-case and password-recovery upgrade could not be inspected", error);
+                throw new AssertionError("V11 to V21 public-case and entry-model upgrade could not be inspected", error);
             }
 
             String bucket = "voidhaven-media-test";

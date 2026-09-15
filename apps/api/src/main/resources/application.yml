@@ -27,15 +27,6 @@ spring:
       initialize-schema: never
   jackson:
     default-property-inclusion: non_null
-  mail:
-    host: ${VOIDHAVEN_SMTP_HOST:localhost}
-    port: ${VOIDHAVEN_SMTP_PORT:1025}
-    username: ${VOIDHAVEN_SMTP_USERNAME:}
-    password: ${VOIDHAVEN_SMTP_PASSWORD:}
-    properties:
-      mail.smtp.auth: ${VOIDHAVEN_SMTP_AUTH:false}
-      mail.smtp.starttls.enable: ${VOIDHAVEN_SMTP_STARTTLS:false}
-    test-connection: false
 server:
   port: ${SERVER_PORT:8081}
   servlet:
@@ -88,11 +79,7 @@ voidhaven:
   auth-login-failure-limit: ${VOIDHAVEN_AUTH_LOGIN_FAILURE_LIMIT:5}
   auth-login-network-limit: ${VOIDHAVEN_AUTH_LOGIN_NETWORK_LIMIT:20}
   auth-activation-network-limit: ${VOIDHAVEN_AUTH_ACTIVATION_NETWORK_LIMIT:10}
-  auth-password-reset-login-limit: ${VOIDHAVEN_AUTH_PASSWORD_RESET_LOGIN_LIMIT:3}
-  auth-password-reset-network-limit: ${VOIDHAVEN_AUTH_PASSWORD_RESET_NETWORK_LIMIT:10}
   auth-rate-limit-window-minutes: ${VOIDHAVEN_AUTH_RATE_LIMIT_WINDOW_MINUTES:15}
-  password-self-service-enabled: ${VOIDHAVEN_PASSWORD_SELF_SERVICE_ENABLED:false}
-  password-recovery-mail-from: ${VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM:}
   idempotency-in-progress-seconds: ${VOIDHAVEN_IDEMPOTENCY_IN_PROGRESS_SECONDS:86400}
   trust-proxy-headers: ${VOIDHAVEN_TRUST_PROXY_HEADERS:false}
   trusted-proxy-networks: ${VOIDHAVEN_TRUSTED_PROXY_NETWORKS:127.0.0.1/32,::1/128}

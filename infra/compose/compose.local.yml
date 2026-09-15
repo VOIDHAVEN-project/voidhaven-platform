@@ -5,15 +5,6 @@ x-logging: &default-logging
     max-file: '3'
 
 services:
-  mailpit:
-    image: axllent/mailpit:v1.31.1
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - '${VOIDHAVEN_MAILPIT_HTTP_PORT:-18025}:8025'
-    environment:
-      MP_MAX_MESSAGES: '100'
-
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -93,21 +84,11 @@ services:
       VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT_WINDOW_SECONDS: ${VOIDHAVEN_PUBLIC_WRITE_RATE_LIMIT_WINDOW_SECONDS:-3600}
       VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT: ${VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT:-60}
       VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT_WINDOW_SECONDS: ${VOIDHAVEN_PUBLIC_STATUS_QUERY_RATE_LIMIT_WINDOW_SECONDS:-3600}
-      VOIDHAVEN_AUTH_PASSWORD_RESET_LOGIN_LIMIT: ${VOIDHAVEN_AUTH_PASSWORD_RESET_LOGIN_LIMIT:-3}
-      VOIDHAVEN_AUTH_PASSWORD_RESET_NETWORK_LIMIT: ${VOIDHAVEN_AUTH_PASSWORD_RESET_NETWORK_LIMIT:-10}
-      VOIDHAVEN_PASSWORD_SELF_SERVICE_ENABLED: ${VOIDHAVEN_PASSWORD_SELF_SERVICE_ENABLED:-true}
-      VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM: ${VOIDHAVEN_PASSWORD_RECOVERY_MAIL_FROM:-no-reply@voidhaven.local}
-      VOIDHAVEN_SMTP_HOST: ${VOIDHAVEN_SMTP_HOST:-mailpit}
-      VOIDHAVEN_SMTP_PORT: ${VOIDHAVEN_SMTP_PORT:-1025}
-      VOIDHAVEN_SMTP_AUTH: ${VOIDHAVEN_SMTP_AUTH:-false}
-      VOIDHAVEN_SMTP_STARTTLS: ${VOIDHAVEN_SMTP_STARTTLS:-false}
     depends_on:
       mysql:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-      mailpit:
-        condition: service_started
 
   web:
     build:

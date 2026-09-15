@@ -62,7 +62,8 @@ public class AdminController {
     record PartnerApplicationDecision(@NotBlank @Pattern(regexp = "REJECT") String decision,
                                       @NotBlank @Size(max = 1000) String reason) { }
     record PublicCaseTransition(@NotBlank @Size(max = 32) String status, @Size(max = 2000) String publicResult,
-                                java.time.Instant dueAt, @NotBlank @Size(max = 1000) String reason) { }
+                                java.time.Instant dueAt, boolean clearDueAt,
+                                @NotBlank @Size(max = 1000) String reason) { }
     record ActionSetRequest(@NotNull @Size(max = 10) List<ContentActionService.ActionInput> actions) { }
     record OperationalStatusChange(@NotBlank @Pattern(regexp = "OPEN|PAUSED|FILLED|EXPIRED|CANCELLED") String status,
                                    @NotBlank @Size(max = 1000) String reason) { }
@@ -77,9 +78,10 @@ public class AdminController {
     @GetMapping("/content-items")
     ApiResponse<PageResult<ContentManagementService.Managed>> contentItems(@RequestParam(required = false) String cursor,
             @RequestParam(required = false) String status, @RequestParam(required = false) String module,
-            @RequestParam(required = false, name = "q") String query, @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false, name = "q") String query,
+            @RequestParam(required = false) String verification, @RequestParam(defaultValue = "20") int pageSize,
             HttpServletRequest request) {
-        return ok(content.managedPage(null, status, module, query, cursor, pageSize), request);
+        return ok(content.managedPage(null, status, module, query, verification, cursor, pageSize), request);
     }
 
     @GetMapping("/content-items/{id}")
@@ -268,8 +270,8 @@ public class AdminController {
             @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
             @Valid @RequestBody PublicCaseTransition body, Authentication auth, HttpServletRequest request) {
         long expected = version(version);
-        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
-                () -> publicCases.transitionPartnerApplication(id, body.status(), body.publicResult(), body.dueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
+        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "clearDueAt", body.clearDueAt(), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
+                () -> publicCases.transitionPartnerApplication(id, body.status(), body.publicResult(), body.dueAt(), body.clearDueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
     @PostMapping("/partner-applications/{id}/contact")
@@ -293,8 +295,8 @@ public class AdminController {
             @RequestHeader("Idempotency-Key") String key, @RequestHeader("If-Match") String version,
             @Valid @RequestBody PublicCaseTransition body, Authentication auth, HttpServletRequest request) {
         long expected = version(version);
-        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
-                () -> publicCases.transitionSubmission(id, body.status(), body.publicResult(), body.dueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
+        return ok(idempotency.execute(key, Map.of("id", id, "version", expected, "status", body.status(), "result", String.valueOf(body.publicResult()), "dueAt", String.valueOf(body.dueAt()), "clearDueAt", body.clearDueAt(), "reason", body.reason()), PublicCaseAdministrationService.TransitionResult.class,
+                () -> publicCases.transitionSubmission(id, body.status(), body.publicResult(), body.dueAt(), body.clearDueAt(), expected, body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
     @PostMapping("/submissions/{id}/contact")

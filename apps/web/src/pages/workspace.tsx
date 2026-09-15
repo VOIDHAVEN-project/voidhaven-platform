@@ -30,11 +30,14 @@ import {
 import {
   api,
   type CommunityEntrySummary,
+  type ContactChannel,
   type ContentActionInput,
+  type EntryAccessLevel,
   type Identity,
   type ManagedAction,
   type ManagedContent,
   type ProvisionedPartner,
+  type PresentationType,
 } from '../lib/api'
 import { parseHomepagePlacementText } from '../lib/homepage-placements'
 import { useCollapsed, usePageTitle, useResource } from '../lib/hooks'
@@ -277,7 +280,6 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
         {section === 'security' ? (
           <div className="security-panels">
             <PasswordChangePanel />
-            <RecoveryEmailPanel />
           </div>
         ) : editorRoute ? (
           <WorkspaceEditorPage
@@ -431,25 +433,26 @@ function RecruitmentActionEditor({
     <section className="panel action-editor-panel">
       <PanelHeading eyebrow="RECRUITMENT ACTIONS" title="招募行动入口" />
       <p className="panel-help">
-        正式发布前至少配置一项。报名链接和公开邮箱可直接显示；微信、QQ、群号和二维码必须经邀请码验证。
+        分别选择展示形式、联系渠道和访问级别。个人联系方式默认经邀请码验证；如需公开，保存前必须确认风险。
       </p>
       {rows.map((row, index) => (
         <fieldset className="action-editor-row" key={index} disabled={busy}>
           <label>
-            类型
+            展示形式
             <select
-              value={row.actionType}
+              value={row.presentationType}
               onChange={(event) => {
-                const nextType = event.target.value
+                const nextType = event.target.value as ContentActionInput['presentationType']
                 setRows((current) =>
                   current.map((item, rowIndex) =>
                     rowIndex === index
                       ? {
                           ...item,
-                          actionType: nextType as ContentActionInput['actionType'],
-                          accessLevel: gatedRecruitmentAction(nextType)
-                            ? 'COMMUNITY_GATED'
-                            : item.accessLevel,
+                          ...nextEntryShape(nextType, item.contactChannel, item.accessLevel, {
+                            from: 'presentation',
+                          }),
+                          mediaAssetId: nextType === 'QR_CODE' ? item.mediaAssetId : undefined,
+                          publicExposureConfirmed: false,
                         }
                       : item,
                   ),
@@ -457,13 +460,39 @@ function RecruitmentActionEditor({
                 if (nextType !== 'QR_CODE') setQrFile(index, null)
               }}
             >
-              <option value="APPLICATION_URL">报名链接</option>
-              <option value="PUBLIC_EMAIL">公开邮箱</option>
+              <option value="LINK">链接</option>
+              <option value="QR_CODE">二维码</option>
+              <option value="TEXT">文本</option>
+            </select>
+          </label>
+          <label>
+            联系渠道
+            <select
+              value={row.contactChannel}
+              onChange={(event) => {
+                const channel = event.target.value as ContentActionInput['contactChannel']
+                setRows((current) =>
+                  current.map((item, rowIndex) =>
+                    rowIndex === index
+                      ? {
+                          ...item,
+                          ...nextEntryShape(item.presentationType, channel, item.accessLevel, {
+                            from: 'channel',
+                            resetSensitiveAccess: true,
+                          }),
+                          publicExposureConfirmed: false,
+                        }
+                      : item,
+                  ),
+                )
+              }}
+            >
+              <option value="URL">网页 / 平台链接</option>
+              <option value="EMAIL">邮箱</option>
               <option value="WECHAT">微信</option>
               <option value="QQ">QQ</option>
-              <option value="WECHAT_GROUP">微信群</option>
-              <option value="QQ_GROUP">QQ群</option>
-              <option value="QR_CODE">二维码</option>
+              <option value="PHONE">电话</option>
+              <option value="OTHER">其他</option>
             </select>
           </label>
           <label>
@@ -478,14 +507,16 @@ function RecruitmentActionEditor({
             访问级别
             <select
               value={row.accessLevel}
-              onChange={(event) => update(index, 'accessLevel', event.target.value)}
-              disabled={gatedRecruitmentAction(row.actionType)}
+              onChange={(event) => {
+                update(index, 'accessLevel', event.target.value)
+                update(index, 'publicExposureConfirmed', false)
+              }}
             >
-              {gatedRecruitmentAction(row.actionType) ? null : <option value="PUBLIC">公开</option>}
+              <option value="PUBLIC">公开</option>
               <option value="COMMUNITY_GATED">邀请码验证后</option>
             </select>
           </label>
-          {row.actionType === 'QR_CODE' ? (
+          {row.presentationType === 'QR_CODE' ? (
             <label>
               二维码图片
               <small>
@@ -512,6 +543,16 @@ function RecruitmentActionEditor({
               />
             </label>
           )}
+          {requiresPublicExposureConfirmation(row) ? (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={row.publicExposureConfirmed}
+                onChange={(event) => update(index, 'publicExposureConfirmed', event.target.checked)}
+              />
+              我确认该联系方式或二维码将对所有访客公开
+            </label>
+          ) : null}
           <button
             className="button ghost"
             type="button"
@@ -540,10 +581,12 @@ function RecruitmentActionEditor({
             setRows((current) => [
               ...current,
               {
-                actionType: 'APPLICATION_URL',
+                presentationType: 'LINK',
+                contactChannel: 'URL',
                 accessLevel: 'PUBLIC',
                 label: '立即报名',
                 value: '',
+                publicExposureConfirmed: false,
                 enabled: true,
                 sortOrder: current.length,
               },
@@ -560,21 +603,17 @@ function RecruitmentActionEditor({
             setBusy(true)
             setNotice(null)
             try {
-              const prepared = rows.map((row) =>
-                gatedRecruitmentAction(row.actionType)
-                  ? { ...row, accessLevel: 'COMMUNITY_GATED' as const }
-                  : { ...row },
-              )
+              const prepared = rows.map((row) => ({ ...row }))
               for (let index = 0; index < prepared.length; index += 1) {
                 const row = prepared[index]
-                if (row.actionType !== 'QR_CODE') continue
+                if (row.presentationType !== 'QR_CODE') continue
                 const pending = qrFiles[index]
                 if (pending) {
                   if (pending.file.size > 5 * 1024 * 1024) {
                     setNotice({ tone: 'error', text: '二维码图片不能超过 5 MB。' })
                     return
                   }
-                  const uploaded = await api.uploadContentMedia(
+                  const uploaded = await api.uploadContentActionMedia(
                     contentId,
                     pending.file,
                     row.label.trim() || '招募二维码',
@@ -589,14 +628,19 @@ function RecruitmentActionEditor({
               const result = isAdmin
                 ? await api.adminReplaceActions(contentId, version, prepared)
                 : await api.partnerReplaceActions(contentId, version, prepared)
-              setRows(prepared)
+              setRows(result.actions.map(fromManagedAction))
               setQrFiles((current) => {
                 Object.values(current).forEach((item) => URL.revokeObjectURL(item.preview))
                 return {}
               })
               setVersion(result.version)
               onVersionChange?.(result.version)
-              setNotice({ tone: 'success', text: '招募行动入口已保存，内容版本已同步，可继续编辑正文。' })
+              setNotice({
+                tone: 'success',
+                text: result.candidateCreated
+                  ? '已创建候选版本，当前线上入口尚未改变。请完成送审和发布。'
+                  : '招募行动入口已保存，内容版本已同步。',
+              })
             } catch (error) {
               setNotice({ tone: 'error', text: message(error) })
             } finally {
@@ -612,23 +656,43 @@ function RecruitmentActionEditor({
   )
 }
 
-function gatedRecruitmentAction(actionType: string) {
-  return (
-    actionType === 'QR_CODE' ||
-    actionType === 'WECHAT' ||
-    actionType === 'QQ' ||
-    actionType === 'WECHAT_GROUP' ||
-    actionType === 'QQ_GROUP'
-  )
+function requiresPublicExposureConfirmation(action: ContentActionInput) {
+  return requiresEntryExposureConfirmation(action.presentationType, action.contactChannel, action.accessLevel)
+}
+
+const SENSITIVE_CONTACT_CHANNELS: ContentActionInput['contactChannel'][] = ['EMAIL', 'WECHAT', 'QQ', 'PHONE']
+
+function nextEntryShape(
+  presentationType: ContentActionInput['presentationType'],
+  contactChannel: ContentActionInput['contactChannel'],
+  accessLevel: ContentActionInput['accessLevel'],
+  options: { from?: 'presentation' | 'channel'; resetSensitiveAccess?: boolean } = {},
+) {
+  let nextPresentation = presentationType
+  let nextChannel = contactChannel
+  let nextAccess = accessLevel
+  if (options.from === 'presentation') {
+    if (nextPresentation === 'LINK') nextChannel = nextChannel === 'OTHER' ? 'OTHER' : 'URL'
+    else if (nextChannel === 'URL') nextChannel = 'OTHER'
+  } else {
+    if (nextChannel === 'URL') nextPresentation = 'LINK'
+    else if (nextPresentation === 'LINK' && nextChannel !== 'OTHER') nextPresentation = 'TEXT'
+    if (options.resetSensitiveAccess && SENSITIVE_CONTACT_CHANNELS.includes(nextChannel)) {
+      nextAccess = 'COMMUNITY_GATED'
+    }
+  }
+  return { presentationType: nextPresentation, contactChannel: nextChannel, accessLevel: nextAccess }
 }
 
 function fromManagedAction(action: ManagedAction): ContentActionInput {
   return {
-    actionType: action.actionType,
+    presentationType: action.presentationType,
+    contactChannel: action.contactChannel,
     accessLevel: action.accessLevel,
     label: action.label,
     value: action.value,
     mediaAssetId: action.mediaAssetId,
+    publicExposureConfirmed: false,
     enabled: action.enabled,
     sortOrder: action.sortOrder,
   }
@@ -897,6 +961,17 @@ function OperationalTasks() {
   )
 }
 
+function requiresEntryExposureConfirmation(
+  presentation: PresentationType,
+  channel: ContactChannel,
+  access: EntryAccessLevel,
+) {
+  return (
+    access === 'PUBLIC' &&
+    (presentation === 'QR_CODE' || ['EMAIL', 'WECHAT', 'QQ', 'PHONE'].includes(channel))
+  )
+}
+
 function CommunityManagementPanel() {
   const loader = useCallback(async () => {
     const [entries, invites, capabilities] = await Promise.all([
@@ -913,7 +988,9 @@ function CommunityManagementPanel() {
     expiresAt: string
   } | null>(null)
   const [notice, setNotice] = useState<NoticeValue>(null)
-  const [entryType, setEntryType] = useState('URL')
+  const [presentationType, setPresentationType] = useState<PresentationType>('LINK')
+  const [contactChannel, setContactChannel] = useState<ContactChannel>('URL')
+  const [accessLevel, setAccessLevel] = useState<EntryAccessLevel>('COMMUNITY_GATED')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [qrPreview, setQrPreview] = useState('')
   const [qrMediaId, setQrMediaId] = useState('')
@@ -1030,7 +1107,7 @@ function CommunityManagementPanel() {
           if (!operationsEnabled) return
           try {
             let mediaAssetId = qrMediaId.trim()
-            if (entryType === 'QR_CODE') {
+            if (presentationType === 'QR_CODE') {
               if (!mediaAssetId && qrFile) {
                 setUploadingQr(true)
                 const uploaded = await api.adminUploadCommunityMedia(
@@ -1048,14 +1125,19 @@ function CommunityManagementPanel() {
             await api.adminCreateCommunityEntry({
               name: String(data.get('name') ?? '').trim(),
               description: String(data.get('description') ?? '').trim() || undefined,
-              entryType,
+              presentationType,
+              contactChannel,
+              accessLevel,
               value: String(data.get('value') ?? '').trim() || undefined,
               mediaAssetId: mediaAssetId || undefined,
+              publicExposureConfirmed: data.get('publicExposureConfirmed') === 'on',
               primary: data.get('primary') === 'on',
               sortOrder: Number(data.get('sortOrder') || 0),
             })
             form.reset()
-            setEntryType('URL')
+            setPresentationType('LINK')
+            setContactChannel('URL')
+            setAccessLevel('COMMUNITY_GATED')
             setQrFile(null)
             setQrPreview('')
             setQrMediaId('')
@@ -1078,16 +1160,59 @@ function CommunityManagementPanel() {
           <input name="description" maxLength={1000} />
         </label>
         <label>
-          类型
-          <select name="entryType" value={entryType} onChange={(event) => setEntryType(event.target.value)}>
-            <option value="URL">链接</option>
-            <option value="WECHAT">微信</option>
-            <option value="QQ_GROUP">QQ群</option>
-            <option value="TEXT">文字</option>
+          展示形式
+          <select
+            name="presentationType"
+            value={presentationType}
+            onChange={(event) => {
+              const value = event.target.value as PresentationType
+              const next = nextEntryShape(value, contactChannel, accessLevel, { from: 'presentation' })
+              setPresentationType(next.presentationType)
+              setContactChannel(next.contactChannel)
+              setAccessLevel(next.accessLevel)
+            }}
+          >
+            <option value="LINK">链接</option>
             <option value="QR_CODE">二维码</option>
+            <option value="TEXT">文本</option>
           </select>
         </label>
-        {entryType === 'QR_CODE' ? (
+        <label>
+          联系渠道
+          <select
+            name="contactChannel"
+            value={contactChannel}
+            onChange={(event) => {
+              const value = event.target.value as ContactChannel
+              const next = nextEntryShape(presentationType, value, accessLevel, {
+                from: 'channel',
+                resetSensitiveAccess: true,
+              })
+              setPresentationType(next.presentationType)
+              setContactChannel(next.contactChannel)
+              setAccessLevel(next.accessLevel)
+            }}
+          >
+            <option value="URL">网页 / 平台链接</option>
+            <option value="EMAIL">邮箱</option>
+            <option value="WECHAT">微信</option>
+            <option value="QQ">QQ</option>
+            <option value="PHONE">电话</option>
+            <option value="OTHER">其他</option>
+          </select>
+        </label>
+        <label>
+          访问级别
+          <select
+            name="accessLevel"
+            value={accessLevel}
+            onChange={(event) => setAccessLevel(event.target.value as EntryAccessLevel)}
+          >
+            <option value="COMMUNITY_GATED">邀请码验证后</option>
+            <option value="PUBLIC">公开</option>
+          </select>
+        </label>
+        {presentationType === 'QR_CODE' ? (
           <label>
             二维码图片
             <small>从本机选择一张不超过 5 MB 的图片，创建时会自动上传。</small>
@@ -1112,6 +1237,12 @@ function CommunityManagementPanel() {
             <input name="value" maxLength={2048} />
           </label>
         )}
+        {requiresEntryExposureConfirmation(presentationType, contactChannel, accessLevel) ? (
+          <label className="checkbox-row">
+            <input name="publicExposureConfirmed" type="checkbox" required />
+            我确认该联系方式或二维码将对所有访客公开
+          </label>
+        ) : null}
         <label>
           排序
           <input name="sortOrder" type="number" min={0} max={1000} defaultValue={0} />
@@ -1133,7 +1264,8 @@ function CommunityManagementPanel() {
               </div>
               <h3>{entry.name}</h3>
               <p>
-                {entry.entryType} · 顺序 {entry.sortOrder}
+                {entry.presentationType} · {entry.contactChannel} ·{' '}
+                {entry.accessLevel === 'PUBLIC' ? '公开' : '验证后可见'} · 顺序 {entry.sortOrder}
               </p>
             </div>
             {entry.active ? (
@@ -1167,7 +1299,9 @@ function CommunityEntryActions({
 }) {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [editType, setEditType] = useState(entry.entryType)
+  const [editPresentation, setEditPresentation] = useState<PresentationType>(entry.presentationType)
+  const [editChannel, setEditChannel] = useState<ContactChannel>(entry.contactChannel)
+  const [editAccess, setEditAccess] = useState<EntryAccessLevel>(entry.accessLevel)
   async function run(work: () => Promise<void>, success: string) {
     setBusy(true)
     try {
@@ -1201,8 +1335,17 @@ function CommunityEntryActions({
                 await api.adminUpdateCommunityEntry(entry.id, entry.version, {
                   name: entry.name,
                   description: entry.description ?? undefined,
-                  entryType: entry.entryType,
+                  presentationType: entry.presentationType,
+                  contactChannel: entry.contactChannel,
+                  accessLevel: entry.accessLevel,
                   mediaAssetId: entry.mediaAssetId ?? undefined,
+                  publicExposureConfirmed:
+                    entry.accessLevel === 'PUBLIC' &&
+                    requiresEntryExposureConfirmation(
+                      entry.presentationType,
+                      entry.contactChannel,
+                      entry.accessLevel,
+                    ),
                   primary: true,
                   sortOrder: entry.sortOrder,
                 })
@@ -1237,9 +1380,12 @@ function CommunityEntryActions({
               await api.adminUpdateCommunityEntry(entry.id, entry.version, {
                 name: String(data.get('name') ?? '').trim(),
                 description: String(data.get('description') ?? '').trim() || undefined,
-                entryType: editType,
+                presentationType: editPresentation,
+                contactChannel: editChannel,
+                accessLevel: editAccess,
                 value: String(data.get('value') ?? '').trim() || undefined,
                 mediaAssetId: String(data.get('mediaAssetId') ?? '').trim() || undefined,
+                publicExposureConfirmed: data.get('publicExposureConfirmed') === 'on',
                 primary: data.get('primary') === 'on',
                 sortOrder: Number(data.get('sortOrder') || 0),
               })
@@ -1256,16 +1402,59 @@ function CommunityEntryActions({
             <input name="description" maxLength={1000} defaultValue={entry.description ?? ''} />
           </label>
           <label>
-            类型
-            <select name="entryType" value={editType} onChange={(event) => setEditType(event.target.value)}>
-              <option value="URL">链接</option>
-              <option value="WECHAT">微信</option>
-              <option value="QQ_GROUP">QQ群</option>
-              <option value="TEXT">文字</option>
+            展示形式
+            <select
+              name="presentationType"
+              value={editPresentation}
+              onChange={(event) => {
+                const value = event.target.value as PresentationType
+                const next = nextEntryShape(value, editChannel, editAccess, { from: 'presentation' })
+                setEditPresentation(next.presentationType)
+                setEditChannel(next.contactChannel)
+                setEditAccess(next.accessLevel)
+              }}
+            >
+              <option value="LINK">链接</option>
               <option value="QR_CODE">二维码</option>
+              <option value="TEXT">文本</option>
             </select>
           </label>
-          {editType === 'QR_CODE' ? (
+          <label>
+            联系渠道
+            <select
+              name="contactChannel"
+              value={editChannel}
+              onChange={(event) => {
+                const value = event.target.value as ContactChannel
+                const next = nextEntryShape(editPresentation, value, editAccess, {
+                  from: 'channel',
+                  resetSensitiveAccess: true,
+                })
+                setEditPresentation(next.presentationType)
+                setEditChannel(next.contactChannel)
+                setEditAccess(next.accessLevel)
+              }}
+            >
+              <option value="URL">网页 / 平台链接</option>
+              <option value="EMAIL">邮箱</option>
+              <option value="WECHAT">微信</option>
+              <option value="QQ">QQ</option>
+              <option value="PHONE">电话</option>
+              <option value="OTHER">其他</option>
+            </select>
+          </label>
+          <label>
+            访问级别
+            <select
+              name="accessLevel"
+              value={editAccess}
+              onChange={(event) => setEditAccess(event.target.value as EntryAccessLevel)}
+            >
+              <option value="COMMUNITY_GATED">邀请码验证后</option>
+              <option value="PUBLIC">公开</option>
+            </select>
+          </label>
+          {editPresentation === 'QR_CODE' ? (
             <label>
               二维码媒体 ID <small>留空保留原图片；替换图片可先新建入口后停用旧入口。</small>
               <input name="mediaAssetId" maxLength={26} defaultValue={entry.mediaAssetId ?? ''} />
@@ -1276,6 +1465,12 @@ function CommunityEntryActions({
               <input name="value" maxLength={2048} autoComplete="off" />
             </label>
           )}
+          {requiresEntryExposureConfirmation(editPresentation, editChannel, editAccess) ? (
+            <label className="checkbox-row">
+              <input name="publicExposureConfirmed" type="checkbox" required />
+              我确认该联系方式或二维码将对所有访客公开
+            </label>
+          ) : null}
           <label>
             排序
             <input name="sortOrder" type="number" min={0} max={1000} defaultValue={entry.sortOrder} />
@@ -1420,149 +1615,16 @@ function PasswordChangePanel() {
   )
 }
 
-function RecoveryEmailPanel() {
-  const state = useResource(api.recoveryEmailStatus)
-  const [busy, setBusy] = useState(false)
-  const [awaitingCode, setAwaitingCode] = useState(false)
-  const [notice, setNotice] = useState<NoticeValue>(null)
-  if (state.loading)
-    return (
-      <section className="workspace-card narrow-card">
-        <LoadingRows />
-      </section>
-    )
-  if (state.error)
-    return (
-      <section className="workspace-card narrow-card">
-        <ErrorState error={state.error} retry={state.reload} />
-      </section>
-    )
-  const status = state.data
-  return (
-    <section className="workspace-card narrow-card">
-      <PanelHeading eyebrow="PASSWORD RECOVERY" title="恢复邮箱" />
-      {!status?.available ? (
-        <p className="panel-help">自助恢复尚未安全配置。忘记密码时请继续联系超级管理员人工交付。</p>
-      ) : (
-        <>
-          <p className="panel-help">
-            {status.verified
-              ? `已验证：${status.maskedEmail}。忘记密码时可自行接收一次性重置凭据。`
-              : '绑定并验证邮箱后，可以在无法登录时自行接收一次性重置凭据。'}
-          </p>
-          <form
-            className="paper-form"
-            onSubmit={async (event) => {
-              event.preventDefault()
-              const form = event.currentTarget
-              const data = new FormData(form)
-              setBusy(true)
-              setNotice(null)
-              try {
-                const result = await api.requestRecoveryEmailVerification(
-                  String(data.get('currentPassword') ?? ''),
-                  String(data.get('email') ?? '').trim(),
-                )
-                form.reset()
-                setAwaitingCode(true)
-                setNotice({
-                  tone: 'success',
-                  text: `验证码已发送，有效至 ${new Date(result.expiresAt).toLocaleString()}。`,
-                })
-              } catch (error) {
-                setNotice({ tone: 'error', text: message(error) })
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            <fieldset disabled={busy}>
-              <label>
-                {status.verified ? '新的恢复邮箱' : '恢复邮箱'}
-                <input name="email" type="email" required maxLength={254} autoComplete="email" />
-              </label>
-              <label>
-                当前密码
-                <input
-                  name="currentPassword"
-                  type="password"
-                  required
-                  maxLength={128}
-                  autoComplete="current-password"
-                />
-              </label>
-              <button className="button primary">发送邮箱验证码</button>
-            </fieldset>
-          </form>
-          {awaitingCode ? (
-            <form
-              className="paper-form"
-              onSubmit={async (event) => {
-                event.preventDefault()
-                const token = String(new FormData(event.currentTarget).get('token') ?? '').trim()
-                setBusy(true)
-                try {
-                  await api.verifyRecoveryEmail(token)
-                  setAwaitingCode(false)
-                  setNotice({ tone: 'success', text: '恢复邮箱已验证并启用。' })
-                  state.reload()
-                } catch (error) {
-                  setNotice({ tone: 'error', text: message(error) })
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              <label>
-                邮箱验证码
-                <input name="token" required minLength={32} maxLength={256} autoComplete="one-time-code" />
-              </label>
-              <button className="button primary" disabled={busy}>
-                验证并启用
-              </button>
-            </form>
-          ) : null}
-          {status.verified ? (
-            <form
-              className="paper-form"
-              onSubmit={async (event) => {
-                event.preventDefault()
-                const currentPassword = String(new FormData(event.currentTarget).get('currentPassword') ?? '')
-                setBusy(true)
-                try {
-                  await api.removeRecoveryEmail(currentPassword)
-                  setNotice({ tone: 'success', text: '恢复邮箱已移除，人工重置通道仍然可用。' })
-                  state.reload()
-                } catch (error) {
-                  setNotice({ tone: 'error', text: message(error) })
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              <label>
-                移除前确认当前密码
-                <input
-                  name="currentPassword"
-                  type="password"
-                  required
-                  maxLength={128}
-                  autoComplete="current-password"
-                />
-              </label>
-              <button className="button danger" disabled={busy}>
-                移除恢复邮箱
-              </button>
-            </form>
-          ) : null}
-        </>
-      )}
-      <Notice value={notice} />
-    </section>
-  )
-}
 function AdminContent({ section }: { section: string }) {
-  const [filters, setFilters] = useState({ query: '', status: '', module: '' })
+  const [params] = useSearchParams()
+  const [filters, setFilters] = useState(() => ({
+    query: '',
+    status: '',
+    module: '',
+    verification: ['attention', 'due'].includes(params.get('verification') ?? '')
+      ? (params.get('verification') as 'attention' | 'due')
+      : ('' as const),
+  }))
   const loader = useCallback(() => api.adminContentItems(filters), [filters])
   const state = useResource(loader)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
@@ -1649,6 +1711,18 @@ function AdminContent({ section }: { section: string }) {
             }
           />
           <p className="panel-help">先整理内容，再核对来源。公开发布前，每份内容都经过审核。</p>
+          {filters.verification ? (
+            <div className="inline-notice">
+              当前核验筛选：{filters.verification === 'attention' ? '异常待处理' : '定期复核已到期'}
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => setFilters((current) => ({ ...current, verification: '' }))}
+              >
+                清除筛选
+              </button>
+            </div>
+          ) : null}
           <form
             className="workspace-filter"
             onSubmit={(event) => {
@@ -1658,6 +1732,7 @@ function AdminContent({ section }: { section: string }) {
                 query: String(data.get('q') ?? '').trim(),
                 status: String(data.get('status') ?? ''),
                 module: String(data.get('module') ?? ''),
+                verification: String(data.get('verification') ?? '') as 'attention' | 'due' | '',
               })
             }}
           >
@@ -1685,6 +1760,14 @@ function AdminContent({ section }: { section: string }) {
                 <option value="recruitment">团队招募</option>
                 <option value="resource">学习资源</option>
                 <option value="resource.article">文章 / 经验</option>
+              </select>
+            </label>
+            <label>
+              来源核验
+              <select name="verification" defaultValue={filters.verification}>
+                <option value="">全部</option>
+                <option value="attention">异常待处理</option>
+                <option value="due">定期复核已到期</option>
               </select>
             </label>
             <button className="button ghost">应用筛选</button>
