@@ -463,6 +463,7 @@ paths:
   /admin/reviews/{id}/decision:
     post:
       summary: 管理员审核通过、退回或拒绝
+      description: 待审核内容可通过、退回或拒绝；已通过且记录活跃的候选稿仅可退回修改，不影响已有公开版本。退回或拒绝必须填写原因，所有决定须匹配当前修订版本。招募在送审和通过前必须存在有效行动入口。
       parameters:
         [
           { $ref: '#/components/parameters/Id' },
