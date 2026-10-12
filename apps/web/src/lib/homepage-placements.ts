@@ -1,51 +1,87 @@
-import type { HomepagePlacement } from './api'
+import type { HomepagePlacement, HomepageSlot } from './api'
 
-const SLOTS = new Set<HomepagePlacement['slot']>(['FOCUS', 'RECRUITMENT', 'RESOURCE'])
-const CONTENT_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
+export const HOMEPAGE_SLOTS: HomepageSlot[] = ['FOCUS', 'COMPETITION', 'RECRUITMENT', 'RESOURCE']
 
-export function parseHomepagePlacementText(text: string): {
-  placements: Omit<HomepagePlacement, 'id' | 'version'>[]
-  errors: string[]
-} {
-  const errors: string[] = []
-  const placements: Omit<HomepagePlacement, 'id' | 'version'>[] = []
-  const seen = new Set<string>()
-  text.split(/\r?\n/).forEach((line, index) => {
-    const raw = line.trim()
-    if (!raw) return
-    const parts = raw.split(',').map((part) => part.trim())
-    const lineNo = index + 1
-    if (parts.length < 2 || parts.length > 3) {
-      errors.push(`第 ${lineNo} 行：请使用“栏目,内容ID,顺序”。`)
-      return
-    }
-    const [slot, contentItemId, order] = parts
-    if (!SLOTS.has(slot as HomepagePlacement['slot'])) {
-      errors.push(`第 ${lineNo} 行：栏目只能是 FOCUS、RECRUITMENT 或 RESOURCE。`)
-      return
-    }
-    if (!CONTENT_ID.test(contentItemId ?? '')) {
-      errors.push(`第 ${lineNo} 行：内容 ID 必须是 26 位 ULID。`)
-      return
-    }
-    const sortOrder = order ? Number(order) : 0
-    if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 1000) {
-      errors.push(`第 ${lineNo} 行：顺序必须是 0 到 1000 的整数。`)
-      return
-    }
-    const key = `${slot}:${contentItemId}`
-    if (seen.has(key)) {
-      errors.push(`第 ${lineNo} 行：同一栏目下内容 ID 重复。`)
-      return
-    }
-    seen.add(key)
-    placements.push({
-      slot: slot as HomepagePlacement['slot'],
-      contentItemId,
-      sortOrder,
-      startsAt: null,
-      endsAt: null,
-    })
-  })
-  return { placements, errors }
+export const HOMEPAGE_SLOT_LABELS: Record<HomepageSlot, string> = {
+  FOCUS: '本期值得关注',
+  COMPETITION: '竞赛资源',
+  RECRUITMENT: '团队招募',
+  RESOURCE: '资源与分享',
+}
+
+export function placementsInSlot(placements: HomepagePlacement[], slot: HomepageSlot) {
+  return placements
+    .filter((item) => item.slot === slot)
+    .slice()
+    .sort(
+      (left, right) =>
+        left.sortOrder - right.sortOrder || left.contentItemId.localeCompare(right.contentItemId),
+    )
+}
+
+export function movePlacement(
+  placements: HomepagePlacement[],
+  slot: HomepageSlot,
+  index: number,
+  delta: number,
+) {
+  const current = placementsInSlot(placements, slot)
+  const target = index + delta
+  if (target < 0 || target >= current.length) return placements
+  const reordered = current.slice()
+  const [row] = reordered.splice(index, 1)
+  reordered.splice(target, 0, row)
+  return replaceSlot(placements, slot, reordered)
+}
+
+export function dropPlacement(
+  placements: HomepagePlacement[],
+  slot: HomepageSlot,
+  fromIndex: number,
+  toIndex: number,
+) {
+  const current = placementsInSlot(placements, slot)
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= current.length ||
+    toIndex >= current.length
+  ) {
+    return placements
+  }
+  const reordered = current.slice()
+  const [row] = reordered.splice(fromIndex, 1)
+  reordered.splice(toIndex, 0, row)
+  return replaceSlot(placements, slot, reordered)
+}
+
+export function replaceSlot(
+  placements: HomepagePlacement[],
+  slot: HomepageSlot,
+  next: HomepagePlacement[],
+): HomepagePlacement[] {
+  const others = placements.filter((item) => item.slot !== slot)
+  return [
+    ...others,
+    ...next.map((item, index) => ({
+      ...item,
+      slot,
+      sortOrder: index,
+    })),
+  ]
+}
+
+export function curationFingerprint(placements: HomepagePlacement[]) {
+  return JSON.stringify(
+    HOMEPAGE_SLOTS.flatMap((slot) =>
+      placementsInSlot(placements, slot).map((item) => [
+        item.slot,
+        item.contentItemId,
+        item.sortOrder,
+        item.startsAt ?? null,
+        item.endsAt ?? null,
+      ]),
+    ),
+  )
 }

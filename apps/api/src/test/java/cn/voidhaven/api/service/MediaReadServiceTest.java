@@ -62,4 +62,30 @@ class MediaReadServiceTest {
         assertThat(sql.getValue()).contains("c.current_revision_id = ca.revision_id");
         assertThat(sql.getValue()).contains("content_action_media_reservations");
     }
+
+    @Test void project_join_public_qr_is_readable_through_the_public_media_path() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.query(any(String.class), any(ResultSetExtractor.class), eq("01JMEDIA00000000000000003")))
+                .thenReturn("community/project-join.png");
+
+        new MediaReadService(jdbc, mock(MediaStorage.class)).loadPublic("01JMEDIA00000000000000003");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(), any(ResultSetExtractor.class), eq("01JMEDIA00000000000000003"));
+        assertThat(sql.getValue()).contains("project_join_entries pje");
+        assertThat(sql.getValue()).contains("pje.access_level = 'PUBLIC'");
+    }
+
+    @Test void project_join_gated_qr_stays_on_the_community_path() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.query(any(String.class), any(ResultSetExtractor.class), eq("01JMEDIA00000000000000004")))
+                .thenReturn("community/project-join-gated.png");
+
+        new MediaReadService(jdbc, mock(MediaStorage.class)).loadCommunity("01JMEDIA00000000000000004");
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(sql.capture(), any(ResultSetExtractor.class), eq("01JMEDIA00000000000000004"));
+        assertThat(sql.getValue()).contains("project_join_entries pje");
+        assertThat(sql.getValue()).doesNotContain("pje.access_level");
+    }
 }

@@ -59,7 +59,9 @@ class ReviewRecoveryHttpIT {
         String version = approved.path("revision").asText();
         JsonNode returning = json.createObjectNode().put("decision", "CHANGES_REQUESTED").put("reason", "补齐合成行动入口");
         HttpClient partner = login("recovery-partner", password);
-        assertStatus(writeRaw(partner, "POST", decisionPath, returning, version, key()), 403);
+        HttpResponse<String> denied = writeRaw(partner, "POST", decisionPath, returning, version, key());
+        assertStatus(denied, 404);
+        assertThat(json.readTree(denied.body()).path("code").asText()).isEqualTo("CONTENT_NOT_FOUND");
         assertStatus(send(root, "POST", decisionPath, returning, version, key(), null), 403);
         assertThat(get(root, itemPath + "/publication-readiness").path("ready").asBoolean()).isFalse();
         assertStatus(writeRaw(root, "POST", decisionPath, returning, String.valueOf(Long.parseLong(version) + 1), key()), 409);

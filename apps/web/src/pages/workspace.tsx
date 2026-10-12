@@ -1,3 +1,5 @@
+import { PartnerMembersPanel, OrganizationControls } from '../components/organization-panels'
+import { IdentityContext, can, canCreate, useIdentity } from '../lib/authorization'
 import {
   useCallback,
   useEffect,
@@ -14,6 +16,7 @@ import {
   FilePlus2,
   FileText,
   Gauge,
+  Handshake,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -24,6 +27,7 @@ import {
   ShieldCheck,
   ClipboardCheck,
   Inbox,
+  ListOrdered,
   UserCog,
   Users,
 } from 'lucide-react'
@@ -38,8 +42,11 @@ import {
   type ManagedContent,
   type ProvisionedPartner,
   type PresentationType,
+  type ProjectJoinEntrySummary,
 } from '../lib/api'
-import { parseHomepagePlacementText } from '../lib/homepage-placements'
+import { ResourceConfigPanel } from '../components/resource-config-panel'
+import { CatalogOrderPanel } from '../components/catalog-curation'
+import { HomepageManagementPanel } from '../components/homepage-curation'
 import { useCollapsed, usePageTitle, useResource } from '../lib/hooks'
 import { ThemeButton } from '../components/theme'
 import { MobileDrawer } from '../components/shell'
@@ -76,6 +83,11 @@ function itemsOf<T>(value: { items: T[] } | T[] | null | undefined): T[] {
 export function Workspace() {
   usePageTitle('受控工作台')
   const state = useResource(api.me)
+  useEffect(() => {
+    const expired = () => state.reload()
+    window.addEventListener('voidhaven:session-expired', expired)
+    return () => window.removeEventListener('voidhaven:session-expired', expired)
+  }, [state.reload])
   if (state.loading)
     return (
       <main className="session-state">
@@ -110,7 +122,11 @@ export function Workspace() {
     loginId: state.data.loginId || '受控用户',
     roles: Array.isArray(state.data.roles) ? state.data.roles : [],
   }
-  return <WorkspaceFrame identity={identity} />
+  return (
+    <IdentityContext.Provider value={identity}>
+      <WorkspaceFrame identity={identity} />
+    </IdentityContext.Provider>
+  )
 }
 function WorkspaceFrame({ identity }: { identity: Identity }) {
   const [collapsed, toggle] = useCollapsed()
@@ -132,22 +148,47 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
         { id: 'content', label: '内容生命周期', icon: FileText },
         { id: 'reviews', label: '审核中心', icon: ClipboardCheck },
         { id: 'submissions', label: '公开输入', icon: Inbox },
-        { id: 'applications', label: '合作方申请', icon: Users },
+        { id: 'applications', label: '合作申请', icon: Users },
         { id: 'partners', label: '合作方与归属', icon: Settings2 },
         { id: 'homepage', label: '首页编排', icon: LayoutDashboard },
+        { id: 'resource-config', label: '资源与分享设置', icon: Settings2 },
+        { id: 'catalog', label: '目录顺序', icon: ListOrdered },
         ...(isSuperAdmin ? [{ id: 'community', label: '社群入口', icon: Users }] : []),
-        ...(isSuperAdmin ? [{ id: 'accounts', label: '账号治理', icon: UserCog }] : []),
+        ...(isSuperAdmin ? [{ id: 'project-join', label: '项目组入口', icon: Handshake }] : []),
+        ...(isSuperAdmin || can(identity, 'ACCOUNT_OPERATE')
+          ? [{ id: 'accounts', label: '账号治理', icon: UserCog }]
+          : []),
         { id: 'audit', label: '审计记录', icon: ScrollText },
         { id: 'security', label: '账号安全', icon: KeyRound },
       ]
     : [
         { id: 'overview', label: '概览', icon: LayoutDashboard },
-        { id: 'content', label: '我的内容', icon: FileText },
+        { id: 'content', label: '组织内容', icon: FileText },
+        ...(identity.organization?.accountKind === 'MAIN'
+          ? [{ id: 'members', label: '组织成员', icon: Users }]
+          : []),
         { id: 'security', label: '账号安全', icon: KeyRound },
       ]
+  const requiredSections: Record<string, string[]> = {
+    content: ['CONTENT_READ'],
+    reviews: ['CONTENT_REVIEW', 'CONTENT_PUBLISH'],
+    submissions: ['PUBLIC_INPUT_OPERATE'],
+    applications: ['PARTNER_VERIFY'],
+    partners: ['ACCOUNT_OPERATE', 'QUOTA_CONFIG', 'OWNERSHIP_TRANSFER'],
+    homepage: ['HOMEPAGE_CONFIG'],
+    'resource-config': ['RESOURCE_CONFIG'],
+    catalog: ['CATALOG_CONFIG'],
+    audit: ['AUDIT_READ'],
+  }
+  const visibleNav = nav.filter(
+    (item) =>
+      !isAdmin ||
+      !requiredSections[item.id] ||
+      requiredSections[item.id].some((permission) => can(identity, permission)),
+  )
   const section = editorRoute
     ? 'content'
-    : nav.some((item) => item.id === params.get('section'))
+    : visibleNav.some((item) => item.id === params.get('section'))
       ? params.get('section')!
       : 'overview'
   const allowNavigation = (event?: MouseEvent) => {
@@ -171,7 +212,7 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
       </div>
       <p className="nav-caption">WORKSPACE</p>
       <nav aria-label="工作台导航">
-        {nav.map(({ id, label, icon: Icon }) => (
+        {visibleNav.map(({ id, label, icon: Icon }) => (
           <Link
             key={id}
             to={`/workspace?section=${id}`}
@@ -252,7 +293,7 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
       <main id="workspace-main" className="workspace-main" tabIndex={-1}>
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">受控工作台 / {nav.find((item) => item.id === section)?.label}</p>
+            <p className="eyebrow">受控工作台 / {visibleNav.find((item) => item.id === section)?.label}</p>
             <h1>
               {isAdmin ? (
                 <>
@@ -287,8 +328,17 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
             contentId={editEditor?.params.contentId}
             onDirtyChange={setEditorDirty}
           />
+        ) : isAdmin &&
+          !isSuperAdmin &&
+          !(identity.permissions ?? []).some((grant) => can(identity, grant.permission)) ? (
+          <EmptyState
+            title="尚未分配有效管理职责"
+            text="请联系超级管理员分配职责、范围与期限。你仍可使用账号安全页面。"
+          />
         ) : isAdmin ? (
-          section === 'reviews' ? (
+          section === 'content' && params.get('item') ? (
+            <ReviewWorkspace itemId={params.get('item')!} isSuperAdmin={isSuperAdmin} />
+          ) : section === 'reviews' ? (
             <ReviewWorkspace itemId={params.get('item') ?? undefined} isSuperAdmin={isSuperAdmin} />
           ) : section === 'submissions' ? (
             <SubmissionsPanel />
@@ -296,11 +346,17 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
             <ApplicationsPanel />
           ) : section === 'partners' ? (
             <PartnerOperations />
+          ) : section === 'resource-config' ? (
+            <ResourceConfigPanel />
           ) : section === 'homepage' ? (
             <HomepageManagementPanel />
+          ) : section === 'catalog' ? (
+            <CatalogOrderPanel />
           ) : section === 'community' && isSuperAdmin ? (
             <CommunityManagementPanel />
-          ) : section === 'accounts' && isSuperAdmin ? (
+          ) : section === 'project-join' && isSuperAdmin ? (
+            <ProjectJoinManagementPanel />
+          ) : section === 'accounts' && (isSuperAdmin || can(identity, 'ACCOUNT_OPERATE')) ? (
             <AccountsPanel currentLoginId={identity.loginId} />
           ) : section === 'audit' ? (
             <AuditPanel />
@@ -308,7 +364,11 @@ function WorkspaceFrame({ identity }: { identity: Identity }) {
             <AdminContent section={section} />
           )
         ) : isPartner ? (
-          <PartnerContent section={section} />
+          section === 'members' && identity.organization?.accountKind === 'MAIN' ? (
+            <PartnerMembersPanel />
+          ) : (
+            <PartnerContent section={section} />
+          )
         ) : (
           <EmptyState title="当前账号没有可用权限" text="请联系管理员核对账号角色。" />
         )}
@@ -330,6 +390,7 @@ function WorkspaceEditorPage({
   const isPartner = identity.roles.includes('PARTNER')
   const navigate = useNavigate()
   const savedMessage = useRef('')
+  const createdId = useRef<string | null>(null)
   const close = () =>
     navigate('/workspace?section=content', {
       replace: true,
@@ -337,6 +398,8 @@ function WorkspaceEditorPage({
     })
   if (!isAdmin && !isPartner)
     return <EmptyState title="当前账号没有编辑权限" text="请联系管理员核对账号角色。" />
+  if (isAdmin && (!can(identity, 'CONTENT_EDIT') || (!contentId && !canCreate(identity))))
+    return <EmptyState title="当前授权不能编辑或新建该内容" text="请联系超级管理员核对职责与范围。" />
   if (contentId) {
     return (
       <LoadedWorkspaceEditor
@@ -352,9 +415,16 @@ function WorkspaceEditorPage({
     <ContentEditor
       onClose={close}
       onDirtyChange={onDirtyChange}
-      onSave={async (draft) => {
+      onSave={async (draft, mode) => {
         const result = isAdmin ? await api.adminCreate(draft) : await api.partnerCreate(draft)
-        savedMessage.current = `“${result.title}”已保存，可从列表继续处理。`
+        createdId.current = result.id
+        savedMessage.current = mode.continueEditing
+          ? `“${result.title}”已保存，可继续编辑并上传图片。`
+          : `“${result.title}”已保存，可从列表继续处理。`
+      }}
+      onContinueAfterSave={() => {
+        const id = createdId.current
+        if (id) navigate(`/workspace/content/${encodeURIComponent(id)}/edit`, { replace: true })
       }}
       onSaveAndSubmit={
         !isAdmin
@@ -373,8 +443,10 @@ function RecruitmentActionEditor({
   contentId,
   initialVersion,
   isAdmin,
+  privateAllowed = true,
   onVersionChange,
 }: {
+  privateAllowed?: boolean
   contentId: string
   initialVersion: number
   isAdmin: boolean
@@ -414,6 +486,13 @@ function RecruitmentActionEditor({
     return (
       <section className="panel">
         <ErrorState error={state.error} retry={state.reload} />
+      </section>
+    )
+  if (isAdmin && !privateAllowed && state.data?.some((action) => action.accessLevel === 'COMMUNITY_GATED'))
+    return (
+      <section className="panel">
+        <h3>受控行动入口</h3>
+        <p>当前入口含私密资料，你的职责未包含私密查看。正文可继续编辑，保存时会保留这些入口。</p>
       </section>
     )
   const update = (index: number, field: keyof ContentActionInput, value: string | boolean | number) =>
@@ -513,7 +592,7 @@ function RecruitmentActionEditor({
               }}
             >
               <option value="PUBLIC">公开</option>
-              <option value="COMMUNITY_GATED">邀请码验证后</option>
+              {(!isAdmin || privateAllowed) && <option value="COMMUNITY_GATED">邀请码验证后</option>}
             </select>
           </label>
           {row.presentationType === 'QR_CODE' ? (
@@ -711,14 +790,17 @@ function LoadedWorkspaceEditor({
   savedMessage: React.MutableRefObject<string>
   onDirtyChange: (dirty: boolean) => void
 }) {
+  const identityForEditor = useIdentity()
   const loader = useCallback(
     () => (isAdmin ? api.adminContent(contentId) : api.partnerContent(contentId)),
     [contentId, isAdmin],
   )
   const state = useResource(loader)
   const [revisionOverride, setRevision] = useState<number | null>(null)
+  const [statusOverride, setStatusOverride] = useState<string | null>(null)
   useEffect(() => {
     setRevision(null)
+    setStatusOverride(null)
   }, [contentId])
   if (state.loading)
     return (
@@ -733,21 +815,33 @@ function LoadedWorkspaceEditor({
       </section>
     )
   const editing = state.data
+  if (
+    isAdmin &&
+    !can(identityForEditor, 'CONTENT_EDIT', {
+      ownerPartnerProfileId: editing.ownerPartnerProfileId,
+      moduleKey: editing.draft.moduleKey,
+    })
+  )
+    return <EmptyState title="当前内容不在编辑授权范围内" text="请返回内容列表。" />
   const revision = revisionOverride ?? editing.revision
+  const workflowStatus = statusOverride ?? editing.workflowStatus
   const recruitment =
     editing.draft.kind === 'RECRUITMENT' || editing.draft.moduleKey?.startsWith('recruitment')
   return (
     <>
       <ContentEditor
-        editing={{ ...editing, revision }}
+        editing={{ ...editing, revision, workflowStatus }}
         onClose={close}
         onDirtyChange={onDirtyChange}
-        onSave={async (draft) => {
+        onSave={async (draft, mode) => {
           const result = isAdmin
             ? await api.adminRevise(editing.id, revision, draft)
             : await api.partnerRevise(editing.id, revision, draft)
           setRevision(result.revision)
-          savedMessage.current = `“${result.title}”已保存。`
+          setStatusOverride(result.workflowStatus)
+          savedMessage.current = mode.continueEditing
+            ? `“${result.title}”已保存，可继续编辑并上传图片。`
+            : `“${result.title}”已保存。`
         }}
         onSaveAndSubmit={
           !isAdmin
@@ -762,6 +856,13 @@ function LoadedWorkspaceEditor({
       />
       {recruitment ? (
         <RecruitmentActionEditor
+          privateAllowed={
+            !isAdmin ||
+            can(identityForEditor, 'PRIVATE_DATA_READ', {
+              ownerPartnerProfileId: editing.ownerPartnerProfileId,
+              moduleKey: editing.draft.moduleKey,
+            })
+          }
           contentId={editing.id}
           initialVersion={revision}
           isAdmin={isAdmin}
@@ -1487,63 +1588,369 @@ function CommunityEntryActions({
   )
 }
 
-function HomepageManagementPanel() {
-  const state = useResource(useCallback(() => api.adminHomepagePlacements(), []))
-  const [text, setText] = useState('')
+function ProjectJoinManagementPanel() {
+  const loader = useCallback(() => api.adminProjectJoinEntries(), [])
+  const state = useResource(loader)
   const [notice, setNotice] = useState<NoticeValue>(null)
-  useEffect(() => {
-    if (state.data)
-      setText(state.data.map((item) => `${item.slot},${item.contentItemId},${item.sortOrder}`).join('\n'))
-  }, [state.data])
+  const [presentationType, setPresentationType] = useState<PresentationType>('LINK')
+  const [contactChannel, setContactChannel] = useState<ContactChannel>('URL')
+  const [accessLevel, setAccessLevel] = useState<EntryAccessLevel>('COMMUNITY_GATED')
+  const [qrFile, setQrFile] = useState<File | null>(null)
+  const [qrPreview, setQrPreview] = useState('')
+  const [uploadingQr, setUploadingQr] = useState(false)
   if (state.loading) return <LoadingRows />
-  if (state.error) return <ErrorState error={state.error} retry={state.reload} />
+  if (state.error || !state.data)
+    return <ErrorState error={state.error || '项目组入口数据不可用。'} retry={state.reload} />
   return (
     <section className="workspace-stack">
-      <PanelHeading eyebrow="HOMEPAGE CURATION" title="首页人工编排" />
-      <p className="panel-help">
-        每行填写“栏目,内容ID,顺序”。栏目可用
-        FOCUS、RECRUITMENT、RESOURCE；留空保存后，未配置栏目会回退到最新公开内容。
+      <PanelHeading eyebrow="PROJECT JOIN OPERATIONS" title="项目组入口" />
+      <Notice value={notice} />
+      <p className="field-help">
+        邀请码与授权复用“社群入口”面板；这里只决定项目组页面展示哪些行动入口，停用后立即从公开页面消失。
       </p>
-      {!state.data?.length && !text.trim() ? (
-        <p className="field-help">当前没有人工编排。保存空清单将使用自动回退。</p>
-      ) : null}
       <form
         className="panel"
         onSubmit={async (event) => {
           event.preventDefault()
-          const parsed = parseHomepagePlacementText(text)
-          if (parsed.errors.length) {
-            setNotice({ tone: 'error', text: parsed.errors.join(' ') })
-            return
-          }
+          const form = event.currentTarget
+          const data = new FormData(form)
           try {
-            await api.adminReplaceHomepagePlacements(parsed.placements)
-            state.reload()
-            setNotice({
-              tone: 'success',
-              text: parsed.placements.length
-                ? `首页编排已保存，共 ${parsed.placements.length} 条。`
-                : '已清空人工编排，公开首页将回退最新内容。',
+            let mediaAssetId = ''
+            if (presentationType === 'QR_CODE') {
+              if (!qrFile) {
+                setNotice({ tone: 'error', text: '二维码入口请先选择一张图片。' })
+                return
+              }
+              setUploadingQr(true)
+              const uploaded = await api.adminUploadCommunityMedia(
+                qrFile,
+                String(data.get('name') ?? '').trim() || '项目组二维码',
+              )
+              mediaAssetId = uploaded.id
+            }
+            await api.adminCreateProjectJoinEntry({
+              name: String(data.get('name') ?? '').trim(),
+              description: String(data.get('description') ?? '').trim() || undefined,
+              presentationType,
+              contactChannel,
+              accessLevel,
+              value: String(data.get('value') ?? '').trim() || undefined,
+              mediaAssetId: mediaAssetId || undefined,
+              publicExposureConfirmed: data.get('publicExposureConfirmed') === 'on',
+              sortOrder: Number(data.get('sortOrder') || 0),
             })
+            form.reset()
+            setPresentationType('LINK')
+            setContactChannel('URL')
+            setAccessLevel('COMMUNITY_GATED')
+            setQrFile(null)
+            setQrPreview('')
+            state.reload()
+            setNotice({ tone: 'success', text: '项目组入口已创建。' })
           } catch (error) {
             setNotice({ tone: 'error', text: message(error) })
+          } finally {
+            setUploadingQr(false)
           }
         }}
       >
+        <h3>新增项目组入口</h3>
         <label>
-          编排清单
-          <textarea
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            rows={10}
-            spellCheck={false}
-            placeholder="FOCUS,01HZXC0V4K7N9PQRSTVWXY0001,0"
-          />
+          名称
+          <input name="name" required maxLength={120} />
         </label>
-        <button className="button primary">保存首页编排</button>
-        <Notice value={notice} />
+        <label>
+          说明
+          <input name="description" maxLength={1000} />
+        </label>
+        <label>
+          展示形式
+          <select
+            name="presentationType"
+            value={presentationType}
+            onChange={(event) => {
+              const value = event.target.value as PresentationType
+              const next = nextEntryShape(value, contactChannel, accessLevel, { from: 'presentation' })
+              setPresentationType(next.presentationType)
+              setContactChannel(next.contactChannel)
+              setAccessLevel(next.accessLevel)
+            }}
+          >
+            <option value="LINK">链接</option>
+            <option value="QR_CODE">二维码</option>
+            <option value="TEXT">文本</option>
+          </select>
+        </label>
+        <label>
+          联系渠道
+          <select
+            name="contactChannel"
+            value={contactChannel}
+            onChange={(event) => {
+              const value = event.target.value as ContactChannel
+              const next = nextEntryShape(presentationType, value, accessLevel, {
+                from: 'channel',
+                resetSensitiveAccess: true,
+              })
+              setPresentationType(next.presentationType)
+              setContactChannel(next.contactChannel)
+              setAccessLevel(next.accessLevel)
+            }}
+          >
+            <option value="URL">网页 / 平台链接</option>
+            <option value="EMAIL">邮箱</option>
+            <option value="WECHAT">微信</option>
+            <option value="QQ">QQ</option>
+            <option value="PHONE">电话</option>
+            <option value="OTHER">其他</option>
+          </select>
+        </label>
+        <label>
+          访问级别
+          <select
+            name="accessLevel"
+            value={accessLevel}
+            onChange={(event) => setAccessLevel(event.target.value as EntryAccessLevel)}
+          >
+            <option value="COMMUNITY_GATED">邀请码验证后</option>
+            <option value="PUBLIC">公开</option>
+          </select>
+        </label>
+        {presentationType === 'QR_CODE' ? (
+          <label>
+            二维码图片
+            <small>从本机选择一张不超过 5 MB 的图片，创建时会自动上传。</small>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                setQrFile(file)
+                setQrPreview((current) => {
+                  if (current) URL.revokeObjectURL(current)
+                  return file ? URL.createObjectURL(file) : ''
+                })
+              }}
+            />
+            {qrPreview ? (
+              <img className="community-qr" src={qrPreview} alt="待上传的项目组二维码预览" />
+            ) : null}
+          </label>
+        ) : (
+          <label>
+            入口内容
+            <input name="value" maxLength={2048} />
+          </label>
+        )}
+        {requiresEntryExposureConfirmation(presentationType, contactChannel, accessLevel) ? (
+          <label className="checkbox-row">
+            <input name="publicExposureConfirmed" type="checkbox" required />
+            我确认该联系方式或二维码将对所有访客公开
+          </label>
+        ) : null}
+        <label>
+          排序
+          <input name="sortOrder" type="number" min={0} max={1000} defaultValue={0} />
+        </label>
+        <button className="button primary" disabled={uploadingQr}>
+          {uploadingQr ? '上传并创建中…' : '创建入口'}
+        </button>
       </form>
+      {state.data.length ? (
+        <div className="data-list">
+          {state.data.map((entry) => (
+            <article className="data-row" key={entry.id}>
+              <div>
+                <div className="row-meta">
+                  <Badge value={entry.active ? 'ACTIVE' : 'INACTIVE'} />
+                </div>
+                <h3>{entry.name}</h3>
+                <p>
+                  {entry.presentationType} · {entry.contactChannel} ·{' '}
+                  {entry.accessLevel === 'PUBLIC' ? '公开' : '验证后可见'} · 顺序 {entry.sortOrder}
+                </p>
+              </div>
+              {entry.active ? (
+                <ProjectJoinEntryActions
+                  entry={entry}
+                  onDone={(text) => {
+                    state.reload()
+                    setNotice({ tone: 'success', text })
+                  }}
+                  onError={(error) => setNotice({ tone: 'error', text: message(error) })}
+                />
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="当前没有项目组入口" text="新增后会公开展示，或在验证邀请码后显示。" />
+      )}
     </section>
+  )
+}
+
+function ProjectJoinEntryActions({
+  entry,
+  onDone,
+  onError,
+}: {
+  entry: ProjectJoinEntrySummary
+  onDone: (text: string) => void
+  onError: (error: unknown) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editPresentation, setEditPresentation] = useState<PresentationType>(entry.presentationType)
+  const [editChannel, setEditChannel] = useState<ContactChannel>(entry.contactChannel)
+  const [editAccess, setEditAccess] = useState<EntryAccessLevel>(entry.accessLevel)
+  async function run(work: () => Promise<void>, success: string) {
+    setBusy(true)
+    try {
+      await work()
+      onDone(success)
+    } catch (error) {
+      onError(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <div className="button-row">
+        <button
+          className="button ghost"
+          type="button"
+          disabled={busy}
+          onClick={() => setEditing((current) => !current)}
+        >
+          {editing ? '取消编辑' : '编辑'}
+        </button>
+        <button
+          className="button danger"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            const reason = window.prompt('请输入停用原因')?.trim()
+            if (!reason) return
+            void run(async () => {
+              await api.adminDeactivateProjectJoinEntry(entry.id, entry.version, reason)
+            }, '项目组入口已停用。')
+          }}
+        >
+          停用
+        </button>
+      </div>
+      {editing ? (
+        <form
+          className="decision-inline"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const data = new FormData(event.currentTarget)
+            void run(async () => {
+              await api.adminUpdateProjectJoinEntry(entry.id, entry.version, {
+                name: String(data.get('name') ?? '').trim(),
+                description: String(data.get('description') ?? '').trim() || undefined,
+                presentationType: editPresentation,
+                contactChannel: editChannel,
+                accessLevel: editAccess,
+                value: String(data.get('value') ?? '').trim() || undefined,
+                mediaAssetId: String(data.get('mediaAssetId') ?? '').trim() || undefined,
+                publicExposureConfirmed: data.get('publicExposureConfirmed') === 'on',
+                sortOrder: Number(data.get('sortOrder') || 0),
+              })
+              setEditing(false)
+            }, '项目组入口已更新。')
+          }}
+        >
+          <label>
+            名称
+            <input name="name" required maxLength={120} defaultValue={entry.name} />
+          </label>
+          <label>
+            说明
+            <input name="description" maxLength={1000} defaultValue={entry.description ?? ''} />
+          </label>
+          <label>
+            展示形式
+            <select
+              name="presentationType"
+              value={editPresentation}
+              onChange={(event) => {
+                const value = event.target.value as PresentationType
+                const next = nextEntryShape(value, editChannel, editAccess, { from: 'presentation' })
+                setEditPresentation(next.presentationType)
+                setEditChannel(next.contactChannel)
+                setEditAccess(next.accessLevel)
+              }}
+            >
+              <option value="LINK">链接</option>
+              <option value="QR_CODE">二维码</option>
+              <option value="TEXT">文本</option>
+            </select>
+          </label>
+          <label>
+            联系渠道
+            <select
+              name="contactChannel"
+              value={editChannel}
+              onChange={(event) => {
+                const value = event.target.value as ContactChannel
+                const next = nextEntryShape(editPresentation, value, editAccess, {
+                  from: 'channel',
+                  resetSensitiveAccess: true,
+                })
+                setEditPresentation(next.presentationType)
+                setEditChannel(next.contactChannel)
+                setEditAccess(next.accessLevel)
+              }}
+            >
+              <option value="URL">网页 / 平台链接</option>
+              <option value="EMAIL">邮箱</option>
+              <option value="WECHAT">微信</option>
+              <option value="QQ">QQ</option>
+              <option value="PHONE">电话</option>
+              <option value="OTHER">其他</option>
+            </select>
+          </label>
+          <label>
+            访问级别
+            <select
+              name="accessLevel"
+              value={editAccess}
+              onChange={(event) => setEditAccess(event.target.value as EntryAccessLevel)}
+            >
+              <option value="COMMUNITY_GATED">邀请码验证后</option>
+              <option value="PUBLIC">公开</option>
+            </select>
+          </label>
+          {editPresentation === 'QR_CODE' ? (
+            <label>
+              二维码媒体 ID <small>留空保留原图片；替换图片可先新建入口后停用旧入口。</small>
+              <input name="mediaAssetId" maxLength={26} defaultValue={entry.mediaAssetId ?? ''} />
+            </label>
+          ) : (
+            <label>
+              新入口内容 <small>留空保留原有受保护内容。</small>
+              <input name="value" maxLength={2048} autoComplete="off" />
+            </label>
+          )}
+          {requiresEntryExposureConfirmation(editPresentation, editChannel, editAccess) ? (
+            <label className="checkbox-row">
+              <input name="publicExposureConfirmed" type="checkbox" required />
+              我确认该联系方式或二维码将对所有访客公开
+            </label>
+          ) : null}
+          <label>
+            排序
+            <input name="sortOrder" type="number" min={0} max={1000} defaultValue={entry.sortOrder} />
+          </label>
+          <button className="button primary" disabled={busy}>
+            保存入口
+          </button>
+        </form>
+      ) : null}
+    </>
   )
 }
 
@@ -1616,6 +2023,7 @@ function PasswordChangePanel() {
 }
 
 function AdminContent({ section }: { section: string }) {
+  const identity = useIdentity()
   const [params] = useSearchParams()
   const [filters, setFilters] = useState(() => ({
     query: '',
@@ -1641,7 +2049,11 @@ function AdminContent({ section }: { section: string }) {
     })
   const actions = (item: ManagedContent) => (
     <>
-      {['PENDING_REVIEW', 'APPROVED', 'REJECTED'].includes(item.workflowStatus) ? (
+      <Link className="button ghost" to={`/workspace?section=content&item=${encodeURIComponent(item.id)}`}>
+        查看内容
+      </Link>
+      {(can(identity, 'CONTENT_REVIEW', item) || can(identity, 'CONTENT_PUBLISH', item)) &&
+      ['PENDING_REVIEW', 'APPROVED', 'REJECTED'].includes(item.workflowStatus) ? (
         <Link
           className="button primary"
           to={`/workspace?section=reviews&item=${encodeURIComponent(item.id)}`}
@@ -1653,33 +2065,46 @@ function AdminContent({ section }: { section: string }) {
               : '查看拒绝记录'}
         </Link>
       ) : null}
-      {item.recordState !== 'ARCHIVED' &&
+      {can(identity, 'CONTENT_EDIT', item) &&
+        item.recordState !== 'ARCHIVED' &&
         ['DRAFT', 'CHANGES_REQUESTED', 'PUBLISHED'].includes(item.workflowStatus) && (
           <Link className="button ghost" to={`/workspace/content/${encodeURIComponent(item.id)}/edit`}>
             编辑
           </Link>
         )}
-      <VerificationControl item={item} />
-      {availableActions(item).map((action) => (
-        <button
-          className={`button ${action === 'publish' || action === 'approve' ? 'primary' : 'ghost'}`}
-          key={action}
-          onClick={() =>
-            setConfirmation({
-              title: actionLabel[action],
-              description: `即将对“${item.title}”执行${actionLabel[action]}。${action === 'publish' || action === 'show' ? '完成后内容将可供公开访问。' : action === 'archive' || action === 'hide' ? '完成后内容将不再公开展示。' : '操作将由服务端校验当前状态。'}`,
-              reasonRequired: ['changes', 'reject', 'hide', 'archive', 'restore'].includes(action),
-              run: async (reason) => {
-                const updated = await runAction(item, action, reason)
-                update(updated)
-                setNotice({ tone: 'success', text: `“${updated.title}”已${actionLabel[action]}。` })
-              },
-            })
-          }
-        >
-          {actionLabel[action]}
-        </button>
-      ))}
+      {can(identity, 'CONTENT_VERIFY', item) && <VerificationControl item={item} />}
+      {availableActions(item)
+        .filter((action) =>
+          can(
+            identity,
+            action === 'submit'
+              ? 'CONTENT_EDIT'
+              : ['approve', 'changes', 'reject'].includes(action)
+                ? 'CONTENT_REVIEW'
+                : 'CONTENT_PUBLISH',
+            item,
+          ),
+        )
+        .map((action) => (
+          <button
+            className={`button ${action === 'publish' || action === 'approve' ? 'primary' : 'ghost'}`}
+            key={action}
+            onClick={() =>
+              setConfirmation({
+                title: actionLabel[action],
+                description: `即将对“${item.title}”执行${actionLabel[action]}。${action === 'publish' || action === 'show' ? '完成后内容将可供公开访问。' : action === 'archive' || action === 'hide' ? '完成后内容将不再公开展示。' : '操作将由服务端校验当前状态。'}`,
+                reasonRequired: ['changes', 'reject', 'hide', 'archive', 'restore'].includes(action),
+                run: async (reason) => {
+                  const updated = await runAction(item, action, reason)
+                  update(updated)
+                  setNotice({ tone: 'success', text: `“${updated.title}”已${actionLabel[action]}。` })
+                },
+              })
+            }
+          >
+            {actionLabel[action]}
+          </button>
+        ))}
     </>
   )
   return (
@@ -1703,10 +2128,12 @@ function AdminContent({ section }: { section: string }) {
                   <RefreshCw size={15} />
                   刷新
                 </button>
-                <Link className="button primary" to="/workspace/content/new">
-                  <FilePlus2 size={15} />
-                  新建草稿
-                </Link>
+                {canCreate(identity) && (
+                  <Link className="button primary" to="/workspace/content/new">
+                    <FilePlus2 size={15} />
+                    新建草稿
+                  </Link>
+                )}
               </>
             }
           />
@@ -1758,7 +2185,7 @@ function AdminContent({ section }: { section: string }) {
                 <option value="">全部模块</option>
                 <option value="competition">竞赛</option>
                 <option value="recruitment">团队招募</option>
-                <option value="resource">学习资源</option>
+                <option value="resource">资源与分享</option>
                 <option value="resource.article">文章 / 经验</option>
               </select>
             </label>
@@ -1923,11 +2350,19 @@ function PartnerContent({ section }: { section: string }) {
           <ErrorState error={state.error} retry={state.reload} />
         ) : (
           state.data && (
-            <Overview
-              name={state.data.displayName}
-              items={itemsOf(state.data.contentItems)}
-              quota={{ count: state.data.publicActiveCount, total: state.data.quota }}
-            />
+            <>
+              {state.data.organization && (
+                <p className="panel-help">
+                  {state.data.organization.accountKind === 'MAIN' ? '组织主账号' : '组织成员账号'} · 成员名额{' '}
+                  {state.data.organization.memberCount} / {state.data.organization.memberQuota}（不含主账号）
+                </p>
+              )}
+              <Overview
+                name={state.data.displayName}
+                items={itemsOf(state.data.contentItems)}
+                quota={{ count: state.data.publicActiveCount, total: state.data.quota }}
+              />
+            </>
           )
         )
       ) : (
@@ -1984,7 +2419,7 @@ function PartnerContent({ section }: { section: string }) {
                 <option value="">全部模块</option>
                 <option value="competition">竞赛</option>
                 <option value="recruitment">团队招募</option>
-                <option value="resource">学习资源</option>
+                <option value="resource">资源与分享</option>
                 <option value="resource.article">文章 / 经验</option>
               </select>
             </label>
@@ -2036,7 +2471,7 @@ export function PartnerApplications() {
   return (
     <section className="panel">
       <PanelHeading
-        eyebrow="合作方申请"
+        eyebrow="合作申请"
         title="欢迎新的维护者"
         action={
           <button className="button ghost" onClick={state.reload}>
@@ -2051,8 +2486,8 @@ export function PartnerApplications() {
         <section className="token-card">
           <KeyRound size={21} />
           <div>
-            <strong>一次性激活链接 · {provisioned.loginId}</strong>
-            <code>{`${window.location.origin}/auth/activate?token=${encodeURIComponent(provisioned.activationToken)}`}</code>
+            <strong>待激活组织账号 · {provisioned.loginId}</strong>
+            <code>{'请由账号运营人员在账号治理中签发激活链接。'}</code>
             <small>离开页面或刷新后不再显示，请勿公开分享。</small>
             <button className="button ghost" onClick={() => setProvisioned(null)}>
               已妥善记录，关闭凭据
@@ -2111,13 +2546,14 @@ export function PartnerApplications() {
           ))}
         </div>
       ) : (
-        <EmptyState title="当前没有待处理申请" text="新的合作方申请将在这里出现。" />
+        <EmptyState title="当前没有待处理申请" text="新的合作申请将在这里出现。" />
       )}
       <ConfirmationView value={confirmation} close={() => setConfirmation(null)} />
     </section>
   )
 }
 function PartnerOperations() {
+  const identity = useIdentity()
   const [filters, setFilters] = useState({ query: '', status: '' })
   const loader = useCallback(() => api.adminPartnerProfiles(filters), [filters])
   const state = useResource(loader)
@@ -2173,76 +2609,82 @@ function PartnerOperations() {
                 <h3>{profile.displayName}</h3>
                 <p>
                   {profile.active ? '启用' : '停用'} · 账号资格 {profile.qualificationStatus ?? '—'} ·
-                  当前公开配额 {profile.contentQuota}
+                  当前公开配额 {profile.contentQuota} · 成员 {profile.memberCount} / {profile.memberQuota}
                 </p>
               </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const form = e.currentTarget
-                  const data = new FormData(form)
-                  const quota = Number(data.get('quota'))
-                  const reason = String(data.get('reason')).trim()
-                  if (!reason) return
-                  setConfirmation({
-                    title: '调整配额',
-                    description: `将“${profile.displayName}”的公开配额从 ${profile.contentQuota} 调整为 ${quota}。原因：${reason}`,
-                    run: async () => {
-                      await api.adminSetPartnerQuota(profile.id, quota, reason)
-                      state.reload()
-                      setNotice({ tone: 'success', text: '公开配额已更新。' })
-                    },
-                  })
-                }}
-              >
-                <label>
-                  公开配额
-                  <input
-                    name="quota"
-                    type="number"
-                    min="0"
-                    max="5"
-                    required
-                    defaultValue={profile.contentQuota}
-                    key={profile.contentQuota}
-                  />
-                </label>
-                <label>
-                  调整原因
-                  <input name="reason" required maxLength={1000} />
-                </label>
-                <button className="button ghost">保存配额</button>
-              </form>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  const form = e.currentTarget
-                  const data = new FormData(form)
-                  const id = String(data.get('contentItemId')).trim()
-                  const reason = String(data.get('reason')).trim()
-                  if (!reason) return
-                  setConfirmation({
-                    title: '转交内容',
-                    description: `将内容 ${id} 转交给“${profile.displayName}”。原因：${reason}`,
-                    run: async () => {
-                      await api.adminTransferOwnership(id, profile.id, reason)
-                      form.reset()
-                      state.reload()
-                      setNotice({ tone: 'success', text: '内容归属已更新。' })
-                    },
-                  })
-                }}
-              >
-                <label>
-                  待转交内容 ID
-                  <input name="contentItemId" required minLength={26} maxLength={26} />
-                </label>
-                <label>
-                  转交原因
-                  <input name="reason" required maxLength={1000} />
-                </label>
-                <button className="button ghost">转交内容</button>
-              </form>
+              <OrganizationControls profile={profile} reload={state.reload} notify={setNotice} />
+              {can(identity, 'QUOTA_CONFIG', { ownerPartnerProfileId: profile.id }) && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const form = e.currentTarget
+                    const data = new FormData(form)
+                    const quota = Number(data.get('quota'))
+                    const reason = String(data.get('reason')).trim()
+                    if (!reason) return
+                    setConfirmation({
+                      title: '调整配额',
+                      description: `将“${profile.displayName}”的公开配额从 ${profile.contentQuota} 调整为 ${quota}。原因：${reason}`,
+                      run: async () => {
+                        await api.adminSetPartnerQuota(profile.id, quota, reason)
+                        state.reload()
+                        setNotice({ tone: 'success', text: '公开配额已更新。' })
+                      },
+                    })
+                  }}
+                >
+                  <label>
+                    公开配额
+                    <input
+                      name="quota"
+                      type="number"
+                      min="0"
+                      max="5"
+                      required
+                      defaultValue={profile.contentQuota}
+                      key={profile.contentQuota}
+                    />
+                  </label>
+                  <label>
+                    调整原因
+                    <input name="reason" required maxLength={1000} />
+                  </label>
+                  <button className="button ghost">保存配额</button>
+                </form>
+              )}
+              {profile.active &&
+                can(identity, 'OWNERSHIP_TRANSFER', { ownerPartnerProfileId: profile.id }) && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const form = e.currentTarget
+                      const data = new FormData(form)
+                      const id = String(data.get('contentItemId')).trim()
+                      const reason = String(data.get('reason')).trim()
+                      if (!reason) return
+                      setConfirmation({
+                        title: '转交内容',
+                        description: `将内容 ${id} 转交给“${profile.displayName}”。原因：${reason}`,
+                        run: async () => {
+                          await api.adminTransferOwnership(id, profile.id, reason)
+                          form.reset()
+                          state.reload()
+                          setNotice({ tone: 'success', text: '内容归属已更新。' })
+                        },
+                      })
+                    }}
+                  >
+                    <label>
+                      待转交内容 ID
+                      <input name="contentItemId" required minLength={26} maxLength={26} />
+                    </label>
+                    <label>
+                      转交原因
+                      <input name="reason" required maxLength={1000} />
+                    </label>
+                    <button className="button ghost">转交内容</button>
+                  </form>
+                )}
             </article>
           ))}
         </div>

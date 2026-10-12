@@ -14,7 +14,7 @@ class ContentModuleRegistryTest {
         var article = registry.requireActive("resource.article");
         assertThat(article.allowsOriginalSource()).isTrue();
         assertThat(article.legacyKind().name()).isEqualTo("RESOURCE");
-        assertThat(article.fields()).extracting(ContentModuleRegistry.Field::key).contains("sourceMode", "resourceType");
+        assertThat(article.fields()).extracting(ContentModuleRegistry.Field::key).contains("sourceMode", "resourceType", "stage", "relatedCompetitionIds");
         assertThat(registry.publicDefinitions().path("modules").valueStream().map(node -> node.path("key").asText()).toList())
                 .containsExactly("competition", "recruitment", "resource", "resource.article");
     }
@@ -22,8 +22,13 @@ class ContentModuleRegistryTest {
     @Test void exposes_only_declared_public_filters_and_validates_typed_metadata() throws Exception {
         var competition = registry.requireActive("competition");
         assertThat(registry.requireFilterable(competition, "deadlineDate").type()).isEqualTo("date");
+        assertThat(registry.requireFilterable(competition, "competitionLevel").type()).isEqualTo("select");
         assertThatThrownBy(() -> registry.requireFilterable(competition, "officialRulesUrl")).isInstanceOf(ApiException.class);
-        var invalid = JsonMapper.builder().build().readTree("{\"officialRulesUrl\":\"https://voidhaven.cn/rules\",\"deadlineDate\":\"not-a-date\"}");
+        var historical = JsonMapper.builder().build().readTree("{\"officialRulesUrl\":\"https://voidhaven.example/rules\"}");
+        registry.requireValidMetadata(competition, historical);
+        var emptyOptional = JsonMapper.builder().build().readTree("{\"officialRulesUrl\":\"https://voidhaven.example/rules\",\"competitionLevel\":\"\",\"startDate\":\"\"}");
+        registry.requireValidMetadata(competition, emptyOptional);
+        var invalid = JsonMapper.builder().build().readTree("{\"officialRulesUrl\":\"https://voidhaven.example/rules\",\"deadlineDate\":\"not-a-date\"}");
         assertThatThrownBy(() -> registry.requireValidMetadata(competition, invalid)).isInstanceOf(ApiException.class);
     }
 }

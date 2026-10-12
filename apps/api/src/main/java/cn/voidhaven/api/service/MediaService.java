@@ -29,6 +29,9 @@ public class MediaService {
     private final MediaStorage storage;
     private final MediaValidator validator;
     private final AuditService audit;
+    private OrganizationAccessService organizations;
+    @org.springframework.beans.factory.annotation.Autowired
+    void organizations(OrganizationAccessService organizations) { this.organizations = organizations; }
     private AccountLockService accountLocks;
 
     public MediaService(ContentItemRepository items, PartnerProfileRepository profiles, JdbcTemplate jdbc, MediaStorage storage, MediaValidator validator, AuditService audit) { this.items = items; this.profiles = profiles; this.jdbc = jdbc; this.storage = storage; this.validator = validator; this.audit = audit; }
@@ -45,7 +48,7 @@ public class MediaService {
         MediaValidator.ValidatedImage image = validator.validate(input);
         ContentItem item = items.findByIdForUpdate(contentItemId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"));
         if (!administrator) {
-            String profileId = profiles.findByAccountId(actorId).filter(profile -> profile.isActive()).map(profile -> profile.getId()).orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "PARTNER_PROFILE_REQUIRED", "当前账号没有可用的合作方档案。"));
+            String profileId = (organizations == null ? profiles.findByAccountId(actorId) : organizations.profile(actorId)).filter(profile -> profile.isActive()).map(profile -> profile.getId()).orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "PARTNER_PROFILE_REQUIRED", "当前账号没有可用的合作方档案。"));
             if (!profileId.equals(item.getOwnerPartnerProfileId())) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。");
         }
         if (item.getRecordState() != RecordState.ACTIVE || item.getCurrentRevision() == null || (item.getWorkflowStatus() != WorkflowStatus.DRAFT && item.getWorkflowStatus() != WorkflowStatus.CHANGES_REQUESTED)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_MEDIA_NOT_EDITABLE", "只有可编辑草稿可添加正文图片。 ");
@@ -140,8 +143,8 @@ public class MediaService {
 
     public void requireActionMedia(String contentItemId, String revisionId, String mediaAssetId, String actorId,
                                    boolean administrator) {
-        Integer count = jdbc.queryForObject("select count(*) from media_assets ma where ma.id = ? and ma.lifecycle_state = 'ACTIVE' and (exists(select 1 from content_action_entries ca where ca.revision_id = ? and ca.media_asset_id = ma.id) or exists(select 1 from content_action_media_reservations r where r.media_asset_id = ma.id and r.content_item_id = ? and r.expires_at > current_timestamp(6) and (? = true or r.owner_account_id = ?)))",
-                Integer.class, mediaAssetId, revisionId, contentItemId, administrator, actorId);
+        Integer count = jdbc.queryForObject("select count(*) from media_assets ma where ma.id = ? and ma.lifecycle_state = 'ACTIVE' and (exists(select 1 from content_action_entries ca where ca.revision_id = ? and ca.media_asset_id = ma.id) or exists(select 1 from content_action_media_reservations r where r.media_asset_id = ma.id and r.content_item_id = ? and r.expires_at > current_timestamp(6) and r.owner_account_id = ?))",
+                Integer.class, mediaAssetId, revisionId, contentItemId, actorId);
         if (count == null || count != 1) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_ACTION_MEDIA_INVALID", "行动入口图片不存在、已过期或不属于当前内容。");
     }
 
@@ -155,7 +158,7 @@ public class MediaService {
             throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。");
         }
         if (!administrator) {
-            String profileId = profiles.findByAccountId(actorId).filter(profile -> profile.isActive()).map(profile -> profile.getId())
+            String profileId = (organizations == null ? profiles.findByAccountId(actorId) : organizations.profile(actorId)).filter(profile -> profile.isActive()).map(profile -> profile.getId())
                     .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "PARTNER_PROFILE_REQUIRED", "当前账号没有可用的合作方档案。"));
             if (!Objects.equals(profileId, item.getOwnerPartnerProfileId())) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。");
         }

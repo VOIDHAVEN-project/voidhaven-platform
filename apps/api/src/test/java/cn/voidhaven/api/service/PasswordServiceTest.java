@@ -58,10 +58,12 @@ class PasswordServiceTest {
         account.addRole(new Role("ADMIN"));
         PasswordService.IssuedReset issued = service.issueReset(account.getId(), "人工重置",
                 "01JADMIN000000000000000000", "SUPER_ADMIN", "request-3");
+        when(tokens.findByTokenHash(any())).thenReturn(Optional.of(saved.get()));
         when(tokens.findByTokenHashForUpdate(any())).thenReturn(Optional.of(saved.get()));
 
         assertThat(service.consumeReset(issued.resetToken(), "new-password-value")).isEqualTo("user.example");
-        verify(tokens).invalidateUnusedByTypeExcept(eq(account.getId()), eq("PASSWORD_RESET"), eq(saved.get().getId()), any());
+        verify(tokens).invalidateUnused(eq(account.getId()), any());
+        assertThat(account.getSecurityEpoch()).isEqualTo(1);
         verify(jdbc).update("delete from SPRING_SESSION where PRINCIPAL_NAME = ?", "user.example");
     }
 }

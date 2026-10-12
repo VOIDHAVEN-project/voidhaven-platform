@@ -18,6 +18,9 @@ import cn.voidhaven.api.support.PageResult;
 @RestController
 @RequestMapping("/api/v1/admin")
 public class AdminController {
+    private AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(AdminAuthorizationService authorization) { this.authorization = authorization; }
     private final ContentManagementService content;
     private final IdempotencyService idempotency;
     private final AccountRepository accounts;
@@ -52,7 +55,7 @@ public class AdminController {
     record ApprovePartnerApplication(@NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{4,100}") String loginId,
                                      @NotBlank @Size(max = 1000) String reason) { }
     record CreateAdminAccount(@NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{4,100}") String loginId,
-                              @NotBlank @Size(max = 1000) String reason) { }
+                              @NotBlank @Size(max = 1000) String reason, @Valid AdminAuthorizationService.Input authorization) { }
     record QuotaChange(@Min(0) @Max(5) int quota, @NotBlank @Size(max = 1000) String reason) { }
     record OwnershipTransfer(@NotBlank String contentItemId, @NotBlank String toPartnerProfileId,
                              @NotBlank @Size(max = 1000) String reason) { }
@@ -127,7 +130,6 @@ public class AdminController {
         return ok(auditQuery.page(cursor, query, action, actorAccountId, objectType, from, to, pageSize), request);
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @GetMapping("/accounts")
     ApiResponse<PageResult<AccountAdministrationService.AccountStatus>> accountList(@RequestParam(required = false) String cursor,
             @RequestParam(required = false, name = "q") String query, @RequestParam(required = false) String status,
@@ -139,13 +141,14 @@ public class AdminController {
     @PostMapping("/accounts")
     ApiResponse<AccountAdministrationService.CreatedAccount> createAdmin(@RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody CreateAdminAccount body, Authentication auth, HttpServletRequest request) {
-        return ok(idempotency.executeSingleDelivery(key, Map.of("loginId", body.loginId(), "reason", body.reason()),
-                () -> accountAdministration.createAdmin(body.loginId(), body.reason(), accountId(auth), role(auth), requestId(request))), request);
+        return ok(idempotency.executeSingleDelivery(key, body,
+                () -> accountAdministration.createAdmin(body.loginId(), body.reason(), accountId(auth), role(auth), requestId(request), body.authorization())), request);
     }
 
     @PostMapping("/content-items")
     ApiResponse<ContentManagementService.Managed> create(@RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody ContentManagementService.Draft draft, Authentication auth, HttpServletRequest request) {
+        authorization.requireCreate(draft.moduleKey() == null ? (draft.kind() == null ? null : draft.kind().toLowerCase(java.util.Locale.ROOT)) : draft.moduleKey());
         return ok(idempotency.execute(key, draft, ContentManagementService.Managed.class,
                 () -> content.create(draft, null, accountId(auth), role(auth), requestId(request))), request);
     }
@@ -318,13 +321,14 @@ public class AdminController {
     @PostMapping("/content-ownership-transfers")
     ApiResponse<OwnershipTransferred> transferOwnership(@RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody OwnershipTransfer body, Authentication auth, HttpServletRequest request) {
+        authorization.requireContent("OWNERSHIP_TRANSFER", body.contentItemId());
+        authorization.requireOrganization("OWNERSHIP_TRANSFER", body.toPartnerProfileId());
         return ok(idempotency.execute(key, body, OwnershipTransferred.class, () -> {
             partnerAdministration.transferOwnership(body.contentItemId(), body.toPartnerProfileId(), body.reason().trim(), accountId(auth), role(auth), requestId(request));
             return new OwnershipTransferred(body.contentItemId(), body.toPartnerProfileId());
         }), request);
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/accounts/{id}/activation-links")
     ApiResponse<AccountAdministrationService.IssuedActivationLink> reissueActivation(@PathVariable String id,
             @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
@@ -333,7 +337,6 @@ public class AdminController {
                 () -> accountAdministration.reissueActivation(id, body.reason(), accountId(auth), role(auth), requestId(request))), request);
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/accounts/{id}/suspend")
     ApiResponse<AccountAdministrationService.AccountStatus> suspend(@PathVariable String id,
             @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
@@ -342,7 +345,6 @@ public class AdminController {
                 () -> accountAdministration.suspend(id, body.reason(), accountId(auth), role(auth), requestId(request)));
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/accounts/{id}/reactivate")
     ApiResponse<AccountAdministrationService.AccountStatus> reactivate(@PathVariable String id,
             @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,
@@ -351,7 +353,6 @@ public class AdminController {
                 () -> accountAdministration.reactivate(id, body.reason(), accountId(auth), role(auth), requestId(request)));
     }
 
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/accounts/{id}/revoke")
     ApiResponse<AccountAdministrationService.AccountStatus> revoke(@PathVariable String id,
             @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ActionReason body,

@@ -65,8 +65,10 @@ class IdempotencyServiceTest {
     @Test
     void restores_homepage_replacement_as_typed_records_instead_of_raw_lists() throws Exception {
         HomepageAdministrationService.PlacementReplacement stored = new HomepageAdministrationService.PlacementReplacement(
-                java.util.List.of(new HomepageAdministrationService.Placement(
-                        "01JPLACE000000000000000001", "FOCUS", "01JCONTENT0000000000000001", 0, null, null, 2)));
+                4,
+                java.util.List.of(new HomepageAdministrationService.PlacementItem(
+                        "01JPLACE000000000000000001", "FOCUS", "01JCONTENT0000000000000001", 0, null, null, 2,
+                        "测试竞赛", cn.voidhaven.api.domain.ContentKind.COMPETITION, "OPEN", null, "2030-01-01", true, null)));
         String body = JsonMapper.builder().build().writeValueAsString(stored);
         when(reservations.reserve(eq("home-key"), anyString())).thenAnswer(invocation ->
                 new IdempotencyReservationService.Existing(invocation.getArgument(1), 200, body, true));

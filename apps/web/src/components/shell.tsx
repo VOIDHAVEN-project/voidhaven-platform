@@ -1,32 +1,58 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import {
   ArrowUpRight,
   BookOpen,
-  Compass,
+  ChevronDown,
+  ChevronRight,
   ClipboardCheck,
+  Compass,
   Feather,
+  Handshake,
   Home,
   Info,
   Menu,
   MessageSquare,
   Search,
+  UserPlus,
   Users,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 import type { ContentKind } from '../lib/api'
+import { useProductCapabilities } from '../lib/hooks'
+import { siteBeian } from '../lib/site-meta'
+import {
+  isNavGroup,
+  navLeafLinks,
+  participationMenu,
+  publicNavLinks,
+  publicNavTrailingLink,
+  type PublicNavLink,
+} from '../lib/public-nav'
 import { ThemeButton } from './theme'
 
-export const publicNav = [
-  { path: '/', label: '首页', icon: Home },
-  { path: '/competitions', label: '竞赛', icon: Compass, kind: 'COMPETITION' as const },
-  { path: '/recruitments', label: '团队招募', icon: Users, kind: 'RECRUITMENT' as const },
-  { path: '/resources', label: '学习资源', icon: BookOpen, kind: 'RESOURCE' as const },
-  { path: '/submit', label: '投稿 / 反馈', icon: MessageSquare },
-  { path: '/status', label: '进度查询', icon: ClipboardCheck },
-  { path: '/join', label: '加入社群', icon: Feather },
-  { path: '/about', label: '关于', icon: Info },
-]
+export const navLinkIcons: Record<string, LucideIcon> = {
+  '/': Home,
+  '/competitions': Compass,
+  '/recruitments': Users,
+  '/resources': BookOpen,
+  '/submit': MessageSquare,
+  '/partners/apply': Handshake,
+  '/status': ClipboardCheck,
+  '/join/community': Feather,
+  '/join/project': UserPlus,
+  '/about': Info,
+}
 
 export type PublicShellContext = {
   openSearch: () => void
@@ -103,6 +129,283 @@ export function MobileDrawer({
   )
 }
 
+function NavLinkItem({
+  link,
+  detailKind,
+  onNavigate,
+}: {
+  link: PublicNavLink
+  detailKind: ContentKind | null
+  onNavigate?: () => void
+}) {
+  const Icon = navLinkIcons[link.path] ?? Info
+  const categoryActive = link.kind !== undefined && link.kind === detailKind
+  return (
+    <NavLink
+      to={link.path}
+      end={link.path === '/'}
+      className={({ isActive }) => (isActive || categoryActive ? 'active' : undefined)}
+      aria-label={link.label}
+      onClick={onNavigate}
+    >
+      <Icon size={16} />
+      <span>{link.label}</span>
+    </NavLink>
+  )
+}
+
+/**
+ * 三层参与菜单：顶层展开面板，面板内“加入我们”再展开子项。
+ * 桌面悬停只是增强，点击与键盘始终可用；父级按钮只负责展开，不触发跳转。
+ */
+function ParticipationMenu({ projectJoinEnabled }: { projectJoinEnabled: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [subOpen, setSubOpen] = useState(false)
+  const wrap = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const subTrigger = useRef<HTMLButtonElement>(null)
+  const closeTimer = useRef<number | null>(null)
+  const location = useLocation()
+
+  const close = useCallback(() => {
+    setOpen(false)
+    setSubOpen(false)
+  }, [])
+
+  useEffect(() => {
+    close()
+  }, [location.pathname, location.search, close])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) close()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open, close])
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    },
+    [],
+  )
+
+  const hoverCapable = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  const openForHover = () => {
+    if (!hoverCapable()) return
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    setOpen(true)
+  }
+  const closeForHover = () => {
+    if (!hoverCapable()) return
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(close, 160)
+  }
+
+  const panelItems = () =>
+    Array.from(
+      wrap.current?.querySelectorAll<HTMLElement>(
+        '.participation-panel a:not([hidden]), .participation-panel button:not([hidden])',
+      ) ?? [],
+    ).filter((element) => element.offsetParent !== null)
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      close()
+      trigger.current?.focus()
+      return
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    if (!open) {
+      setOpen(true)
+      window.requestAnimationFrame(() => panelItems()[0]?.focus())
+      return
+    }
+    const items = panelItems()
+    if (!items.length) return
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    if (current === -1) {
+      items[0].focus()
+      return
+    }
+    const delta = event.key === 'ArrowDown' ? 1 : -1
+    items[(current + delta + items.length) % items.length].focus()
+  }
+
+  return (
+    <div
+      className="participation-menu"
+      ref={wrap}
+      onMouseEnter={openForHover}
+      onMouseLeave={closeForHover}
+      onKeyDown={onKeyDown}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        className="participation-trigger"
+        aria-expanded={open}
+        aria-controls="participation-panel"
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <Users size={16} />
+        <span>{participationMenu.label}</span>
+      </button>
+      <div
+        id="participation-panel"
+        className="participation-panel"
+        role="group"
+        aria-label={participationMenu.label}
+        hidden={!open}
+      >
+        {participationMenu.children.map((node) =>
+          isNavGroup(node) ? (
+            <div key={node.label} className="participation-subgroup">
+              <button
+                ref={subTrigger}
+                type="button"
+                className="participation-subtrigger"
+                aria-expanded={subOpen}
+                aria-controls="participation-submenu"
+                onClick={() => setSubOpen((value) => !value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowRight') {
+                    event.preventDefault()
+                    setSubOpen(true)
+                    window.requestAnimationFrame(() =>
+                      wrap.current?.querySelector<HTMLElement>('#participation-submenu a')?.focus(),
+                    )
+                  }
+                  if (event.key === 'ArrowLeft' && subOpen) {
+                    event.preventDefault()
+                    setSubOpen(false)
+                  }
+                }}
+              >
+                <span>{node.label}</span>
+                <ChevronRight size={14} />
+              </button>
+              <div
+                id="participation-submenu"
+                className="participation-submenu"
+                role="group"
+                aria-label={node.label}
+                hidden={!subOpen}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowLeft') return
+                  event.preventDefault()
+                  setSubOpen(false)
+                  subTrigger.current?.focus()
+                }}
+              >
+                {navLeafLinks(node.children)
+                  .filter((leaf) => leaf.path !== '/join/project' || projectJoinEnabled)
+                  .map((leaf) => (
+                    <Link key={leaf.path} to={leaf.path} onClick={close}>
+                      {leaf.label}
+                    </Link>
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <Link key={node.path} to={node.path} onClick={close} aria-label={node.label}>
+              {node.label}
+            </Link>
+          ),
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DesktopNav({
+  detailKind,
+  projectJoinEnabled,
+}: {
+  detailKind: ContentKind | null
+  projectJoinEnabled: boolean
+}) {
+  return (
+    <nav aria-label="主导航">
+      {publicNavLinks.map((link) => (
+        <NavLinkItem key={link.path} link={link} detailKind={detailKind} />
+      ))}
+      <ParticipationMenu projectJoinEnabled={projectJoinEnabled} />
+      <NavLinkItem link={publicNavTrailingLink} detailKind={detailKind} />
+    </nav>
+  )
+}
+
+function DrawerNav({
+  detailKind,
+  onNavigate,
+  projectJoinEnabled,
+}: {
+  detailKind: ContentKind | null
+  onNavigate: () => void
+  projectJoinEnabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [subOpen, setSubOpen] = useState(false)
+  return (
+    <nav aria-label="主导航">
+      {publicNavLinks.map((link) => (
+        <NavLinkItem key={link.path} link={link} detailKind={detailKind} onNavigate={onNavigate} />
+      ))}
+      <div className="drawer-nav-group">
+        <button
+          type="button"
+          className="drawer-nav-toggle"
+          aria-expanded={open}
+          aria-controls="drawer-participation"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <Users size={16} />
+          <span>{participationMenu.label}</span>
+          <ChevronDown size={15} />
+        </button>
+        <div id="drawer-participation" className="drawer-nav-panel" hidden={!open}>
+          {participationMenu.children.map((node) =>
+            isNavGroup(node) ? (
+              <div key={node.label} className="drawer-nav-subgroup">
+                <button
+                  type="button"
+                  className="drawer-nav-toggle sub"
+                  aria-expanded={subOpen}
+                  aria-controls="drawer-join-us"
+                  onClick={() => setSubOpen((value) => !value)}
+                >
+                  <span>{node.label}</span>
+                  <ChevronDown size={14} />
+                </button>
+                <div id="drawer-join-us" className="drawer-nav-panel sub" hidden={!subOpen}>
+                  {navLeafLinks(node.children)
+                    .filter((leaf) => leaf.path !== '/join/project' || projectJoinEnabled)
+                    .map((leaf) => (
+                      <NavLinkItem
+                        key={leaf.path}
+                        link={leaf}
+                        detailKind={detailKind}
+                        onNavigate={onNavigate}
+                      />
+                    ))}
+                </div>
+              </div>
+            ) : (
+              <NavLinkItem key={node.path} link={node} detailKind={detailKind} onNavigate={onNavigate} />
+            ),
+          )}
+        </div>
+      </div>
+      <NavLinkItem link={publicNavTrailingLink} detailKind={detailKind} onNavigate={onNavigate} />
+    </nav>
+  )
+}
+
 function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -161,7 +464,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
         >
           <Search size={20} aria-hidden="true" />
           <label className="sr-only" htmlFor="global-search-query">
-            搜索竞赛、团队招募与学习资源
+            搜索竞赛、团队招募与资源与分享
           </label>
           <input
             ref={input}
@@ -180,7 +483,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
             团队招募
           </Link>
           <Link to="/resources" onClick={onClose}>
-            学习资源
+            资源与分享
           </Link>
           <span>Esc 关闭</span>
         </div>
@@ -193,10 +496,16 @@ const positions = new Map<string, number>()
 export function ScrollManager() {
   const location = useLocation()
   const action = useNavigationType()
-  const key = location.pathname + location.search
+  const key = location.pathname + location.search + location.hash
   useLayoutEffect(() => {
     history.scrollRestoration = 'manual'
-    const target = action === 'POP' ? (positions.get(key) ?? 0) : 0
+    const anchorId = location.hash.replace(/^#/, '')
+    const anchor = anchorId ? document.getElementById(anchorId) : null
+    const target = anchor
+      ? anchor.getBoundingClientRect().top + window.scrollY - 96
+      : action === 'POP'
+        ? (positions.get(key) ?? 0)
+        : 0
     let stopped = false
     const restore = () => {
       if (!stopped) window.scrollTo({ top: target, behavior: 'instant' })
@@ -222,7 +531,7 @@ export function ScrollManager() {
       window.removeEventListener('keydown', stop)
       window.removeEventListener('scroll', save)
     }
-  }, [key, action])
+  }, [key, action, location.hash])
   return null
 }
 
@@ -243,6 +552,9 @@ export function PublicShell() {
   const [menu, setMenu] = useState(false)
   const [search, setSearch] = useState(false)
   const [detailKind, setDetailKind] = useState<ContentKind | null>(null)
+  const { capabilities } = useProductCapabilities()
+  const projectJoinEnabled = capabilities?.projectJoinEnabled === true
+  const beian = siteBeian()
   const location = useLocation()
   const openSearch = useCallback(() => setSearch(true), [])
   const closeMenu = useCallback(() => setMenu(false), [])
@@ -263,26 +575,6 @@ export function PublicShell() {
     return () => window.removeEventListener('keydown', open)
   }, [])
   const context = useMemo(() => ({ openSearch, setDetailKind }), [openSearch])
-  const nav = (onNavigate?: () => void) => (
-    <nav aria-label="主导航">
-      {publicNav.map(({ path, label, icon: Icon, ...item }) => {
-        const categoryActive = 'kind' in item && item.kind === detailKind
-        return (
-          <NavLink
-            key={path}
-            to={path}
-            end={path === '/'}
-            className={({ isActive }) => (isActive || categoryActive ? 'active' : undefined)}
-            aria-label={label}
-            onClick={onNavigate}
-          >
-            <Icon size={16} />
-            <span>{label}</span>
-          </NavLink>
-        )
-      })}
-    </nav>
-  )
   return (
     <div className="public-shell public-site-shell">
       <a className="skip" href="#main-content">
@@ -291,7 +583,9 @@ export function PublicShell() {
       <header className="public-header">
         <div className="public-header-inner">
           <Brand />
-          <div className="desktop-public-nav">{nav()}</div>
+          <div className="desktop-public-nav">
+            <DesktopNav detailKind={detailKind} projectJoinEnabled={projectJoinEnabled} />
+          </div>
           <div className="public-header-actions">
             <button className="header-search" onClick={openSearch} aria-label="搜索公开内容">
               <Search size={16} />
@@ -326,7 +620,7 @@ export function PublicShell() {
         >
           <Search size={17} /> 搜索公开内容
         </button>
-        {nav(closeMenu)}
+        <DrawerNav detailKind={detailKind} onNavigate={closeMenu} projectJoinEnabled={projectJoinEnabled} />
         <div className="drawer-public-bottom">
           <ThemeButton />
           <Link className="workspace-entry" to="/auth/sign-in" onClick={closeMenu}>
@@ -346,15 +640,15 @@ export function PublicShell() {
               <br />
               <em>Meaningful beginnings.</em>
             </strong>
-            <p>为求索者整理可靠的竞赛、招募与学习资源。官方规则以来源链接为准。</p>
+            <p>为求索者整理可靠的竞赛、招募与资源与分享。官方规则以来源链接为准。</p>
           </div>
           <nav className="footer-links" aria-label="页脚导航">
             <FooterColumn
               title="浏览"
               links={[
-                { label: '竞赛', path: '/competitions' },
+                { label: '竞赛资源', path: '/competitions' },
                 { label: '团队招募', path: '/recruitments' },
-                { label: '学习资源', path: '/resources' },
+                { label: '资源与分享', path: '/resources' },
               ]}
             />
             <FooterColumn
@@ -362,8 +656,8 @@ export function PublicShell() {
               links={[
                 { label: '投稿 / 反馈', path: '/submit' },
                 { label: '进度查询', path: '/status' },
-                { label: '加入社群', path: '/join' },
-                { label: '合作方申请', path: '/partners/apply' },
+                { label: '加入社群', path: '/join/community' },
+                { label: '合作申请', path: '/partners/apply' },
               ]}
             />
             <FooterColumn
@@ -373,10 +667,20 @@ export function PublicShell() {
                 { label: '受控工作台', path: '/auth/sign-in' },
               ]}
             />
+            <FooterColumn
+              title="规则与联系"
+              links={[
+                { label: '隐私说明', path: '/privacy' },
+                { label: '来源与核验', path: '/about#sources' },
+                { label: '纠错与反馈', path: '/submit' },
+                { label: '版权与下线', path: '/submit?type=COPYRIGHT' },
+              ]}
+            />
           </nav>
           <div className="footer-bottom">
             <span>© {new Date().getFullYear()} VOIDHAVEN</span>
             <span>A HAVEN FOR SEEKERS</span>
+            {beian ? <span>{beian}</span> : null}
           </div>
         </footer>
       </div>

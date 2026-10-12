@@ -5,7 +5,9 @@ export function createDraft(module: ContentModule, version: number): AdminDraft 
     module.fields.map((field) => [
       field.key,
       field.type === 'select'
-        ? (field.options?.[0] ?? '')
+        ? field.required
+          ? (field.options?.[0] ?? '')
+          : ''
         : field.type === 'boolean'
           ? false
           : field.type === 'tags'
@@ -17,6 +19,7 @@ export function createDraft(module: ContentModule, version: number): AdminDraft 
     kind: module.legacyKind,
     moduleKey: module.key,
     schemaVersion: version,
+    ...(module.resourceConfig ? { resourceConfigVersion: module.resourceConfig.version } : {}),
     title: '',
     summary: '',
     body: markdownPreview(module.template || ''),

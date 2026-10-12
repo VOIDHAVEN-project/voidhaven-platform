@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthenticationManager authenticationManager;
@@ -28,6 +29,15 @@ public class AuthController {
     private final AuthenticationRateLimiter rateLimiter;
     private final ClientNetworkSubject networkSubject;
     private final PasswordService passwords;
+    private cn.voidhaven.api.service.OrganizationAccessService organizations;
+    @org.springframework.beans.factory.annotation.Autowired
+    void organizations(cn.voidhaven.api.service.OrganizationAccessService organizations) { this.organizations = organizations; }
+    private cn.voidhaven.api.service.AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(cn.voidhaven.api.service.AdminAuthorizationService authorization) { this.authorization = authorization; }
+    private cn.voidhaven.api.persistence.AccountRepository accounts;
+    @org.springframework.beans.factory.annotation.Autowired
+    void accounts(cn.voidhaven.api.persistence.AccountRepository accounts) { this.accounts = accounts; }
 
     public AuthController(AuthenticationConfiguration configuration, ActivationService activations,
                           AuthenticationRateLimiter rateLimiter, ClientNetworkSubject networkSubject,
@@ -40,7 +50,7 @@ public class AuthController {
     }
 
     record LoginRequest(@NotBlank @Size(max = 100) String loginId, @NotBlank @Size(max = 128) String password) { }
-    record Identity(String loginId, List<String> roles) { }
+    record Identity(String loginId, List<String> roles, String accountId, List<cn.voidhaven.api.service.AdminAuthorizationService.Grant> permissions, java.time.Instant authorizationExpiresAt, cn.voidhaven.api.service.OrganizationAccessService.Identity organization) { }
     record ActivationRequest(@NotBlank @Size(max = 256) String token, @NotBlank @Size(min = 12, max = 128) String password) { }
     record CsrfPayload(String headerName, String token) { }
     record PasswordChangeRequest(@NotBlank @Size(max = 128) String currentPassword,
@@ -55,6 +65,9 @@ public class AuthController {
         try {
             Authentication authentication = authenticationManager.authenticate(
                     UsernamePasswordAuthenticationToken.unauthenticated(body.loginId(), body.password()));
+            if (!(authentication.getPrincipal() instanceof cn.voidhaven.api.security.AccountPrincipal principal)
+                    || accounts.findById(principal.accountId()).filter(principal::matches).filter(account -> organizations.matches(principal, account)).isEmpty())
+                throw new BadCredentialsException("Account changed while authenticating");
             request.changeSessionId();
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authentication);
@@ -93,7 +106,7 @@ public class AuthController {
     @PostMapping("/activation/consume")
     ApiResponse<Map<String, String>> activate(@Valid @RequestBody ActivationRequest body, HttpServletRequest request) {
         rateLimiter.beginActivation(networkSubject.resolve(request));
-        var account = activations.consume(body.token(), body.password());
+        var account = activations.consume(body.token(), body.password(), requestId(request));
         return new ApiResponse<>(Map.of("loginId", account.getLoginId(), "message", "账号已激活，请使用新密码登录。"), requestId(request));
     }
 
@@ -106,14 +119,18 @@ public class AuthController {
 
     @PostMapping("/password-reset/consume")
     ApiResponse<Map<String, String>> resetPassword(@Valid @RequestBody PasswordResetRequest body, HttpServletRequest request) {
-        String loginId = passwords.consumeReset(body.token(), body.newPassword());
+        rateLimiter.beginActivation(networkSubject.resolve(request));
+        String loginId = passwords.consumeReset(body.token(), body.newPassword(), requestId(request));
         return new ApiResponse<>(Map.of("loginId", loginId, "message", "密码已重置，请使用新密码登录。"), requestId(request));
     }
 
     private Identity identity(Authentication authentication) {
         return new Identity(authentication.getName(), authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority).filter(role -> role.startsWith("ROLE_"))
-                .map(role -> role.substring("ROLE_".length())).sorted().toList());
+                .map(role -> role.substring("ROLE_".length())).sorted().toList(),
+                ((cn.voidhaven.api.security.AccountPrincipal) authentication.getPrincipal()).accountId(),
+                authorization.effective(), authorization.current(((cn.voidhaven.api.security.AccountPrincipal) authentication.getPrincipal()).accountId()).expiresAt(),
+                organizations.identity(((cn.voidhaven.api.security.AccountPrincipal) authentication.getPrincipal()).accountId()));
     }
 
     private String requestId(HttpServletRequest request) {

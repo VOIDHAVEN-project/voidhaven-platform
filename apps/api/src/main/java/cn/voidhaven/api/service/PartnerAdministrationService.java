@@ -17,7 +17,13 @@ import cn.voidhaven.api.support.PageResult;
 
 @Service
 public class PartnerAdministrationService {
-    public record ProfileView(String id, String accountId, String displayName, int contentQuota, boolean active, String qualificationStatus) { }
+    private OrganizationAccessService organizations;
+    @org.springframework.beans.factory.annotation.Autowired
+    void organizations(OrganizationAccessService organizations) { this.organizations = organizations; }
+    private AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(AdminAuthorizationService authorization) { this.authorization = authorization; }
+    public record ProfileView(String id, String accountId, String displayName, int contentQuota, boolean active, String qualificationStatus, int memberQuota, int memberCount, long version) { }
     private final PartnerProfileRepository profiles;
     private final ContentItemRepository items;
     private final JdbcTemplate jdbc;
@@ -39,14 +45,14 @@ public class PartnerAdministrationService {
 
     @Transactional(readOnly = true)
     public List<ProfileView> listProfiles() {
-        return profiles.findAll().stream().map(this::view).toList();
+        return profiles.findAll().stream().filter(profile -> authorization == null || authorization.canSeeOrganization(profile.getId())).map(this::view).toList();
     }
 
     @Transactional(readOnly = true)
     public PageResult<ProfileView> page(String cursor, String query, int requestedSize) {
         int pageSize = Math.max(1, Math.min(requestedSize, 50));
         String normalized = query == null ? "" : query.trim().toLowerCase();
-        List<ProfileView> values = profiles.findAll().stream().map(this::view)
+        List<ProfileView> values = profiles.findAll().stream().filter(profile -> authorization == null || authorization.canSeeOrganization(profile.getId())).map(this::view)
                 .filter(value -> cursor == null || cursor.isBlank() || value.id().compareTo(cursor) < 0)
                 .filter(value -> normalized.isBlank() || value.displayName().toLowerCase().contains(normalized) || value.accountId().toLowerCase().contains(normalized))
                 .sorted(java.util.Comparator.comparing(ProfileView::id).reversed()).limit(pageSize + 1L).toList();
@@ -70,6 +76,7 @@ public class PartnerAdministrationService {
         if (accountLocks != null) accountLocks.requireActiveActor(actorId);
         ContentItem item = items.findByIdForUpdate(contentId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
         PartnerProfile destination = profiles.findByIdForUpdate(toProfileId).filter(PartnerProfile::isActive).orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "PARTNER_PROFILE_INACTIVE", "目标合作方档案不可用。"));
+        if (authorization != null) { authorization.requireItem("OWNERSHIP_TRANSFER", item); authorization.requireOrganization("OWNERSHIP_TRANSFER", toProfileId); }
         String fromProfileId = item.getOwnerPartnerProfileId();
         if (toProfileId.equals(fromProfileId)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_OWNERSHIP_UNCHANGED", "内容已归属该合作方。");
         item.setOwnerPartnerProfileId(destination.getId());
@@ -80,6 +87,6 @@ public class PartnerAdministrationService {
     private String quote(String value) { return value == null ? "null" : "\"" + value + "\""; }
     private ProfileView view(PartnerProfile profile) {
         String status = accounts.findById(profile.getAccountId()).map(value -> value.getQualificationStatus()).orElse("UNKNOWN");
-        return new ProfileView(profile.getId(), profile.getAccountId(), profile.getDisplayName(), profile.getContentQuota(), profile.isActive(), status);
+        return new ProfileView(profile.getId(), profile.getAccountId(), profile.getDisplayName(), profile.getContentQuota(), profile.isActive(), status, profile.getMemberQuota(), organizations == null ? 0 : organizations.occupied(profile.getId()), profile.getVersion());
     }
 }

@@ -11,6 +11,7 @@ import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.lifecycle.Startables;
+import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -28,12 +29,14 @@ class MySqlAndMinioIntegrationTest {
         Assumptions.assumeTrue(dockerAvailable(), "Docker 引擎不可用；集成测试未执行。");
         try (MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withDatabaseName("voidhaven_test").withUsername("voidhaven").withPassword("test-only-password");
              MySQLContainer<?> upgradeMysql = new MySQLContainer<>("mysql:8.4").withDatabaseName("voidhaven_upgrade_test").withUsername("voidhaven").withPassword("test-only-password");
-             MinIOContainer minio = new MinIOContainer("minio/minio:RELEASE.2025-04-22T22-12-26Z");) {
+             MinIOContainer minio = new MinIOContainer(
+                     DockerImageName.parse("coollabsio/minio:RELEASE.2025-04-22T22-12-26Z")
+                             .asCompatibleSubstituteFor("minio/minio"));) {
             Startables.deepStart(Stream.of(mysql, upgradeMysql, minio)).join();
             Flyway flyway = Flyway.configure().dataSource(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()).locations("classpath:db/migration").load();
             flyway.migrate();
-            assertThat(flyway.info().applied()).hasSize(21);
-            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
+            assertThat(flyway.info().applied()).hasSize(28);
+            assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("28");
             try (var connection = DriverManager.getConnection(mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword())) {
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "media_deletion_jobs", null).next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "auth_rate_limit_events", null).next()).isTrue();
@@ -49,12 +52,36 @@ class MySqlAndMinioIntegrationTest {
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "content_action_entries", null).next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "public_case_status_history", null).next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "community_entries", null).next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "project_join_entries", null).next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "manual_delivery_records", null).next()).isTrue();
-                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "homepage_placements", null).next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "catalog_order_entries", null).next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "catalog_sort_settings", null).next()).isTrue();
+                assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "resource_config_versions", null).next()).isTrue();
+                try (var config = connection.createStatement().executeQuery("select config_json from resource_config_versions where version = 1")) {
+                    assertThat(config.next()).isTrue();
+                    var parsed = tools.jackson.databind.json.JsonMapper.builder().build().readTree(config.getString(1));
+                    assertThat(parsed.path("templates").get(0).path("markdown").asText()).contains("\n");
+                    assertThat(parsed.path("categories").size()).isEqualTo(14);
+                }
+                try (var sorts = connection.createStatement().executeQuery("select count(*) from catalog_sort_settings")) {
+                    sorts.next();
+                    assertThat(sorts.getInt(1)).isEqualTo(3);
+                }
+                try (var curation = connection.createStatement().executeQuery("select id, version from homepage_curation")) {
+                    assertThat(curation.next()).isTrue();
+                    assertThat(curation.getString(1)).isEqualTo("01JX000H0MEPAGESTATE000001");
+                    assertThat(curation.getLong(2)).isZero();
+                }
+                try (var check = connection.createStatement().executeQuery("select CHECK_CLAUSE from information_schema.CHECK_CONSTRAINTS where CONSTRAINT_SCHEMA = database() and CONSTRAINT_NAME = 'chk_homepage_placement_slot'")) {
+                    assertThat(check.next()).isTrue();
+                    assertThat(check.getString(1)).contains("COMPETITION");
+                    assertThat(check.getString(1)).contains("FOCUS");
+                }
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "activation_tokens", "token_type").next()).isTrue();
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "community_entries", "primary_slot").next()).isTrue();
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "content_action_entries", "presentation_type").next()).isTrue();
                 assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "community_entries", "contact_channel").next()).isTrue();
+                assertThat(connection.getMetaData().getColumns(mysql.getDatabaseName(), null, "project_join_entries", "access_level").next()).isTrue();
                 assertThat(connection.getMetaData().getTables(mysql.getDatabaseName(), null, "content_action_media_reservations", null).next()).isTrue();
                 try (var defaults = connection.createStatement().executeQuery("select COLUMN_DEFAULT from information_schema.columns where table_schema = database() and table_name = 'content_submissions' and column_name = 'state'")) {
                     defaults.next();
@@ -94,7 +121,7 @@ class MySqlAndMinioIntegrationTest {
                     .locations("classpath:db/migration")
                     .load();
             upgraded.migrate();
-            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("21");
+            assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("28");
             try (var connection = DriverManager.getConnection(upgradeMysql.getJdbcUrl(), upgradeMysql.getUsername(), upgradeMysql.getPassword());
                  var migrated = connection.createStatement().executeQuery("select state from content_submissions where id = '01JSUBMISSION0000000000001'")) {
                 migrated.next();
@@ -103,8 +130,20 @@ class MySqlAndMinioIntegrationTest {
                     partner.next();
                     assertThat(partner.getString(1)).isEqualTo("RECEIVED");
                 }
+                try (var check = connection.createStatement().executeQuery("select CHECK_CLAUSE from information_schema.CHECK_CONSTRAINTS where CONSTRAINT_SCHEMA = database() and CONSTRAINT_NAME = 'chk_homepage_placement_slot'")) {
+                    assertThat(check.next()).isTrue();
+                    assertThat(check.getString(1)).contains("COMPETITION");
+                }
+                try (var curation = connection.createStatement().executeQuery("select count(*) from homepage_curation where id = '01JX000H0MEPAGESTATE000001'")) {
+                    curation.next();
+                    assertThat(curation.getInt(1)).isEqualTo(1);
+                }
+                try (var catalog = connection.createStatement().executeQuery("select count(*) from catalog_sort_settings")) {
+                    catalog.next();
+                    assertThat(catalog.getInt(1)).isEqualTo(3);
+                }
             } catch (Exception error) {
-                throw new AssertionError("V11 to V21 public-case and entry-model upgrade could not be inspected", error);
+                throw new AssertionError("V11 to V25 public-case and entry-model upgrade could not be inspected", error);
             }
 
             String bucket = "voidhaven-media-test";

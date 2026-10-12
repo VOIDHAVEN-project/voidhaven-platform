@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "modules": [
     {
       "key": "competition",
@@ -11,8 +11,67 @@
       "deadlinePolicy": "CLOSE_AND_ARCHIVE",
       "template": "# 竞赛要点\n\n- 适合谁：\n- 重要时间：\n- 建议准备：\n\n## 说明\n\n",
       "fields": [
-        { "key": "officialRulesUrl", "label": "官方规则链接", "type": "url", "required": true, "filterable": false, "help": "必须是可核验的 HTTPS 官方规则页面。" },
-        { "key": "deadlineDate", "label": "截止日期", "type": "date", "required": false, "filterable": true, "help": "仅填写来源可核验的日期。" }
+        {
+          "key": "officialRulesUrl",
+          "label": "官方规则链接",
+          "type": "url",
+          "required": true,
+          "filterable": false,
+          "help": "必须是可核验的 HTTPS 官方规则页面。"
+        },
+        {
+          "key": "competitionLevel",
+          "label": "赛事级别",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "校内",
+            "市级",
+            "省级",
+            "国家级",
+            "国际",
+            "其他"
+          ],
+          "help": "可选。历史内容未填写时目录会省略该字段。"
+        },
+        {
+          "key": "audience",
+          "label": "适合对象",
+          "type": "text",
+          "required": false,
+          "filterable": true,
+          "help": "例如：本科生、零基础、已有项目经验。"
+        },
+        {
+          "key": "participationForm",
+          "label": "参赛形式",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "个人",
+            "团队",
+            "不限"
+          ],
+          "help": "可选。未填写时不在目录中展示。"
+        },
+        {
+          "key": "startDate",
+          "label": "开始日期",
+          "type": "date",
+          "required": false,
+          "filterable": true,
+          "help": "仅填写来源可核验的日期。"
+        },
+        {
+          "key": "deadlineDate",
+          "label": "截止日期",
+          "type": "date",
+          "required": false,
+          "filterable": true,
+          "help": "仅填写来源可核验的日期。"
+        }
       ]
     },
     {
@@ -25,23 +84,133 @@
       "deadlinePolicy": "CLOSE_AND_ARCHIVE",
       "template": "# 招募说明\n\n- 希望一起完成什么：\n- 适合怎样的伙伴：\n- 后续如何了解：\n\n",
       "fields": [
-        { "key": "deadlineDate", "label": "截止日期", "type": "date", "required": false, "filterable": true, "help": "到期后会按平台规则关闭。" },
-        { "key": "followUpUrl", "label": "后续入口（已弃用）", "type": "url", "required": false, "filterable": false, "deprecated": true, "help": "已弃用：请改用招募行动入口。本字段保留一个发布周期，下一 major 停止写入并计划删除列。" },
-        { "key": "relatedCompetitionId", "label": "关联竞赛 ID", "type": "relation", "required": false, "filterable": false, "help": "如本招募围绕一项已收录竞赛。" }
+        {
+          "key": "deadlineDate",
+          "label": "截止日期",
+          "type": "date",
+          "required": false,
+          "filterable": true,
+          "help": "到期后会按平台规则关闭。"
+        },
+        {
+          "key": "roles",
+          "label": "招募角色",
+          "type": "tags",
+          "required": false,
+          "filterable": false,
+          "help": "用逗号分隔，例如：设计、开发、运营。历史内容可留空。"
+        },
+        {
+          "key": "headcount",
+          "label": "人数",
+          "type": "number",
+          "required": false,
+          "filterable": true,
+          "help": "可选。仅填写来源可核验的人数。"
+        },
+        {
+          "key": "followUpUrl",
+          "label": "后续入口（已弃用）",
+          "type": "url",
+          "required": false,
+          "filterable": false,
+          "deprecated": true,
+          "help": "已弃用：请改用招募行动入口。本字段保留一个发布周期，下一 major 停止写入并计划删除列。"
+        },
+        {
+          "key": "relatedCompetitionId",
+          "label": "关联竞赛 ID",
+          "type": "relation",
+          "required": false,
+          "filterable": false,
+          "help": "如本招募围绕一项已收录竞赛。"
+        }
       ]
     },
     {
       "key": "resource",
-      "label": "学习资源",
+      "label": "资源与分享",
       "legacyKind": "RESOURCE",
       "active": true,
-      "allowsOriginalSource": false,
+      "allowsOriginalSource": true,
       "requiresOfficialRules": false,
       "deadlinePolicy": "NONE",
-      "template": "# 资源导读\n\n## 适合谁\n\n## 如何使用\n\n",
+      "template": "# 分享内容\n\n## 说明\n\n",
       "fields": [
-        { "key": "resourceType", "label": "资源类型", "type": "select", "required": true, "filterable": true, "options": ["GUIDE", "COURSE", "TOOL", "DOCUMENT", "ARTICLE"], "help": "用于公开筛选与展示。" },
-        { "key": "audience", "label": "适用对象", "type": "text", "required": false, "filterable": true, "help": "例如：零基础、准备参赛、项目负责人。" }
+        {
+          "key": "sourceMode",
+          "label": "来源方式",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "EXTERNAL",
+            "ORIGINAL"
+          ],
+          "help": "原创或外部来源；旧内容未标注时按外部来源处理。"
+        },
+        {
+          "key": "resourceType",
+          "label": "内容分类",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "GENERAL",
+            "GUIDE",
+            "COURSE",
+            "TOOL",
+            "DOCUMENT",
+            "ARTICLE",
+            "EXTERNAL_LINK",
+            "PROJECT",
+            "VIDEO",
+            "EXPERIENCE",
+            "ANNOUNCEMENT",
+            "EVENT",
+            "NOTE",
+            "RECAP"
+          ],
+          "help": "用于公开筛选与展示。"
+        },
+        {
+          "key": "stage",
+          "label": "学习阶段",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "入门",
+            "备赛",
+            "进阶",
+            "复盘"
+          ],
+          "help": "可选。历史内容未填写时目录会省略。"
+        },
+        {
+          "key": "audience",
+          "label": "适用对象",
+          "type": "text",
+          "required": false,
+          "filterable": true,
+          "help": "例如：零基础、准备参赛、项目负责人。"
+        },
+        {
+          "key": "relatedCompetitionIds",
+          "label": "关联竞赛 ID",
+          "type": "tags",
+          "required": false,
+          "filterable": false,
+          "help": "可填多项已收录竞赛的稳定 ID，用逗号分隔。历史内容可留空。"
+        },
+        {
+          "key": "tags",
+          "label": "标签",
+          "type": "tags",
+          "required": false,
+          "filterable": false,
+          "help": "可选，用逗号分隔。"
+        }
       ]
     },
     {
@@ -54,9 +223,80 @@
       "deadlinePolicy": "NONE",
       "template": "# 写下你的经验\n\n从一个具体问题、过程或结论开始。\n\n## 过程\n\n## 收获\n\n",
       "fields": [
-        { "key": "sourceMode", "label": "来源方式", "type": "select", "required": true, "filterable": true, "options": ["ORIGINAL", "EXTERNAL"], "help": "原创文章可标注原创；引用或整理内容必须选择外部来源。" },
-        { "key": "resourceType", "label": "资源类型", "type": "select", "required": true, "filterable": true, "options": ["ARTICLE"], "help": "文章首期归入学习资源。" },
-        { "key": "audience", "label": "适用对象", "type": "text", "required": false, "filterable": true, "help": "例如：初学者、参赛队员。" }
+        {
+          "key": "sourceMode",
+          "label": "来源方式",
+          "type": "select",
+          "required": true,
+          "filterable": true,
+          "options": [
+            "ORIGINAL",
+            "EXTERNAL"
+          ],
+          "help": "原创文章可标注原创；引用或整理内容必须选择外部来源。"
+        },
+        {
+          "key": "resourceType",
+          "label": "内容分类",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "GENERAL",
+            "GUIDE",
+            "COURSE",
+            "TOOL",
+            "DOCUMENT",
+            "ARTICLE",
+            "EXTERNAL_LINK",
+            "PROJECT",
+            "VIDEO",
+            "EXPERIENCE",
+            "ANNOUNCEMENT",
+            "EVENT",
+            "NOTE",
+            "RECAP"
+          ],
+          "help": "文章首期归入学习资源。"
+        },
+        {
+          "key": "stage",
+          "label": "学习阶段",
+          "type": "select",
+          "required": false,
+          "filterable": true,
+          "options": [
+            "入门",
+            "备赛",
+            "进阶",
+            "复盘"
+          ],
+          "help": "可选。历史内容未填写时目录会省略。"
+        },
+        {
+          "key": "audience",
+          "label": "适用对象",
+          "type": "text",
+          "required": false,
+          "filterable": true,
+          "help": "例如：初学者、参赛队员。"
+        },
+        {
+          "key": "relatedCompetitionIds",
+          "label": "关联竞赛 ID",
+          "type": "tags",
+          "required": false,
+          "filterable": false,
+          "help": "可填多项已收录竞赛的稳定 ID，用逗号分隔。历史内容可留空。"
+        },
+        {
+          "key": "tags",
+          "label": "标签",
+          "type": "tags",
+          "required": false,
+          "filterable": false,
+          "help": "可选，用逗号分隔。"
+        }
       ]
     }
   ]

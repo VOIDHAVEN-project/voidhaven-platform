@@ -2,8 +2,11 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './components/theme'
 import { PublicShell, ScrollManager } from './components/shell'
+import { StatusFigure } from './components/status-figures'
 import { HomePage, CatalogPage, DetailPage, SearchPage, AboutPage, NotFoundPage } from './pages/public'
-import { CaseStatusPage, FeedbackPage, JoinPage, PartnerApplyPage } from './pages/forms'
+import { CaseStatusPage, FeedbackPage, PartnerApplyPage } from './pages/forms'
+import { JoinCommunityPage, JoinProjectPage } from './pages/join'
+import { PrivacyPage } from './pages/privacy'
 import { SignInPage, ActivationPage, PasswordResetPage } from './pages/auth'
 import { Workspace } from './pages/workspace'
 
@@ -21,12 +24,13 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   render() {
     if (!this.state.error) return this.props.children
     return (
-      <main className="session-state">
+      <main className="session-state archive-status">
         <Link className="wordmark" to="/">
           VOIDHAVEN／
         </Link>
         <section>
-          <p className="eyebrow">页面状态</p>
+          <StatusFigure kind="harbor" className="archive-status-figure" />
+          <p className="archive-status-label">页面状态</p>
           <h1>暂时无法显示此页面</h1>
           <p className="muted">页面遇到意外问题。请重新加载；如果仍然出现，请退出后重新登录。</p>
           <div className="button-row">
@@ -67,8 +71,11 @@ export default function App() {
               <Route path="/feedback" element={<Navigate replace to="/submit" />} />
               <Route path="/status" element={<CaseStatusPage />} />
               <Route path="/partners/apply" element={<PartnerApplyPage />} />
-              <Route path="/join" element={<JoinPage />} />
+              <Route path="/join" element={<Navigate replace to="/join/community" />} />
+              <Route path="/join/community" element={<JoinCommunityPage />} />
+              <Route path="/join/project" element={<JoinProjectPage />} />
               <Route path="/about" element={<AboutPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
             <Route path="/auth/sign-in" element={<SignInPage />} />

@@ -43,6 +43,9 @@ public class ContentActionService {
     private final ContentSourcePolicy sources;
     private final CommunityService community;
     private final AuditService audit;
+    private AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(AdminAuthorizationService authorization) { this.authorization = authorization; }
 
     public ContentActionService(JdbcTemplate jdbc, ContentItemRepository items,
                                 ContentRevisionCandidateService candidates, MediaService media,
@@ -68,7 +71,8 @@ public class ContentActionService {
     @Transactional(readOnly = true)
     public List<ManagedAction> managedActions(String contentId, String ownerProfileId) {
         ContentItem item = requireOwned(contentId, ownerProfileId, false);
-        return readManagedActions(item.getCurrentRevision().getId());
+        boolean privateAllowed = ownerProfileId != null || authorization == null || authorization.allows("PRIVATE_DATA_READ", item.getModuleKey(), item.getOwnerPartnerProfileId());
+        return readManagedActions(item.getCurrentRevision().getId(), privateAllowed);
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +88,12 @@ public class ContentActionService {
     public ActionSet replace(String contentId, String ownerProfileId, long expectedVersion, List<ActionInput> inputs,
                              String actorId, String role, String requestId) {
         ContentItem item = requireOwned(contentId, ownerProfileId, true);
+        if (ownerProfileId == null && authorization != null) {
+            authorization.requireContent("CONTENT_EDIT", contentId);
+            Integer gated = jdbc.queryForObject("select count(*) from content_action_entries where revision_id = ? and access_level = 'COMMUNITY_GATED'", Integer.class, item.getCurrentRevision().getId());
+            if ((gated != null && gated > 0) || (inputs != null && inputs.stream().anyMatch(input -> "COMMUNITY_GATED".equals(input.accessLevel()))))
+                authorization.requireContent("PRIVATE_DATA_READ", contentId);
+        }
         if (!Objects.equals(item.getVersion(), expectedVersion)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "内容已被其他操作更新，请刷新后重试。");
         if (!"RECRUITMENT".equals(item.getKind().name())) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_ACTIONS_UNSUPPORTED", "只有招募内容可以配置行动入口。");
         WorkflowStatus status = item.getWorkflowStatus();
@@ -117,7 +127,7 @@ public class ContentActionService {
                 + ",\"candidateCreated\":" + candidateCreated + "}";
         audit.record(actorId, role, "CONTENT_ACTIONS_REPLACED", "CONTENT_ITEM", contentId, before, after, null, requestId);
         return new ActionSet(contentId, item.getVersion(), item.getWorkflowStatus().name(), candidateCreated,
-                readManagedActions(target.getId()));
+                readManagedActions(target.getId(), true));
     }
 
     public boolean hasEnabledAction(String revisionId) {
@@ -134,15 +144,16 @@ public class ContentActionService {
         }
     }
 
-    private List<ManagedAction> readManagedActions(String revisionId) {
+    private List<ManagedAction> readManagedActions(String revisionId, boolean privateAllowed) {
         return jdbc.query("select id, presentation_type, contact_channel, access_level, label, public_value, private_value_ciphertext, private_value_key_id, media_asset_id, enabled, sort_order from content_action_entries where revision_id = ? order by sort_order asc, id asc", (row, index) -> {
             String access = row.getString("access_level");
             String value = row.getString("public_value");
-            if ("COMMUNITY_GATED".equals(access) && row.getString("private_value_ciphertext") != null) {
+            if (privateAllowed && "COMMUNITY_GATED".equals(access) && row.getString("private_value_ciphertext") != null) {
                 value = privateValues.decrypt(row.getString("private_value_ciphertext"), row.getString("private_value_key_id"), "CONTENT_ACTION");
             }
             return new ManagedAction(row.getString("id"), row.getString("presentation_type"), row.getString("contact_channel"),
-                    access, row.getString("label"), value, row.getString("media_asset_id"), row.getBoolean("enabled"), row.getInt("sort_order"));
+                    access, row.getString("label"), !privateAllowed && "COMMUNITY_GATED".equals(access) ? null : value,
+                    !privateAllowed && "COMMUNITY_GATED".equals(access) ? null : row.getString("media_asset_id"), row.getBoolean("enabled"), row.getInt("sort_order"));
         }, revisionId);
     }
 

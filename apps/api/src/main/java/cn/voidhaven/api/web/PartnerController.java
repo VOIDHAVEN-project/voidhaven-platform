@@ -27,6 +27,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/partner")
 public class PartnerController {
+    private cn.voidhaven.api.service.OrganizationAccessService organizations;
+    @org.springframework.beans.factory.annotation.Autowired
+    void organizations(cn.voidhaven.api.service.OrganizationAccessService organizations) { this.organizations = organizations; }
     private final PartnerProfileRepository profiles;
     private final AccountRepository accounts;
     private final ContentManagementService content;
@@ -44,7 +47,7 @@ public class PartnerController {
     }
 
     record Dashboard(String displayName, int quota, int publicActiveCount,
-                     PageResult<ContentManagementService.Managed> contentItems) { }
+                     PageResult<ContentManagementService.Managed> contentItems, cn.voidhaven.api.service.OrganizationAccessService.Identity organization) { }
     record ActionSetRequest(List<ContentActionService.ActionInput> actions) { }
 
     @GetMapping("/dashboard")
@@ -58,7 +61,7 @@ public class PartnerController {
         PageResult<ContentManagementService.Managed> page = content.managedPage(
                 profile.getId(), status, module, query, cursor, pageSize);
         return ok(new Dashboard(profile.getDisplayName(), profile.getContentQuota(),
-                Math.toIntExact(content.publicActiveCount(profile.getId())), page), request);
+                Math.toIntExact(content.publicActiveCount(profile.getId())), page, organizations.identity(accountId(auth))), request);
     }
 
     @GetMapping("/content-items")
@@ -138,6 +141,7 @@ public class PartnerController {
     }
 
     private PartnerProfile profile(Authentication auth) {
+        if (organizations != null) return organizations.require(accountId(auth));
         return profiles.findByAccountId(accountId(auth)).filter(PartnerProfile::isActive)
                 .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "PARTNER_PROFILE_REQUIRED",
                         "当前账号没有可用的合作方档案。"));

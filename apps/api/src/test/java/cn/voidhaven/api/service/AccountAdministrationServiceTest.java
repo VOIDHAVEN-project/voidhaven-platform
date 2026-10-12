@@ -27,6 +27,7 @@ class AccountAdministrationServiceTest {
 
         assertThat(result.qualificationStatus()).isEqualTo("SUSPENDED");
         assertThat(account.isActive()).isFalse();
+        assertThat(account.getSecurityEpoch()).isEqualTo(1);
         verify(audit).record(eq(ACTOR), eq("SUPER_ADMIN"), eq("ACCOUNT_QUALIFICATION_CHANGED"), eq("ACCOUNT"), eq(account.getId()), anyString(), anyString(), eq("资格复核未通过"), eq("01JREQUEST0000000000000000"));
     }
 
@@ -93,6 +94,8 @@ class AccountAdministrationServiceTest {
         AccountLockService locks = mock(AccountLockService.class);
         when(locks.requireActiveActor(anyString())).thenReturn(new Account(ACTOR, "super-admin", "hash"));
         when(locks.lockTarget(target.getId())).thenReturn(target);
-        return new AccountAdministrationService(accounts, roles, activations, locks, audit);
+        var service = new AccountAdministrationService(accounts, roles, activations, locks, audit);
+        service.security(new SecurityRevocationService(mock(cn.voidhaven.api.persistence.ActivationTokenRepository.class), mock(org.springframework.jdbc.core.JdbcTemplate.class)));
+        return service;
     }
 }

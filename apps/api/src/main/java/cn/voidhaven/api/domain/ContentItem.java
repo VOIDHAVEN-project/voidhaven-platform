@@ -40,6 +40,7 @@ public class ContentItem {
     public Long getVersion() { return version; }
     public Instant getClosedAt() { return closedAt; }
     public Instant getSubmittedAt() { return submittedAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
     public void setCurrentRevision(ContentRevision value) { currentRevision = value; }
     public void setPublishedRevision(ContentRevision value) { publishedRevision = value; }
     public void setOwnerPartnerProfileId(String value) { ownerPartnerProfileId = value; }

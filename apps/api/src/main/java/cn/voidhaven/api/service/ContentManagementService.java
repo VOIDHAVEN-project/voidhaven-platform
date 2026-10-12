@@ -25,6 +25,9 @@ import java.util.*;
 
 @Service
 public class ContentManagementService {
+    private AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(AdminAuthorizationService authorization) { this.authorization = authorization; }
     private final ContentItemRepository items;
     private final ContentRevisionRepository revisions;
     private final PartnerProfileRepository profiles;
@@ -55,7 +58,15 @@ public class ContentManagementService {
             @NotNull JsonNode details,
             @Size(max = 64) String moduleKey,
             Integer schemaVersion,
-            @Size(max = 262144) String markdownSource) {
+            @Size(max = 262144) String markdownSource,
+            Long resourceConfigVersion) {
+        public Draft(String kind, String title, String summary, JsonNode body, String languageCode, String originalTitle,
+                     String sourceUrl, String sourceName, String rightsBasis, String authorDisplayName,
+                     String reprintPermission, String adaptationPermission, JsonNode details, String moduleKey,
+                     Integer schemaVersion, String markdownSource) {
+            this(kind, title, summary, body, languageCode, originalTitle, sourceUrl, sourceName, rightsBasis, authorDisplayName,
+                    reprintPermission, adaptationPermission, details, moduleKey, schemaVersion, markdownSource, null);
+        }
         public Draft(String kind, String title, String summary, JsonNode body, String languageCode, String originalTitle,
                      String sourceUrl, String sourceName, String rightsBasis, String authorDisplayName,
                      String reprintPermission, String adaptationPermission, JsonNode details) {
@@ -70,7 +81,7 @@ public class ContentManagementService {
     public record ReviewRecord(String decision, String reason, Instant createdAt, String revisionId) { }
     public record Editable(String id, Draft draft, long revision, WorkflowStatus workflowStatus, Visibility visibility,
                            RecordState recordState, PublicationStatus publicationStatus, String ownerPartnerProfileId,
-                           Instant submittedAt, List<PublicMediaDto> media, List<ReviewRecord> reviews, String operationalStatus) { }
+                           Instant submittedAt, List<PublicMediaDto> media, List<ReviewRecord> reviews, String operationalStatus, ResourceConfigService.Config resourceConfig) { }
     public record PublicationBlocker(String code, String message) { }
     public record PublicationReadiness(boolean ready, List<PublicationBlocker> blockers, String partnerProfileId,
                                        Integer quota, Long publicActiveCount) { }
@@ -208,7 +219,7 @@ public class ContentManagementService {
     @Transactional
     public Managed publish(String id, String actorId, String role, String requestId) {
         requireActiveActor(actorId);
-        ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
+        ContentItem item = authorizedItem(items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")));
         require(item.getWorkflowStatus() == WorkflowStatus.APPROVED, "CONTENT_NOT_APPROVED");
         requireCurrentMediaMatchesDocument(item.getCurrentRevision());
         requireRecruitmentAction(item);
@@ -225,7 +236,7 @@ public class ContentManagementService {
     }
 
     @Transactional public Managed hide(String id, String reason, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_HIDEABLE"); item.hide(); audit.record(actorId, role, "CONTENT_HIDDEN", "CONTENT_ITEM", id, "{\"visibility\":\"PUBLIC\"}", "{\"visibility\":\"HIDDEN\"}", requireReason(reason), requestId); return managed(item); }
-    @Transactional public Managed show(String id, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); require(item.getPublishedRevision() != null && item.getPublicationStatus() != PublicationStatus.NONE && item.getRecordState() == RecordState.ACTIVE && item.getVisibility() == Visibility.HIDDEN, "CONTENT_NOT_SHOWABLE"); requirePartnerPublicationCapacity(item); item.show(); audit.record(actorId, role, "CONTENT_SHOWN", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId); return managed(item); }
+    @Transactional public Managed show(String id, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = authorizedItem(items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"))); require(item.getPublishedRevision() != null && item.getPublicationStatus() != PublicationStatus.NONE && item.getRecordState() == RecordState.ACTIVE && item.getVisibility() == Visibility.HIDDEN, "CONTENT_NOT_SHOWABLE"); requirePartnerPublicationCapacity(item); item.show(); audit.record(actorId, role, "CONTENT_SHOWN", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId); return managed(item); }
     @Transactional public Managed archive(String id, String reason, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_ARCHIVABLE"); item.archive(); audit.record(actorId, role, "CONTENT_ARCHIVED", "CONTENT_ITEM", id, "{\"recordState\":\"ACTIVE\"}", "{\"recordState\":\"ARCHIVED\"}", requireReason(reason), requestId); return managed(item); }
     @Transactional public Managed restore(String id, String reason, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = find(id); require(item.getRecordState() == RecordState.ARCHIVED, "CONTENT_NOT_RESTORABLE"); item.restore(); audit.record(actorId, role, "CONTENT_RESTORED", "CONTENT_ITEM", id, "{\"recordState\":\"ARCHIVED\"}", "{\"recordState\":\"ACTIVE\",\"visibility\":\"HIDDEN\",\"workflowStatus\":\"APPROVED\"}", reason, requestId); return managed(item); }
     @Transactional public Managed delete(String id, String reason, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = find(id); item.markDeleted(); audit.record(actorId, role, "CONTENT_DELETED", "CONTENT_ITEM", id, "{}", "{\"recordState\":\"DELETED\",\"visibility\":\"HIDDEN\"}", reason, requestId); return managed(item); }
@@ -233,7 +244,7 @@ public class ContentManagementService {
     @Transactional
     public Managed changeOperationalStatus(String id, String status, String reason, Long expectedVersion, String actorId, String role, String requestId) {
         requireActiveActor(actorId);
-        ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
+        ContentItem item = authorizedItem(items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")));
         if (expectedVersion == null || !Objects.equals(item.getVersion(), expectedVersion)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "内容已被其他操作更新，请刷新后重试。");
         if (item.getKind() != ContentKind.RECRUITMENT || !Set.of("OPEN", "PAUSED", "FILLED", "EXPIRED", "CANCELLED").contains(status)) throw new ApiException(HttpStatus.BAD_REQUEST, "OPERATIONAL_STATUS_INVALID", "招募业务状态无效。");
         String before = item.getOperationalStatus();
@@ -258,6 +269,13 @@ public class ContentManagementService {
         int pageSize = Math.max(1, Math.min(requestedSize, 50));
         StringBuilder sql = new StringBuilder("select c.id from content_items c join content_revisions r on r.id = c.current_revision_id where 1=1");
         List<Object> arguments = new ArrayList<>();
+        if (authorization != null && ownerProfileId == null) {
+            var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            String permission = attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet
+                    ? java.util.Objects.toString(servlet.getRequest().getAttribute("admin.contentPermission"), "CONTENT_READ") : "CONTENT_READ";
+            if (!permission.startsWith("CONTENT_")) permission = "CONTENT_READ";
+            sql.append(" and ").append(authorization.contentPredicate(permission, "c", arguments));
+        }
         if (!blank(ownerProfileId)) { sql.append(" and c.owner_partner_profile_id = ?"); arguments.add(ownerProfileId); }
         if (!blank(requiredStatus)) { try { WorkflowStatus.valueOf(requiredStatus); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_STATUS_INVALID", "内容状态筛选无效。"); } sql.append(" and c.workflow_status = ?"); arguments.add(requiredStatus); }
         if (!blank(moduleKey)) { modules.requireKnown(moduleKey); sql.append(" and c.module_key = ?"); arguments.add(moduleKey); }
@@ -303,11 +321,28 @@ public class ContentManagementService {
             String moduleKey = item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey();
             String source = revision.getMarkdownSource() == null || revision.getMarkdownSource().isBlank() ? markdown.legacyToMarkdown(mapper.readTree(revision.getBodyJson())) : revision.getMarkdownSource();
             JsonNode metadata = revision.getMetadataJson() == null ? mapper.readTree(revision.getDetailsJson()) : mapper.readTree(revision.getMetadataJson());
-            Draft draft = new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getOriginalTitle(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), revision.getAuthorDisplayName(), revision.getReprintPermission(), revision.getAdaptationPermission(), metadata, moduleKey, revision.getSchemaVersion(), source);
+            ResourceConfigService.Config resourceConfig = editableResourceConfig(item);
+            Draft draft = new Draft(item.getKind().name(), revision.getTitle(), revision.getSummary(), mapper.readTree(revision.getBodyJson()), revision.getLanguageCode(), revision.getOriginalTitle(), revision.getSourceUrl(), revision.getSourceName(), revision.getRightsBasis(), revision.getAuthorDisplayName(), revision.getReprintPermission(), revision.getAdaptationPermission(), metadata, moduleKey, revision.getSchemaVersion(), source, resourceConfig == null ? null : resourceConfig.version());
             return new Editable(item.getId(), draft, item.getVersion() == null ? 0 : item.getVersion(), item.getWorkflowStatus(),
                     item.getVisibility(), item.getRecordState(), item.getPublicationStatus(), item.getOwnerPartnerProfileId(), item.getSubmittedAt(),
-                    mediaForRevision(revision.getId()), reviews(item.getId()), item.getOperationalStatus());
+                    mediaForRevision(revision.getId()), reviews(item.getId()), item.getOperationalStatus(), resourceConfig);
         } catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); }
+    }
+
+    private ResourceConfigService.Config editableResourceConfig(ContentItem item) {
+        if (item.getKind() != ContentKind.RESOURCE) return null;
+        ContentModuleRegistry.Module module = modules.requireKnown(item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey());
+        ResourceConfigService.Config current = modules.resourceConfig(module);
+        if (current == null) return null;
+        // Preparing an edit exposes retained disabled definitions from the current revision.
+        JsonNode details = mapper.readTree(item.getCurrentRevision().getMetadataJson() == null ? item.getCurrentRevision().getDetailsJson() : item.getCurrentRevision().getMetadataJson());
+        return modules.resourceConfig(modules.prepareResource(module, current.version(), details,
+                snapshotOf(item), details));
+    }
+
+    private JsonNode snapshotOf(ContentItem item) {
+        String snapshot = item == null ? null : item.getCurrentRevision().getSchemaSnapshotJson();
+        return snapshot == null ? mapper.createObjectNode() : mapper.readTree(snapshot);
     }
 
     private ContentRevision revision(String id, ContentItem item, int number, Draft draft, Prepared prepared, String actorId) {
@@ -320,8 +355,16 @@ public class ContentManagementService {
         String requested = blank(draft.moduleKey()) ? (existing == null ? moduleFromKind(draft.kind()) : existing.getModuleKey()) : draft.moduleKey().trim();
         ContentModuleRegistry.Module module = modules.requireActive(requested);
         if (existing != null && !module.key().equals(existing.getModuleKey())) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_MODULE_IMMUTABLE", "已创建内容不能变更内容模块。");
-        if (draft.schemaVersion() != null && draft.schemaVersion() != modules.version()) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_SCHEMA_VERSION_CONFLICT", "内容模块定义已更新，请刷新编辑器后重试。");
+        if (draft.schemaVersion() != null && draft.schemaVersion() != modules.version()
+                && !(draft.schemaVersion() == 1 && modules.version() == 2)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_SCHEMA_VERSION_CONFLICT", "内容模块定义已更新，请刷新编辑器后重试。");
         ContentKind kind = module.legacyKind();
+        if (kind == ContentKind.RESOURCE && draft.details() != null && draft.details().isObject()) {
+            var details = (tools.jackson.databind.node.ObjectNode) draft.details();
+            if (blank(text(details, "resourceType"))) details.put("resourceType", "GENERAL");
+            JsonNode oldDetails = existing == null ? mapper.createObjectNode() : mapper.readTree(existing.getCurrentRevision().getMetadataJson() == null
+                    ? existing.getCurrentRevision().getDetailsJson() : existing.getCurrentRevision().getMetadataJson());
+            module = modules.prepareResource(module, draft.resourceConfigVersion(), details, snapshotOf(existing), oldDetails);
+        }
         String source = blank(draft.markdownSource()) ? markdown.legacyToMarkdown(draft.body()) : draft.markdownSource().trim();
         JsonNode document = markdown.parse(source);
         richText.requireAllowed(document);
@@ -329,7 +372,7 @@ public class ContentManagementService {
         String language = languages.normalize(draft.languageCode());
         boolean original = module.allowsOriginalSource() && "ORIGINAL".equals(text(draft.details(), "sourceMode"));
         String sourceUrl = original ? null : draft.sourceUrl().trim();
-        String sourceName = original ? "原创文章" : draft.sourceName().trim();
+        String sourceName = original ? "原创内容" : draft.sourceName().trim();
         return new Prepared(module, kind, source, document, language, sourceUrl, sourceName);
     }
 
@@ -338,7 +381,12 @@ public class ContentManagementService {
         if (blank(draft.title()) || blank(draft.summary()) || blank(draft.rightsBasis()) || blank(draft.authorDisplayName()) || blank(source) || draft.details() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_VALIDATION_FAILED", "请补齐标题、导读、正文、权利说明、作者展示名和发布设置。");
         if (languages.requiresOriginalTitle(language) && blank(draft.originalTitle())) throw new ApiException(HttpStatus.BAD_REQUEST, "ORIGINAL_TITLE_REQUIRED", "非中文内容必须保留原始标题。 ");
         if (!Set.of("NOT_ALLOWED", "ATTRIBUTION_ALLOWED").contains(draft.reprintPermission()) || !Set.of("NOT_ALLOWED", "ATTRIBUTION_ALLOWED").contains(draft.adaptationPermission())) throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REUSE_PERMISSION", "转载和改编许可仅支持允许署名或不允许。 ");
-        modules.requireValidMetadata(module, draft.details());
+        JsonNode standardDetails = draft.details();
+        if (kind == ContentKind.RESOURCE && standardDetails.isObject()) {
+            standardDetails = standardDetails.deepCopy();
+            ((tools.jackson.databind.node.ObjectNode) standardDetails).remove("customFields");
+        }
+        modules.requireValidMetadata(module, standardDetails);
         boolean original = module.allowsOriginalSource() && "ORIGINAL".equals(text(draft.details(), "sourceMode"));
         if (!original) {
             if (blank(draft.sourceUrl()) || blank(draft.sourceName())) throw new ApiException(HttpStatus.BAD_REQUEST, "SOURCE_URL_REQUIRED", "请提供官方或原始来源名称与 HTTPS 链接。");
@@ -350,22 +398,17 @@ public class ContentManagementService {
             if (blank(rules)) throw new ApiException(HttpStatus.BAD_REQUEST, "OFFICIAL_SOURCE_REQUIRED", "竞赛必须提供可核验的官方规则链接。");
             sources.requireAllowed(rules);
         }
-        if (kind == ContentKind.RESOURCE && blank(text(draft.details(), "resourceType"))) throw new ApiException(HttpStatus.BAD_REQUEST, "RESOURCE_TYPE_REQUIRED", "学习资源必须标明资源类型。");
         if (kind == ContentKind.RECRUITMENT) {
             if (!blank(text(draft.details(), "followUpUrl"))) sources.requireAllowed(text(draft.details(), "followUpUrl"));
-            String related = text(draft.details(), "relatedCompetitionId");
-            if (!blank(related)) {
-                ContentItem target = items.findById(related).orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "RELATED_COMPETITION_NOT_FOUND", "关联竞赛不存在。"));
-                if (target.getKind() != ContentKind.COMPETITION) throw new ApiException(HttpStatus.BAD_REQUEST, "RELATED_CONTENT_NOT_COMPETITION", "关联内容必须是竞赛。 ");
-            }
         }
+        validateRelatedCompetitions(draft.details());
     }
 
     private void writeRevisionProjections(String revisionId, ContentModuleRegistry.Module module, ContentKind kind, JsonNode details) {
         writeTypedDetails(kind, revisionId, details);
         for (ContentModuleRegistry.Field field : module.fields()) {
             JsonNode value = details.get(field.key());
-            if (!field.filterable() || value == null || value.isNull() || (value.isTextual() && value.asText().isBlank())) continue;
+            if (!field.filterable() || value == null || value.isNull() || "tags".equals(field.type()) || (value.isTextual() && value.asText().isBlank())) continue;
             if ("date".equals(field.type())) {
                 try { jdbc.update("insert into revision_filter_values (revision_id, field_key, value_type, value_date) values (?, ?, 'DATE', ?)", revisionId, field.key(), Date.valueOf(value.asText())); }
                 catch (IllegalArgumentException error) { throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_METADATA_INVALID", "“" + field.label() + "”必须是有效日期。"); }
@@ -376,8 +419,9 @@ public class ContentManagementService {
                 jdbc.update("insert into revision_filter_values (revision_id, field_key, value_type, value_text) values (?, ?, 'TEXT', ?)", revisionId, field.key(), text);
             }
         }
-        String related = text(details, "relatedCompetitionId");
-        if (!blank(related)) jdbc.update("insert into revision_content_relations (revision_id, target_content_item_id, relation_key) values (?, ?, 'RELATED_TO')", revisionId, related);
+        for (String related : RelatedContentIds.fromDetails(details)) {
+            jdbc.update("insert into revision_content_relations (revision_id, target_content_item_id, relation_key) values (?, ?, 'RELATED_TO')", revisionId, related);
+        }
     }
 
     private void writeTypedDetails(ContentKind kind, String revisionId, JsonNode details) {
@@ -433,14 +477,31 @@ public class ContentManagementService {
         catch (Exception error) { throw new IllegalStateException("Invalid persisted content document", error); }
     }
     private Managed managed(ContentItem item) { String moduleKey = item.getModuleKey() == null ? modules.legacyModuleKey(item.getKind()) : item.getModuleKey(); List<ReviewRecord> history = reviews(item.getId()); return new Managed(item.getId(), item.getKind(), moduleKey, item.getWorkflowStatus(), item.getPublicationStatus(), item.getVisibility(), item.getRecordState(), item.getCurrentRevision().getTitle(), item.getVersion() == null ? 0 : item.getVersion(), item.getOwnerPartnerProfileId(), item.getSubmittedAt(), history.isEmpty() ? null : history.get(0), item.getOperationalStatus()); }
-    private ContentItem find(String id) { return items.findWithCurrentRevisionById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")); }
+    private ContentItem authorizedItem(ContentItem item) {
+        if (authorization != null && authorization.isAdmin()) {
+            var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            String permission = attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet
+                    ? java.util.Objects.toString(servlet.getRequest().getAttribute("admin.contentPermission"), "CONTENT_READ") : "CONTENT_READ";
+            if (!permission.startsWith("CONTENT_")) permission = "CONTENT_READ";
+            authorization.requireItem(permission, item);
+        }
+        return item;
+    }
+    private ContentItem find(String id) { return authorizedItem(items.findWithCurrentRevisionById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"))); }
     private ContentItem owned(String id, String profileId) { ContentItem item = find(id); if (!Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。"); return item; }
     private ContentItem lockedOwned(String id, String profileId) {
-        ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
+        ContentItem item = authorizedItem(items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。")));
         if (profileId != null && !Objects.equals(item.getOwnerPartnerProfileId(), profileId)) throw new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在或当前不可见。");
         return item;
     }
     private String moduleFromKind(String kind) { try { return modules.legacyModuleKey(ContentKind.valueOf(kind)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CONTENT_KIND", "内容类型无效。"); } }
+    private void validateRelatedCompetitions(JsonNode details) {
+        for (String related : RelatedContentIds.fromDetails(details)) {
+            ContentItem target = items.findById(related).orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "RELATED_COMPETITION_NOT_FOUND", "关联竞赛不存在。"));
+            if (target.getKind() != ContentKind.COMPETITION) throw new ApiException(HttpStatus.BAD_REQUEST, "RELATED_CONTENT_NOT_COMPETITION", "关联内容必须是竞赛。 ");
+        }
+    }
+
     private Timestamp parseDeadlineAt(JsonNode details) { String value = text(details, "deadlineAt"); if (blank(value)) return null; try { return Timestamp.from(Instant.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE", "截止时间格式无效。 "); } }
     private Date parseDeadlineDate(JsonNode details) { String value = text(details, "deadlineDate"); if (blank(value)) return null; try { return Date.valueOf(LocalDate.parse(value)); } catch (Exception error) { throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DEADLINE", "截止日期格式无效。 "); } }
     private String json(JsonNode value) { try { return mapper.writeValueAsString(value); } catch (Exception error) { throw new IllegalStateException("Cannot serialize content document", error); } }

@@ -29,6 +29,7 @@ export type Media = {
 export type AdminDraft = {
   kind?: ContentKind
   moduleKey?: string
+  resourceConfigVersion?: number
   schemaVersion?: number
   title: string
   summary: string
@@ -46,6 +47,7 @@ export type AdminDraft = {
   [key: string]: unknown
 }
 export type PublicContent = AdminDraft & {
+  resourcePresentation?: { category?: string | null; fields: ResourceField[] } | null
   id: string
   kind: ContentKind
   languageLabel?: string
@@ -54,6 +56,7 @@ export type PublicContent = AdminDraft & {
   operationalStatus?: 'OPEN' | 'PAUSED' | 'FILLED' | 'EXPIRED' | 'CANCELLED' | null
   actions?: PublicAction[]
   verification?: { outcome: 'VALID' | 'INVALID' | 'NEEDS_REVIEW'; checkedAt: string } | null
+  updatedAt?: string | null
 }
 export type PresentationType = 'LINK' | 'QR_CODE' | 'TEXT'
 export type ContactChannel = 'URL' | 'EMAIL' | 'WECHAT' | 'QQ' | 'PHONE' | 'OTHER'
@@ -100,6 +103,7 @@ export type ManagedContent = {
 export type ManagementPage<T> = { items: T[]; nextCursor?: string | null }
 export type ManagedPage = ManagementPage<ManagedContent>
 export type EditablePartnerContent = {
+  resourceConfig?: ResourceConfig | null
   id: string
   draft: AdminDraft
   revision: number
@@ -131,6 +135,7 @@ export type PartnerDashboard = {
   quota: number
   publicActiveCount: number
   contentItems: ManagedPage
+  organization?: OrganizationIdentity
 }
 export type PendingPartnerApplication = {
   id: string
@@ -170,6 +175,7 @@ export type ProductCapabilities = {
   communityGateEnabled: boolean
   gatedRecruitmentEnabled: boolean
   statusQueryEnabled: boolean
+  projectJoinEnabled: boolean
 }
 export type ContentVerification = {
   id: string
@@ -207,6 +213,40 @@ export type CommunityEntrySummary = {
   sortOrder: number
   version: number
 }
+export type ProjectJoinEntry = {
+  id: string
+  name: string
+  description?: string | null
+  presentationType: PresentationType
+  contactChannel: ContactChannel
+  accessLevel: EntryAccessLevel
+  value?: string | null
+  mediaUrl?: string | null
+  sortOrder: number
+}
+export type ProjectJoinEntrySummary = {
+  id: string
+  name: string
+  description?: string | null
+  presentationType: PresentationType
+  contactChannel: ContactChannel
+  accessLevel: EntryAccessLevel
+  mediaAssetId?: string | null
+  active: boolean
+  sortOrder: number
+  version: number
+}
+export type ProjectJoinEntryInput = {
+  name: string
+  description?: string
+  presentationType: PresentationType
+  contactChannel: ContactChannel
+  accessLevel: EntryAccessLevel
+  value?: string
+  mediaAssetId?: string
+  publicExposureConfirmed: boolean
+  sortOrder: number
+}
 export type CommunityInviteBatch = {
   id: string
   label: string
@@ -217,22 +257,87 @@ export type CommunityInviteBatch = {
   state: string
   createdAt: string
 }
+export type HomepageSlot = 'FOCUS' | 'COMPETITION' | 'RECRUITMENT' | 'RESOURCE'
 export type HomepagePlacement = {
-  id: string
-  slot: 'FOCUS' | 'RECRUITMENT' | 'RESOURCE'
+  id?: string
+  slot: HomepageSlot
   contentItemId: string
   sortOrder: number
   startsAt?: string | null
   endsAt?: string | null
+  version?: number
+  title?: string | null
+  kind?: ContentKind | null
+  operationalStatus?: string | null
+  updatedAt?: string | null
+  deadline?: string | null
+  publicEligible?: boolean
+  issue?: string | null
+}
+export type HomepageCuration = {
+  version: number
+  placements: HomepagePlacement[]
+}
+export type HomepageCandidate = {
+  id: string
+  title: string
+  kind: ContentKind
+  operationalStatus?: string | null
+  updatedAt?: string | null
+  deadline?: string | null
+  publicEligible: boolean
+  issue?: string | null
+}
+export type CatalogOrderEntry = {
+  id?: string
+  contentItemId: string
+  sortOrder: number
+  title?: string | null
+  kind?: ContentKind | null
+  operationalStatus?: string | null
+  updatedAt?: string | null
+  deadline?: string | null
+  publicEligible?: boolean
+  issue?: string | null
+}
+export type CatalogOrderCuration = {
+  version: number
+  kind: ContentKind
+  defaultSort: string
+  entries: CatalogOrderEntry[]
+}
+export type CatalogOrderCandidate = HomepageCandidate
+export type ReviewDecisionResult = { id: string; state: string }
+export type ProvisionedPartner = {
+  partnerProfileId: string
+  accountId: string
+  loginId: string
+  qualificationStatus: string
+}
+export type OrganizationIdentity = {
+  id: string
+  displayName: string
+  accountKind: 'MAIN' | 'MEMBER'
+  memberQuota: number
+  memberCount: number
   version: number
 }
-export type ReviewDecisionResult = { id: string; state: string }
-export type ProvisionedPartner = { partnerProfileId: string; loginId: string; activationToken: string }
+export type PartnerMember = { id: string; loginId: string; qualificationStatus: string }
+export type OrganizationState = {
+  id: string
+  active: boolean
+  memberQuota: number
+  memberCount: number
+  version: number
+}
 export type PartnerProfile = {
   id: string
   accountId: string
   displayName: string
   contentQuota: number
+  memberQuota: number
+  memberCount: number
+  version: number
   active: boolean
   qualificationStatus: string
 }
@@ -273,10 +378,26 @@ export type ModuleField = {
     | 'tags'
   required: boolean
   filterable: boolean
+  optionLabels?: Record<string, string>
   options?: string[]
   help?: string
 }
+export type ResourceCategory = { key: string; label: string; enabled: boolean }
+export type ResourceField = ResourceCategory & {
+  type: 'text' | 'textarea' | 'date' | 'url' | 'number' | 'select' | 'tags'
+  help: string
+  options: string[]
+}
+export type ResourceTemplate = ResourceCategory & { markdown: string; fieldKeys: string[] }
+export type ResourceConfig = {
+  version: number
+  categories: ResourceCategory[]
+  fields: ResourceField[]
+  templates: ResourceTemplate[]
+}
 export type ContentModule = {
+  resourceConfig?: ResourceConfig
+  createVisible?: boolean
   key: string
   label: string
   legacyKind: ContentKind
@@ -288,7 +409,15 @@ export type ContentModule = {
   fields: ModuleField[]
 }
 export type ModuleSet = { version: number; modules: ContentModule[] }
-export type PublicPage = ManagementPage<PublicContent>
+export type PublicPage = ManagementPage<PublicContent> & { sort?: string | null }
+export type CatalogListQuery = {
+  query?: string
+  cursor?: string
+  sort?: string
+  filterKey?: string
+  filterValue?: string
+  status?: string
+}
 export type SearchGroup = {
   kind: ContentKind
   items: PublicContent[]
@@ -296,6 +425,7 @@ export type SearchGroup = {
   error?: string
 }
 export type HomeContent = {
+  focus: PublicContent[]
   competitions: PublicContent[]
   resources: PublicContent[]
   recruitments: PublicContent[]
@@ -308,7 +438,42 @@ export type Submission = {
   imageDescription?: string
   contact?: string
 }
-export type Identity = { loginId: string; roles: string[] }
+export type AdminGrant = {
+  permission: string
+  scopeType: 'GLOBAL' | 'MODULES' | 'ORGANIZATIONS'
+  scopeIds: string[]
+}
+export type AdminAuthorization = {
+  grants: AdminGrant[]
+  longTerm: boolean
+  expiresAt?: string | null
+  version: number
+}
+export type AdminAuthorizationInput = Omit<AdminAuthorization, 'version'> & { reason: string }
+export type AuthorizationPreview = {
+  before: AdminAuthorization
+  proposed: AdminAuthorization
+  added: string[]
+  removed: string[]
+  impacts: string[]
+}
+export type PermissionDefinition = { code: string; label: string; scopeTypes: AdminGrant['scopeType'][] }
+export type AuthorizationHistory = {
+  id: string
+  createdAt: string
+  actorAccountId: string
+  before: AdminAuthorization
+  after: AdminAuthorization
+  reason: string
+}
+export type Identity = {
+  loginId: string
+  roles: string[]
+  accountId?: string
+  permissions?: AdminGrant[]
+  authorizationExpiresAt?: string | null
+  organization?: OrganizationIdentity | null
+}
 
 type Envelope<T> = { data: T; requestId: string }
 type CsrfPayload = { headerName: string; token: string }
@@ -371,6 +536,8 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (response.status === 204) return undefined as T
   const payload = (await response.json().catch(() => null)) as Envelope<T> | ErrorPayload | null
   if (!response.ok) {
+    if (response.status === 401 && path !== '/auth/me' && path !== '/auth/session')
+      window.dispatchEvent(new Event('voidhaven:session-expired'))
     const failure = payload as ErrorPayload | null
     const retry = response.headers.get('Retry-After')
     throw new ApiFailure(
@@ -400,6 +567,15 @@ const jsonWrite = (body?: unknown, idempotencyKey?: string): RequestInit => ({
   },
   body: body === undefined ? undefined : JSON.stringify(body),
 })
+function toHomepageWrite(placement: HomepagePlacement) {
+  return {
+    slot: placement.slot,
+    contentItemId: placement.contentItemId,
+    sortOrder: placement.sortOrder,
+    startsAt: placement.startsAt ?? null,
+    endsAt: placement.endsAt ?? null,
+  }
+}
 const write = <T>(path: string, body?: unknown, key?: string) =>
   protectedRequest<T>(path, jsonWrite(body, key))
 const itemPath = (role: string, id: string) => `/${role}/content-items/${encodeURIComponent(id)}`
@@ -428,10 +604,25 @@ function queryString(options: ManagementQuery = {}) {
 function queryOptions(value: ManagementQuery | AbortSignal | undefined): ManagementQuery {
   return value instanceof AbortSignal ? {} : (value ?? {})
 }
-function publicList(kind: ContentKind, query = '', cursor?: string, pageSize = 20, signal?: AbortSignal) {
+function publicList(
+  kind: ContentKind,
+  query = '',
+  cursor?: string,
+  pageSize = 20,
+  signal?: AbortSignal,
+  extra: CatalogListQuery = {},
+) {
   const params = new URLSearchParams({ pageSize: String(pageSize) })
-  if (query.trim()) params.set('q', query.trim())
-  if (cursor) params.set('cursor', cursor)
+  const q = extra.query ?? query
+  const nextCursor = extra.cursor ?? cursor
+  if (q.trim()) params.set('q', q.trim())
+  if (nextCursor) params.set('cursor', nextCursor)
+  if (extra.sort) params.set('sort', extra.sort)
+  if (extra.filterKey && extra.filterValue) {
+    params.set('filterKey', extra.filterKey)
+    params.set('filterValue', extra.filterValue)
+  }
+  if (extra.status) params.set('status', extra.status)
   return request<PublicPage>(`/public/${segment[kind]}?${params}`, { signal })
 }
 
@@ -443,7 +634,7 @@ export const categories = {
     description: '从一份可靠的信息开始，找到下一次值得投入的机会。',
   },
   RESOURCE: {
-    label: '学习资源',
+    label: '资源与分享',
     path: '/resources',
     caption: 'THE READING ROOM',
     description: '收藏值得反复阅读的路径，让好奇心有一个可以落脚的地方。',
@@ -457,24 +648,63 @@ export const categories = {
 }
 
 export const api = {
+  permissionCatalog: () => request<PermissionDefinition[]>('/admin/permission-catalog'),
+  adminAuthorization: (id: string) =>
+    request<AdminAuthorization>(`/admin/accounts/${encodeURIComponent(id)}/authorization`),
+  adminAuthorizationHistory: (id: string) =>
+    request<AuthorizationHistory[]>(`/admin/accounts/${encodeURIComponent(id)}/authorization/history`),
+  adminAuthorizationPreview: (id: string | undefined, input: AdminAuthorizationInput) =>
+    protectedRequest<AuthorizationPreview>(
+      id
+        ? `/admin/accounts/${encodeURIComponent(id)}/authorization/preview`
+        : '/admin/accounts/authorization-preview',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) },
+    ),
+  adminSaveAuthorization: (id: string, version: number, input: AdminAuthorizationInput) => {
+    const init = jsonWrite(input)
+    return protectedRequest<AdminAuthorization>(`/admin/accounts/${encodeURIComponent(id)}/authorization`, {
+      ...init,
+      method: 'PUT',
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
+  },
+  adminRevokeAuthorization: (id: string, version: number, reason: string) => {
+    const init = jsonWrite({ reason })
+    return protectedRequest<AdminAuthorization>(
+      `/admin/accounts/${encodeURIComponent(id)}/authorization/revoke`,
+      { ...init, headers: { ...init.headers, 'If-Match': String(version) } },
+    )
+  },
   capabilities: (signal?: AbortSignal) => request<ProductCapabilities>('/public/capabilities', { signal }),
   home: (signal?: AbortSignal) => request<HomeContent>('/public/home', { signal }),
   publicModules: (signal?: AbortSignal) => request<ModuleSet>('/public/content-modules', { signal }),
+  adminResourceConfig: (signal?: AbortSignal) =>
+    request<ResourceConfig>('/admin/resource-config', { signal }),
+  adminResourceConfigHistory: (before?: number) =>
+    request<ResourceConfig[]>(`/admin/resource-config/versions${before ? `?before=${before}` : ''}`),
+  adminSaveResourceConfig: (config: ResourceConfig, key: string) => {
+    const init = jsonWrite(config, key)
+    return protectedRequest<ResourceConfig>('/admin/resource-config', {
+      ...init,
+      method: 'PUT',
+      headers: { ...init.headers, 'If-Match': String(config.version) },
+    })
+  },
   modules: (signal?: AbortSignal) => request<ModuleSet>('/content-modules', { signal }),
   list: (kind: ContentKind, query = '', cursor?: string, signal?: AbortSignal) =>
     publicList(kind, query, cursor, 20, signal),
-  listModule: (
-    moduleKey: string,
-    options: { query?: string; cursor?: string; filterKey?: string; filterValue?: string } = {},
-    signal?: AbortSignal,
-  ) => {
+  catalogList: (kind: ContentKind, options: CatalogListQuery = {}, signal?: AbortSignal) =>
+    publicList(kind, options.query ?? '', options.cursor, 20, signal, options),
+  listModule: (moduleKey: string, options: CatalogListQuery = {}, signal?: AbortSignal) => {
     const params = new URLSearchParams({ pageSize: '20', module: moduleKey })
     if (options.query?.trim()) params.set('q', options.query.trim())
     if (options.cursor) params.set('cursor', options.cursor)
+    if (options.sort) params.set('sort', options.sort)
     if (options.filterKey && options.filterValue) {
       params.set('filterKey', options.filterKey)
       params.set('filterValue', options.filterValue)
     }
+    if (options.status) params.set('status', options.status)
     return request<PublicPage>(`/public/content?${params}`, { signal })
   },
   searchKind: (kind: ContentKind, query: string, signal?: AbortSignal) =>
@@ -532,6 +762,10 @@ export const api = {
     }),
   communityEntries: (grant?: string) =>
     request<CommunityEntry[]>('/public/community/entries', {
+      headers: grant ? { 'X-Community-Grant': grant } : undefined,
+    }),
+  projectJoinEntries: (grant?: string) =>
+    request<ProjectJoinEntry[]>('/public/participation/project-join', {
       headers: grant ? { 'X-Community-Grant': grant } : undefined,
     }),
   communityMediaBlob: async (path: string, grant: string) => {
@@ -643,6 +877,30 @@ export const api = {
       },
     )
   },
+  adminProjectJoinEntries: () => request<ProjectJoinEntrySummary[]>('/admin/participation/project-join'),
+  adminCreateProjectJoinEntry: (body: ProjectJoinEntryInput) =>
+    write<ProjectJoinEntrySummary>('/admin/participation/project-join', body),
+  adminUpdateProjectJoinEntry: (id: string, version: number, body: ProjectJoinEntryInput) => {
+    const init = jsonWrite(body)
+    return protectedRequest<ProjectJoinEntrySummary>(
+      `/admin/participation/project-join/${encodeURIComponent(id)}`,
+      {
+        ...init,
+        method: 'PATCH',
+        headers: { ...init.headers, 'If-Match': String(version) },
+      },
+    )
+  },
+  adminDeactivateProjectJoinEntry: (id: string, version: number, reason: string) => {
+    const init = jsonWrite({ reason })
+    return protectedRequest<ProjectJoinEntrySummary>(
+      `/admin/participation/project-join/${encodeURIComponent(id)}/deactivate`,
+      {
+        ...init,
+        headers: { ...init.headers, 'If-Match': String(version) },
+      },
+    )
+  },
   adminRecordManualDelivery: (body: {
     subjectType: 'ACCOUNT' | 'PARTNER_APPLICATION' | 'SUBMISSION'
     subjectId: string
@@ -682,16 +940,55 @@ export const api = {
     write<CommunityInviteBatch>(`/admin/community/invite-batches/${encodeURIComponent(id)}/revoke`, {
       reason,
     }),
-  adminHomepagePlacements: async () =>
-    (await request<{ placements: HomepagePlacement[] }>('/admin/homepage-placements')).placements,
-  adminReplaceHomepagePlacements: async (placements: Omit<HomepagePlacement, 'id' | 'version'>[]) => {
-    const init = jsonWrite({ placements })
-    return (
-      await protectedRequest<{ placements: HomepagePlacement[] }>('/admin/homepage-placements', {
-        ...init,
-        method: 'PUT',
-      })
-    ).placements
+  adminHomepagePlacements: (signal?: AbortSignal) =>
+    request<HomepageCuration>('/admin/homepage-placements', { signal }),
+  adminHomepageCandidates: (slot: HomepageSlot, query = '', cursor?: string) => {
+    const params = new URLSearchParams()
+    params.set('slot', slot)
+    if (query.trim()) params.set('q', query.trim())
+    if (cursor) params.set('cursor', cursor)
+    return request<{ items: HomepageCandidate[]; nextCursor?: string | null }>(
+      `/admin/homepage-placements/candidates?${params}`,
+    )
+  },
+  adminPreviewHomepagePlacements: (placements: HomepagePlacement[]) =>
+    write<HomeContent>('/admin/homepage-placements/preview', {
+      placements: placements.map(toHomepageWrite),
+    }),
+  adminReplaceHomepagePlacements: async (version: number, placements: HomepagePlacement[]) => {
+    const init = jsonWrite({ placements: placements.map(toHomepageWrite) })
+    return protectedRequest<HomepageCuration>('/admin/homepage-placements', {
+      ...init,
+      method: 'PUT',
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
+  },
+  adminCatalogOrder: (kind: ContentKind, signal?: AbortSignal) =>
+    request<CatalogOrderCuration>(`/admin/catalog-order/${kind}`, { signal }),
+  adminCatalogCandidates: (kind: ContentKind, query = '', cursor?: string) => {
+    const params = new URLSearchParams()
+    if (query.trim()) params.set('q', query.trim())
+    if (cursor) params.set('cursor', cursor)
+    const suffix = params.toString() ? `?${params}` : ''
+    return request<{ items: CatalogOrderCandidate[]; nextCursor?: string | null }>(
+      `/admin/catalog-order/${kind}/candidates${suffix}`,
+    )
+  },
+  adminReplaceCatalogOrder: async (
+    kind: ContentKind,
+    version: number,
+    defaultSort: string,
+    entries: CatalogOrderEntry[],
+  ) => {
+    const init = jsonWrite({
+      defaultSort,
+      entries: entries.map((item) => ({ contentItemId: item.contentItemId, sortOrder: item.sortOrder })),
+    })
+    return protectedRequest<CatalogOrderCuration>(`/admin/catalog-order/${kind}`, {
+      ...init,
+      method: 'PUT',
+      headers: { ...init.headers, 'If-Match': String(version) },
+    })
   },
   adminReplaceActions: (id: string, revision: number, actions: ContentActionInput[]) => {
     const init = jsonWrite({ actions })
@@ -824,8 +1121,8 @@ export const api = {
     }),
   adminAccounts: (options: ManagementQuery = {}) =>
     request<ManagementPage<AccountStatus>>(`/admin/accounts?${queryString(options)}`),
-  adminCreateAdmin: (loginId: string, reason: string) =>
-    write<CreatedAdminAccount>('/admin/accounts', { loginId, reason }),
+  adminCreateAdmin: (loginId: string, reason: string, authorization?: AdminAuthorizationInput) =>
+    write<CreatedAdminAccount>('/admin/accounts', { loginId, reason, authorization }),
   adminReissueActivation: (id: string, reason: string) =>
     write<CreatedAdminAccount>(`/admin/accounts/${encodeURIComponent(id)}/activation-links`, { reason }),
   adminIssuePasswordReset: (id: string, reason: string) =>
@@ -873,6 +1170,33 @@ export const api = {
       body,
     })
   },
+  adminSetMemberQuota: (id: string, quota: number, version: number, reason: string) => {
+    const init = jsonWrite({ quota, reason })
+    return protectedRequest<OrganizationState>(
+      `/admin/partner-profiles/${encodeURIComponent(id)}/member-quota`,
+      { ...init, method: 'PATCH', headers: { ...init.headers, 'If-Match': String(version) } },
+    )
+  },
+  adminOrganizationStatus: (id: string, active: boolean, version: number, reason: string) => {
+    const init = jsonWrite({ reason })
+    return protectedRequest<OrganizationState>(
+      `/admin/partner-profiles/${encodeURIComponent(id)}/${active ? 'reactivate' : 'suspend'}`,
+      { ...init, headers: { ...init.headers, 'If-Match': String(version) } },
+    )
+  },
+  partnerMembers: () =>
+    request<{ organization: OrganizationIdentity; items: PartnerMember[] }>('/partner/members'),
+  partnerCreateMember: (loginId: string, reason: string) =>
+    write<PartnerMember>('/partner/members', { loginId, reason }),
+  partnerMemberActivation: (id: string, reason: string) =>
+    write<CreatedAdminAccount>(`/partner/members/${encodeURIComponent(id)}/activation-links`, { reason }),
+  partnerMemberReset: (id: string, reason: string) =>
+    write<{ accountId: string; loginId: string; resetToken: string; expiresAt: string }>(
+      `/partner/members/${encodeURIComponent(id)}/password-reset-links`,
+      { reason },
+    ),
+  partnerMemberStatus: (id: string, action: 'suspend' | 'reactivate' | 'revoke', reason: string) =>
+    write<AccountStatus>(`/partner/members/${encodeURIComponent(id)}/${action}`, { reason }),
   partnerDashboard: (options: ManagementQuery | AbortSignal = {}) =>
     request<PartnerDashboard>(
       `/partner/dashboard?${queryString(queryOptions(options))}`,

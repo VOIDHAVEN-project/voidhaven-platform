@@ -24,6 +24,8 @@ public class PasswordService {
     private final PasswordEncoder passwords;
     private final JdbcTemplate jdbc;
     private final AuditService audit;
+    private SecurityRevocationService revocations;
+    private CredentialSecurityService credentialSecurity;
 
     public PasswordService(AccountRepository accounts, ActivationTokenRepository tokens, PasswordEncoder passwords,
                            JdbcTemplate jdbc, AuditService audit) {
@@ -32,7 +34,12 @@ public class PasswordService {
         this.passwords = passwords;
         this.jdbc = jdbc;
         this.audit = audit;
+        this.revocations = new SecurityRevocationService(tokens, jdbc);
+        this.credentialSecurity = new CredentialSecurityService(accounts);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void security(SecurityRevocationService revocations, CredentialSecurityService credentials) { this.revocations = revocations; this.credentialSecurity = credentials; }
 
     @Transactional
     public void change(String loginId, String currentPassword, String newPassword, String requestId) {
@@ -41,7 +48,7 @@ public class PasswordService {
         if (!passwords.matches(currentPassword, account.getPasswordHash())) throw new ApiException(HttpStatus.BAD_REQUEST, "CURRENT_PASSWORD_INVALID", "当前密码不正确。");
         requireDifferentAndValid(currentPassword, newPassword);
         account.changePassword(passwords.encode(newPassword));
-        deleteSessions(loginId);
+        revocations.revoke(account);
         String role = account.hasRole("SUPER_ADMIN") ? "SUPER_ADMIN" : account.hasRole("ADMIN") ? "ADMIN" : "PARTNER";
         audit.record(account.getId(), role, "PASSWORD_CHANGED", "ACCOUNT", account.getId(), "{}", "{\"sessionsRevoked\":true}", null, requestId);
     }
@@ -55,26 +62,33 @@ public class PasswordService {
                                    String auditAction) {
         Account account = accounts.findByIdForUpdate(accountId).filter(Account::isActive)
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "ACCOUNT_NOT_RESETTABLE", "只有正常账号可以签发密码重置凭据。"));
+        if (account.hasRole("SUPER_ADMIN")) throw new ApiException(HttpStatus.FORBIDDEN, "SUPER_ADMIN_WEB_RECOVERY_FORBIDDEN", "超级管理员仅允许通过受控运维入口恢复。" );
         Instant now = Instant.now();
         tokens.invalidateUnusedByType(accountId, tokenType, now);
         String raw = SecureTokens.randomUrlToken();
         Instant expiresAt = now.plus(30, ChronoUnit.MINUTES);
-        tokens.save(new ActivationToken(Ids.ulid(), accountId, tokenType, SecureTokens.sha256(raw), expiresAt));
+        ActivationToken token = new ActivationToken(Ids.ulid(), accountId, tokenType, SecureTokens.sha256(raw), expiresAt);
+        credentialSecurity.bind(token, account);
+        tokens.save(token);
         audit.record(actorId, role, auditAction, "ACCOUNT", accountId, "{}", "{\"expiresInMinutes\":30}", reason, requestId);
         return new IssuedReset(accountId, account.getLoginId(), raw, expiresAt);
     }
 
     @Transactional
-    public String consumeReset(String rawToken, String newPassword) {
+    public String consumeReset(String rawToken, String newPassword) { return consumeReset(rawToken, newPassword, Ids.ulid()); }
+
+    @Transactional
+    public String consumeReset(String rawToken, String newPassword, String requestId) {
+        ActivationToken preview = tokens.findByTokenHash(SecureTokens.sha256(rawToken)).orElseThrow(this::invalidReset);
+        Account account = credentialSecurity.lockTarget(preview);
         ActivationToken token = tokens.findByTokenHashForUpdate(SecureTokens.sha256(rawToken)).orElseThrow(this::invalidReset);
         Instant now = Instant.now();
-        if (!"PASSWORD_RESET".equals(token.getTokenType()) || !token.isUsableAt(now)) throw invalidReset();
-        Account account = accounts.findByIdForUpdate(token.getAccountId()).filter(Account::isActive).orElseThrow(this::invalidReset);
+        if (!credentialSecurity.valid(token, account) || account == null || !account.isActive() || account.hasRole("SUPER_ADMIN") || !"PASSWORD_RESET".equals(token.getTokenType()) || !token.isUsableAt(now)) throw invalidReset();
         if (passwords.matches(newPassword, account.getPasswordHash())) throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_UNCHANGED", "新密码不能与当前密码相同。");
         account.changePassword(passwords.encode(newPassword));
         token.consume(now);
-        tokens.invalidateUnusedByTypeExcept(account.getId(), "PASSWORD_RESET", token.getId(), now);
-        deleteSessions(account.getLoginId());
+        revocations.revoke(account);
+        audit.record(account.getId(), "ACCOUNT", "PASSWORD_RESET_COMPLETED", "ACCOUNT", account.getId(), "{}", "{\"sessionsRevoked\":true}", null, requestId);
         return account.getLoginId();
     }
 

@@ -192,7 +192,7 @@ interface MediaRef {
 | `PublicRecruitmentDetail` | Summary、`body`、`roleRequirements[]`、`collaborationExpectation`、`followUpMode`、`sourceAttribution`、`updatedAt` | `followUpMode` 仅说明“校内社群入口”或“已审核外部渠道”，不直接下发群二维码或私人联系信息。 |
 | `PublicPartnerProfile` | `id`、`displayName`、`subjectType`、`publicBio` | 不包含 `affiliationLabel`、账号状态、运营联系方式或共同编辑关系。 |
 
-`resourceType` 取值为 `ARTICLE`、`EXTERNAL_LINK`、`PROJECT`、`VIDEO`、`DOCUMENT`、`EXPERIENCE`。其中 `VIDEO`、`DOCUMENT` 在首发表示外部链接内容，不代表本平台托管文件。
+`resourceType` 为后台配置的开放分类标识；初始化兼容 `GUIDE`、`COURSE`、`TOOL`、`ARTICLE`、`EXTERNAL_LINK`、`PROJECT`、`VIDEO`、`DOCUMENT`、`EXPERIENCE`，并加入 `ANNOUNCEMENT`、`EVENT`、`NOTE`、`RECAP`。未分类规范化为内部 `GENERAL`，公开不显示该技术标识。其中 `VIDEO`、`DOCUMENT` 在首发表示外部链接内容，不代表本平台托管文件。
 
 ### 4.4 内部内容候选 DTO
 
@@ -230,7 +230,7 @@ interface ContentCandidateBase {
 
 | 方法与路径 | 查询/输入 | 成功返回 | 规则 |
 | --- | --- | --- | --- |
-| `GET /api/v1/public/home` | 无；服务端固定小数量 | `HomeFeed`：近期竞赛、团队招募、学习资源三个数组 | 仅作首页读取聚合，不创建第四种领域对象；三个数组独立为空或失败可解释，前端展示顺序按 S-05 第 5.1 节。 |
+| `GET /api/v1/public/home` | 无；服务端固定小数量 | `HomeFeed`：近期竞赛、团队招募、资源与分享三个数组 | 仅作首页读取聚合，不创建第四种领域对象；三个数组独立为空或失败可解释，前端展示顺序按 S-05 第 5.1 节。 |
 | `GET /api/v1/public/competitions` | `category`、`status`、`language`、`cursor`、`pageSize` | `PublicCompetitionSummary[]` | 默认按公开报名状态与截止紧迫度；首发不承诺全文搜索或热度。 |
 | `GET /api/v1/public/competitions/{id}` | 公开 `id` | `PublicCompetitionDetail` | 隐藏/不存在统一 404。 |
 | `GET /api/v1/public/competitions/{id}/recruitments` | `cursor`、`pageSize` | `PublicRecruitmentSummary[]` | 仅返回该竞赛关联且当前可公开的招募；关联缺失不影响两类内容独立发布。 |
@@ -405,3 +405,12 @@ S05-O1 已裁决公开名称为“团队招募”、规范路径为 `/recruitmen
 3. 不存在把私密字段、学生账户、聊天/报名数据或媒体二进制偷渡进公开 DTO 的捷径；
 4. Mock/HTTP 替换、字段校验、幂等、并发冲突、错误码和版本演进已有可测试的书面定义；
 5. 本规范现在可作为 B-001 或后续功能模块 M0 开工卡的依据；任何代码、建库或外部服务动作仍须遵循 S-02 的模块开工、验证与明确批准流程。
+
+## 资源展示配置契约（2026-09-27）
+
+- `GET/PUT /api/v1/admin/resource-config`：管理员读写当前配置。PUT 携带 CSRF、幂等键与 `If-Match`，事务锁定当前版本，追加配置版本并记录审计。
+- `GET /api/v1/admin/resource-config/versions?before=...`：降序每页最多 20 条，以末项版本继续翻页；恢复通过 PUT 创建新版本，保留后续新增标识为停用状态。
+- 编辑模块返回 `resourceConfig`；公开模块只返回分类与原有筛选定义，不返回写作模板。资源草稿另携带 `resourceConfigVersion`，不改变竞赛/招募的 `schemaVersion`。
+- `details.customFields` 为字段标识到值的映射，最多 30 项；按配置白名单、类型和长度校验。`details.tags` 最多 20 项，每项 40 字。分类与空公共字段均非必填。
+- 旧客户端不携带配置版本时可写原字段；新公共字段要求配置版本。未知字段、停用项的新使用和错误类型均拒绝。
+- 公开内容新增 `resourcePresentation`，仅含分类显示名和该修订使用的公共字段定义。历史内容无此属性时沿用原展示。业务规则字段仍由代码注册表控制。
