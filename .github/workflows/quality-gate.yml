@@ -92,6 +92,8 @@ jobs:
       VOIDHAVEN_E2E_REAL: '1'
       VOIDHAVEN_E2E_BASE_URL: http://127.0.0.1:18080
       VOIDHAVEN_HTTP_PORT: '18080'
+      VOIDHAVEN_E2E_ADMIN_LOGIN: local-admin
+      VOIDHAVEN_E2E_ADMIN_PASSWORD: change-me-before-first-local-run
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
