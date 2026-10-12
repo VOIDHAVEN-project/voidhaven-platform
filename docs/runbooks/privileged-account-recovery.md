@@ -6,7 +6,7 @@
 
 ## 超级管理员恢复
 
-仅经批准的运维人员在受控主机、交互终端运行独立应用进程，设置 `spring.main.web-application-type=none`，启用 `recover-super-admin` 与 `production` 或隔离的 `test-server` 环境。只提供 `--login`、`--operator`、`--reason`；密码在控制台隐藏输入两次。不得通过参数、环境变量、管道或日志提供密码。真实环境配置通过既有受控运维配置加载，不复制到本实验仓库。
+仅经批准的运维人员在受控主机、交互终端运行独立应用进程，设置 `spring.main.web-application-type=none`，启用 `recover-super-admin` 与 `production` 或隔离的 `test-server` 环境。只提供 `--login`、`--operator`、`--reason`；密码在控制台隐藏输入两次。不得通过参数、环境变量、管道或日志提供密码。真实环境配置通过既有受控运维配置加载，不复制到源码仓库。
 
 命令只恢复已有正常或待激活超级管理员（包括初始化链接过期）；停用/撤销账号拒绝恢复，不创建账号。失败整体回滚。`operator` 是审计标签，身份授权以实际主机访问身份及运维记录为准。普通 Web 进程不可启用恢复 profile；启动检查会拒绝 Web 模式。
 
