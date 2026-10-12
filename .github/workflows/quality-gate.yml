@@ -94,6 +94,8 @@ jobs:
       VOIDHAVEN_HTTP_PORT: '18080'
       VOIDHAVEN_E2E_ADMIN_LOGIN: local-admin
       VOIDHAVEN_E2E_ADMIN_PASSWORD: change-me-before-first-local-run
+      VOIDHAVEN_E2E_PARTNER_LOGIN: local-partner
+      VOIDHAVEN_E2E_PARTNER_PASSWORD: change-me-before-first-local-run
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
