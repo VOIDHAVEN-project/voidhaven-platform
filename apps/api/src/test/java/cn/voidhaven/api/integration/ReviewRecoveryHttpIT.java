@@ -72,7 +72,7 @@ class ReviewRecoveryHttpIT {
         assertThat(get(root, itemPath).path("reviews").toString()).contains("CHANGES_REQUESTED", "补齐合成行动入口");
 
         JsonNode actions = json.readTree("{\"actions\":[{\"presentationType\":\"LINK\",\"contactChannel\":\"URL\",\"accessLevel\":\"PUBLIC\",\"label\":\"合成报名入口\",\"value\":\"https://example.org/apply\",\"enabled\":true,\"publicExposureConfirmed\":false,\"sortOrder\":0}]}");
-        write(root, "PUT", itemPath + "/actions", actions, returned.path("revision").asText(), key());
+        write(root, "PUT", itemPath + "/actions", actions, get(root, itemPath).path("revision").asText(), key());
         write(root, "POST", itemPath + "/submit-review", json.createObjectNode(), null, key());
         write(root, "POST", decisionPath, json.createObjectNode().put("decision", "APPROVE"), get(root, itemPath).path("revision").asText(), key());
         assertThat(get(root, itemPath + "/publication-readiness").path("ready").asBoolean()).isTrue();
