@@ -28,6 +28,11 @@ public class ActivationService {
     private final AccountRepository accounts;
     private final PasswordEncoder passwords;
     private final JdbcTemplate jdbc;
+    private SecurityRevocationService revocations;
+    private CredentialSecurityService credentialSecurity;
+    private AuditService audit;
+    @org.springframework.beans.factory.annotation.Autowired
+    void audit(AuditService audit) { this.audit = audit; }
     private final SecureRandom random = new SecureRandom();
 
     public ActivationService(ActivationTokenRepository tokens, AccountRepository accounts, PasswordEncoder passwords,
@@ -36,7 +41,12 @@ public class ActivationService {
         this.accounts = accounts;
         this.passwords = passwords;
         this.jdbc = jdbc;
+        this.revocations = new SecurityRevocationService(tokens, jdbc);
+        this.credentialSecurity = new CredentialSecurityService(accounts);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void security(SecurityRevocationService revocations, CredentialSecurityService credentials) { this.revocations = revocations; this.credentialSecurity = credentials; }
 
     @Transactional
     public IssuedActivation issue(String accountId) {
@@ -53,24 +63,31 @@ public class ActivationService {
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        tokens.save(new ActivationToken(Ids.ulid(), account.getId(), hash(raw), expiresAt));
+        ActivationToken token = new ActivationToken(Ids.ulid(), account.getId(), hash(raw), expiresAt);
+        credentialSecurity.bind(token, account);
+        tokens.save(token);
         return new IssuedActivation(raw, expiresAt);
     }
 
     @Transactional
-    public Account consume(String rawToken, String newPassword) {
+    public Account consume(String rawToken, String newPassword) { return consume(rawToken, newPassword, Ids.ulid()); }
+
+    @Transactional
+    public Account consume(String rawToken, String newPassword, String requestId) {
         String tokenHash = hash(rawToken);
         ActivationToken preview = tokens.findByTokenHash(tokenHash).orElseThrow(this::invalidToken);
-        Account account = accounts.findByIdForUpdate(preview.getAccountId()).orElseThrow(this::invalidToken);
+        Account account = credentialSecurity.lockTarget(preview);
         ActivationToken token = tokens.findByTokenHashForUpdate(tokenHash).orElseThrow(this::invalidToken);
         Instant now = Instant.now();
-        if (!token.isUsableAt(now)) throw invalidToken();
+        if (!credentialSecurity.valid(token, account) || !token.isUsableAt(now)) throw invalidToken();
         if (!"ACTIVATION".equals(token.getTokenType())) throw invalidToken();
         if (!account.isPending()) throw invalidToken();
         account.activateWithPassword(passwords.encode(newPassword));
         token.consume(now);
-        tokens.invalidateUnusedByTypeExcept(account.getId(), "ACTIVATION", token.getId(), now);
+        revocations.revoke(account);
         completePartnerApplication(account.getId());
+        if (audit != null) audit.record(account.getId(), account.hasRole("SUPER_ADMIN") ? "SUPER_ADMIN" : account.hasRole("ADMIN") ? "ADMIN" : "PARTNER",
+                "ACTIVATION_COMPLETED", "ACCOUNT", account.getId(), "{\"qualificationStatus\":\"PENDING\"}", "{\"qualificationStatus\":\"ACTIVE\"}", "账号使用者完成激活", requestId);
         return account;
     }
 

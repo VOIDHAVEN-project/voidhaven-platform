@@ -10,7 +10,7 @@ class ProductionConfigurationValidatorTest {
     @Test
     void acceptsExplicitSecureProductionConfiguration() {
         ProductionConfigurationValidator validator = validator(
-                "https://voidhaven.cn", "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app",
+                "https://voidhaven.example", "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app",
                 "a-production-database-password");
 
         assertThatCode(() -> validator.run(new DefaultApplicationArguments())).doesNotThrowAnyException();
@@ -26,7 +26,7 @@ class ProductionConfigurationValidatorTest {
                 .hasMessageContaining("VOIDHAVEN_PUBLIC_BASE_URL");
 
         ProductionConfigurationValidator placeholder = validator(
-                "https://voidhaven.cn", "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app",
+                "https://voidhaven.example", "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app",
                 "change-me-database-password");
         assertThatThrownBy(() -> placeholder.run(new DefaultApplicationArguments()))
                 .isInstanceOf(IllegalStateException.class)
@@ -36,14 +36,14 @@ class ProductionConfigurationValidatorTest {
     @Test
     void rejectsRootDatabaseAccountAndTrustAllProxyRange() {
         ProductionConfigurationValidator root = validator(
-                "https://voidhaven.cn", "jdbc:mysql://mysql.internal:3306/voidhaven", "root",
+                "https://voidhaven.example", "jdbc:mysql://mysql.internal:3306/voidhaven", "root",
                 "a-production-database-password");
         assertThatThrownBy(() -> root.run(new DefaultApplicationArguments()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("least-privilege");
 
         ProductionConfigurationValidator trustAll = new ProductionConfigurationValidator(
-                "https://voidhaven.cn", "https://cos.example.com", "media-user", "a-secure-media-secret",
+                "https://voidhaven.example", "https://cos.example.com", "media-user", "a-secure-media-secret",
                 "voidhaven-media", "a-production-rate-limit-secret-of-sufficient-length", "0.0.0.0/0", true,
                 "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app", "a-production-database-password",
                 false, "", "", false, 30, "");
@@ -64,7 +64,7 @@ class ProductionConfigurationValidatorTest {
     @Test
     void rejectsEnabledPrivateContactOrCommunityGateWithoutProductionSecrets() {
         ProductionConfigurationValidator privateContact = new ProductionConfigurationValidator(
-                "https://voidhaven.cn", "https://cos.example.com", "media-user", "a-secure-media-secret",
+                "https://voidhaven.example", "https://cos.example.com", "media-user", "a-secure-media-secret",
                 "voidhaven-media", "a-production-rate-limit-secret-of-sufficient-length", "172.30.0.0/24", true,
                 "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app", "a-production-database-password",
                 true, "local-dev", "", false, 30, "");
@@ -73,7 +73,7 @@ class ProductionConfigurationValidatorTest {
                 .hasMessageContaining("VOIDHAVEN_PRIVATE_VALUE_CURRENT_KEY_ID");
 
         ProductionConfigurationValidator community = new ProductionConfigurationValidator(
-                "https://voidhaven.cn", "https://cos.example.com", "media-user", "a-secure-media-secret",
+                "https://voidhaven.example", "https://cos.example.com", "media-user", "a-secure-media-secret",
                 "voidhaven-media", "a-production-rate-limit-secret-of-sufficient-length", "172.30.0.0/24", true,
                 "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app", "a-production-database-password",
                 false, "", "", true, 30, "local-development-community-secret");
@@ -82,7 +82,7 @@ class ProductionConfigurationValidatorTest {
                 .hasMessageContaining("VOIDHAVEN_COMMUNITY_INVITE_HMAC_SECRET");
 
         ProductionConfigurationValidator communityWithoutKeys = new ProductionConfigurationValidator(
-                "https://voidhaven.cn", "https://cos.example.com", "media-user", "a-secure-media-secret",
+                "https://voidhaven.example", "https://cos.example.com", "media-user", "a-secure-media-secret",
                 "voidhaven-media", "a-production-rate-limit-secret-of-sufficient-length", "172.30.0.0/24", true,
                 "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app", "a-production-database-password",
                 false, "", "", true, 30, "a-production-community-invite-hmac-secret-long");
@@ -94,7 +94,7 @@ class ProductionConfigurationValidatorTest {
     @Test
     void acceptsCommunityGateWithIndependentProductionKeyRing() {
         ProductionConfigurationValidator community = new ProductionConfigurationValidator(
-                "https://voidhaven.cn", "https://cos.example.com", "media-user", "a-secure-media-secret",
+                "https://voidhaven.example", "https://cos.example.com", "media-user", "a-secure-media-secret",
                 "voidhaven-media", "a-production-rate-limit-secret-of-sufficient-length", "172.30.0.0/24", true,
                 "jdbc:mysql://mysql.internal:3306/voidhaven", "voidhaven_app", "a-production-database-password",
                 false, "prod-v1", "prod-v1:dGVzdC1vbmx5LXByaXZhdGUtdmFsdWUta2V5LTMyISE=",

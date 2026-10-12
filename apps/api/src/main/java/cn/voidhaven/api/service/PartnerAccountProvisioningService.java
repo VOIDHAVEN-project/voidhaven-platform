@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class PartnerAccountProvisioningService {
-    public record Provisioned(String partnerProfileId, String loginId, String activationToken) { }
+    public record Provisioned(String partnerProfileId, String accountId, String loginId, String qualificationStatus) { }
     public record PendingApplication(String id, String displayName, String introduction, String portfolioUrl, String state,
                                      String publicResult, java.time.Instant dueAt, long version, boolean contactAvailable) { }
     public record DecisionResult(String id, String state) { }
@@ -84,11 +84,9 @@ public class PartnerAccountProvisioningService {
                 result -> result.next() ? result.getString(1) : null, applicationId);
         int updated = jdbc.update("update partner_applications set state = 'ACTIVATION_PENDING', public_result = '申请已批准，激活凭据将由工作人员人工交付。', provisioned_account_id = ?, reviewed_by_account_id = ?, review_reason = ?, reviewed_at = current_timestamp(6), version = version + 1 where id = ? and state in ('RECEIVED','PENDING_REVIEW','IN_REVIEW')", account.getId(), actorId, normalizedReason, applicationId);
         if (updated != 1) throw new ApiException(HttpStatus.CONFLICT, "PARTNER_APPLICATION_NOT_ACTIONABLE", "该合作方申请已被其他操作处理。 ");
-        String token = activations.issueLocked(account).token();
         jdbc.update("insert into public_case_status_history (id, case_type, case_id, from_state, to_state, public_message, actor_account_id) values (?, 'PARTNER_APPLICATION', ?, ?, 'ACTIVATION_PENDING', '申请已批准，激活凭据将由工作人员人工交付。', ?)", Ids.ulid(), applicationId, from, actorId);
         audit.record(actorId, actorRole, "PARTNER_ACCOUNT_CREATED", "PARTNER_PROFILE", profile.getId(), "{}", "{\"applicationId\":\"" + applicationId + "\",\"qualificationStatus\":\"PENDING\"}", normalizedReason, requestId);
-        audit.record(actorId, actorRole, "ACTIVATION_ISSUED", "ACCOUNT", account.getId(), "{}", "{\"qualificationStatus\":\"PENDING\"}", normalizedReason, requestId);
-        return new Provisioned(profile.getId(), account.getLoginId(), token);
+        return new Provisioned(profile.getId(), account.getId(), account.getLoginId(), "PENDING");
     }
 
     @Transactional

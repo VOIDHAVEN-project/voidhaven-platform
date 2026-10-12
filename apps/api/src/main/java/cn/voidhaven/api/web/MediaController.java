@@ -19,6 +19,9 @@ import java.util.HexFormat;
 @RestController
 public class MediaController {
     private final MediaService media;
+    private cn.voidhaven.api.service.AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(cn.voidhaven.api.service.AdminAuthorizationService authorization) { this.authorization = authorization; }
     private final IdempotencyService idempotency;
     private final AccountRepository accounts;
     private final cn.voidhaven.api.service.MediaReadService reads;
@@ -38,6 +41,7 @@ public class MediaController {
         String accountId = accountId(auth);
         boolean administrator = isAdministrator(auth);
         String role = auth.getAuthorities().stream().anyMatch(value -> "ROLE_SUPER_ADMIN".equals(value.getAuthority())) ? "SUPER_ADMIN" : administrator ? "ADMIN" : "PARTNER";
+        if (administrator) authorization.requireContent("CONTENT_EDIT", contentItemId);
         byte[] bytes;
         try { bytes = file.getBytes(); } catch (Exception error) { throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "MEDIA_REJECTED", "图片无法读取，请重新选择文件。 "); }
         MediaService.Uploaded uploaded = idempotency.execute(key, new UploadIntent(contentItemId, altText, file.getOriginalFilename(), sha256(bytes)), MediaService.Uploaded.class, () -> media.upload(contentItemId, altText, bytes, accountId, role, administrator, requestId(request)));
@@ -51,6 +55,7 @@ public class MediaController {
         String accountId = accountId(auth);
         boolean administrator = isAdministrator(auth);
         String role = auth.getAuthorities().stream().anyMatch(value -> "ROLE_SUPER_ADMIN".equals(value.getAuthority())) ? "SUPER_ADMIN" : administrator ? "ADMIN" : "PARTNER";
+        if (administrator) authorization.requireContent("CONTENT_EDIT", contentItemId);
         byte[] bytes;
         try { bytes = file.getBytes(); } catch (Exception error) { throw new ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "MEDIA_REJECTED", "图片无法读取，请重新选择文件。"); }
         MediaService.Uploaded uploaded = idempotency.execute(key,

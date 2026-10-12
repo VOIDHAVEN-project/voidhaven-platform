@@ -1,21 +1,51 @@
 import { describe, expect, it } from 'vitest'
-import { parseHomepagePlacementText } from './homepage-placements'
+import {
+  curationFingerprint,
+  dropPlacement,
+  movePlacement,
+  placementsInSlot,
+  replaceSlot,
+} from './homepage-placements'
+import type { HomepagePlacement } from './api'
 
-describe('parseHomepagePlacementText', () => {
-  it('accepts valid rows and reports empty state separately', () => {
-    const parsed = parseHomepagePlacementText(
-      'FOCUS,01HZXC0V4K7N9PQRSTVWXY0001,0\n\nRECRUITMENT,01HZXC0V4K7N9PQRSTVWXY0002,1',
-    )
-    expect(parsed.errors).toEqual([])
-    expect(parsed.placements).toHaveLength(2)
+function row(slot: HomepagePlacement['slot'], id: string, order: number): HomepagePlacement {
+  return { slot, contentItemId: id, sortOrder: order }
+}
+
+describe('homepage placement helpers', () => {
+  it('moves a row up and down within one slot', () => {
+    const placements = [
+      row('FOCUS', '01HZXC0V4K7N9PQRSTVWXY0001', 0),
+      row('FOCUS', '01HZXC0V4K7N9PQRSTVWXY0002', 1),
+      row('RECRUITMENT', '01HZXC0V4K7N9PQRSTVWXY0003', 0),
+    ]
+    const down = movePlacement(placements, 'FOCUS', 0, 1)
+    expect(placementsInSlot(down, 'FOCUS').map((item) => item.contentItemId)).toEqual([
+      '01HZXC0V4K7N9PQRSTVWXY0002',
+      '01HZXC0V4K7N9PQRSTVWXY0001',
+    ])
+    expect(placementsInSlot(down, 'RECRUITMENT')).toHaveLength(1)
+    expect(movePlacement(placements, 'FOCUS', 0, -1)).toEqual(placements)
   })
 
-  it('locates invalid slots, ids and duplicates by line number', () => {
-    const parsed = parseHomepagePlacementText(
-      'HOME,01HZXC0V4K7N9PQRSTVWXY0001,0\nFOCUS,not-a-ulid,0\nFOCUS,01HZXC0V4K7N9PQRSTVWXY0001,0\nFOCUS,01HZXC0V4K7N9PQRSTVWXY0001,1',
-    )
-    expect(parsed.errors[0]).toContain('第 1 行')
-    expect(parsed.errors.some((error) => error.includes('第 2 行') && error.includes('ULID'))).toBe(true)
-    expect(parsed.errors.some((error) => error.includes('重复'))).toBe(true)
+  it('drops by index and rewrites sort order', () => {
+    const placements = [
+      row('COMPETITION', '01HZXC0V4K7N9PQRSTVWXY0001', 0),
+      row('COMPETITION', '01HZXC0V4K7N9PQRSTVWXY0002', 1),
+      row('COMPETITION', '01HZXC0V4K7N9PQRSTVWXY0003', 2),
+    ]
+    const next = dropPlacement(placements, 'COMPETITION', 2, 0)
+    expect(next.map((item) => item.contentItemId)).toEqual([
+      '01HZXC0V4K7N9PQRSTVWXY0003',
+      '01HZXC0V4K7N9PQRSTVWXY0001',
+      '01HZXC0V4K7N9PQRSTVWXY0002',
+    ])
+    expect(next.map((item) => item.sortOrder)).toEqual([0, 1, 2])
+  })
+
+  it('treats equal fingerprints as saved', () => {
+    const live = replaceSlot([], 'FOCUS', [row('FOCUS', '01HZXC0V4K7N9PQRSTVWXY0001', 9)])
+    const draft = replaceSlot([], 'FOCUS', [row('FOCUS', '01HZXC0V4K7N9PQRSTVWXY0001', 0)])
+    expect(curationFingerprint(live)).toBe(curationFingerprint(draft))
   })
 })

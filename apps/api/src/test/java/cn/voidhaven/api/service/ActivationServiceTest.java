@@ -46,9 +46,9 @@ class ActivationServiceTest {
         assertThat(account.getPasswordHash()).isEqualTo("argon2-hash");
         InOrder activationOrder = inOrder(passwords, tokens);
         activationOrder.verify(passwords).encode("sufficient-local-password");
-        activationOrder.verify(tokens).invalidateUnusedByTypeExcept(eq(account.getId()), eq("ACTIVATION"), eq(token.getId()), any());
-        verify(tokens).invalidateUnusedByTypeExcept(eq(account.getId()), eq("ACTIVATION"), eq(token.getId()), any());
-        verify(tokens, never()).invalidateUnused(anyString(), any());
+        activationOrder.verify(tokens).invalidateUnused(eq(account.getId()), any());
+        verify(tokens).invalidateUnused(eq(account.getId()), any());
+        assertThat(account.getSecurityEpoch()).isEqualTo(1);
         verify(tokens, never()).invalidateUnusedExcept(anyString(), anyString(), any());
         assertThatThrownBy(() -> service.consume(raw, "sufficient-local-password")).hasMessageContaining("已使用");
     }

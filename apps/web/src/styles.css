@@ -28,6 +28,53 @@
   --red: #ec968c;
   color-scheme: dark;
 }
+.authorization-panel {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+.authorization-panel .authorization-preview {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.authorization-preview strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.authorization-preview ul {
+  padding-left: 20px;
+}
+.authorization-permissions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.authorization-permissions fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0;
+  min-width: 0;
+  background: var(--paper);
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+.authorization-panel label {
+  display: grid;
+  gap: 6px;
+}
+.authorization-panel .check-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.authorization-panel input[type='checkbox'] {
+  width: auto;
+}
+.authorization-panel select[multiple] {
+  min-height: 110px;
+}
 * {
   box-sizing: border-box;
 }
@@ -1037,4 +1084,51 @@ select:focus {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Resource configuration uses the shared light/dark semantic palette. */
+.resource-config-panel {
+  max-width: 960px;
+}
+.resource-config-tabs,
+.resource-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+  align-items: center;
+}
+.resource-config-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 16px 0;
+}
+.resource-config-panel fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.resource-config-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.resource-checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.resource-checkbox input {
+  width: auto;
+}
+.resource-fields {
+  margin-top: 20px;
+}
+.resource-field-row {
+  margin: 16px 0;
+  display: grid;
+  gap: 8px;
+}
+.resource-field-row .button {
+  justify-self: start;
 }

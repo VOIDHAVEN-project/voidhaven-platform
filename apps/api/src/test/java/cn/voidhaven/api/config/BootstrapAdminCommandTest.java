@@ -78,7 +78,7 @@ class BootstrapAdminCommandTest {
 
         fixture.command.run(new DefaultApplicationArguments(new String[0]));
 
-        assertTrue(output.getOut().contains("http://119.45.221.195/auth/activate?token=single-use-test-token"));
+        assertTrue(output.getOut().contains("http://203.0.113.10/auth/activate?token=single-use-test-token"));
         verify(fixture.audit).record(any(), any(), any(), any(), any(), any(), any(), isNull(),
                 argThat(requestId -> requestId != null && requestId.length() == 26));
     }
@@ -97,7 +97,7 @@ class BootstrapAdminCommandTest {
         environment.setActiveProfiles(profiles);
         BootstrapAdminCommand command = new BootstrapAdminCommand(accounts, roles, activations, audit, environment, transactions);
         ReflectionTestUtils.setField(command, "adminLogin", "release-admin");
-        ReflectionTestUtils.setField(command, "publicBaseUrl", "http://119.45.221.195");
+        ReflectionTestUtils.setField(command, "publicBaseUrl", "http://203.0.113.10");
         return new Fixture(command, accounts, roles, activations, audit, transactions);
     }
 

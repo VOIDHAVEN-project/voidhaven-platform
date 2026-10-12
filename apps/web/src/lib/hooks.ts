@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { message } from '../components/ui'
+import { api, type ProductCapabilities } from './api'
 export function useResource<T>(loader: (signal?: AbortSignal) => Promise<T>) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState('')
@@ -35,7 +36,7 @@ export function usePageTitle(title: string, description?: string) {
       .querySelector('meta[name="description"]')
       ?.setAttribute(
         'content',
-        description ?? '竞赛、学习资源与团队招募，一处浏览。我们整理线索，不替代官方规则。',
+        description ?? '竞赛、资源与分享与团队招募，一处浏览。我们整理线索，不替代官方规则。',
       )
   }, [title, description])
 }
@@ -59,4 +60,21 @@ export function useCollapsed() {
         return !value
       }),
   ] as const
+}
+
+/** 公开能力开关：未配置的功能在页面上应保持关闭，而不是显示失效入口。 */
+export function useProductCapabilities() {
+  const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    api
+      .capabilities(controller.signal)
+      .then(setCapabilities)
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true)
+      })
+    return () => controller.abort()
+  }, [])
+  return { capabilities, failed }
 }

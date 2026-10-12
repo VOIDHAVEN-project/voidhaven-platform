@@ -1,40 +1,18 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowUpRight, Copy, Feather, ShieldCheck, Users } from 'lucide-react'
-import {
-  ApiFailure,
-  api,
-  type CommunityEntry,
-  type CreatedCase,
-  type ProductCapabilities,
-  type Submission,
-} from '../lib/api'
-import { ControlledCommunityImage } from '../components/controlled-community-image'
+import { ArrowUpRight, Copy, Feather, ShieldCheck } from 'lucide-react'
+import { ApiFailure, api, type CreatedCase, type Submission } from '../lib/api'
 import { BusyLabel, Notice, message, type NoticeValue } from '../components/ui'
-import { copyText } from '../lib/copy-text'
-import { usePageTitle } from '../lib/hooks'
+import { usePageTitle, useProductCapabilities } from '../lib/hooks'
 import { createIdempotencyKey } from '../lib/secure-id'
-
-function useProductCapabilities() {
-  const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    const controller = new AbortController()
-    api
-      .capabilities(controller.signal)
-      .then(setCapabilities)
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true)
-      })
-    return () => controller.abort()
-  }, [])
-  return { capabilities, failed }
-}
 
 export function FeedbackPage() {
   usePageTitle('投稿 / 反馈')
   const [params] = useSearchParams()
-  const [type, setType] = useState<Submission['submissionType']>('CONTENT')
+  const [type, setType] = useState<Submission['submissionType']>(() => {
+    const requested = params.get('type')
+    return requested === 'FEEDBACK' || requested === 'COPYRIGHT' ? requested : 'CONTENT'
+  })
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -229,7 +207,7 @@ export function FeedbackPage() {
   )
 }
 export function PartnerApplyPage() {
-  usePageTitle('合作方申请')
+  usePageTitle('合作申请')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -312,7 +290,7 @@ export function PartnerApplyPage() {
         >
           <h2>申请成为合作方</h2>
           <fieldset disabled={busy || !available}>
-            <legend className="sr-only">合作方申请信息</legend>
+            <legend className="sr-only">合作申请信息</legend>
             <label>
               展示名称
               <input name="displayName" required maxLength={120} placeholder="团队或项目名称" />
@@ -350,7 +328,7 @@ export function PartnerApplyPage() {
             </p>
             <button className="button primary" disabled={busy}>
               <BusyLabel busy={busy}>
-                提交合作方申请 <ArrowUpRight size={16} />
+                提交合作申请 <ArrowUpRight size={16} />
               </BusyLabel>
             </button>
           </fieldset>
@@ -403,159 +381,6 @@ function ReceiptCard({ receipt }: { receipt: CreatedCase }) {
   )
 }
 
-export function JoinPage() {
-  usePageTitle('加入社群')
-  const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<NoticeValue>(null)
-  const [entries, setEntries] = useState<CommunityEntry[]>([])
-  const [grantToken, setGrantToken] = useState('')
-  const { capabilities, failed: capabilitiesFailed } = useProductCapabilities()
-  const available = capabilities?.communityGateEnabled === true
-  useEffect(() => {
-    let active = true
-    api
-      .communityEntries()
-      .then((publicEntries) => {
-        if (active) setEntries(publicEntries)
-      })
-      .catch(() => {
-        if (active) setNotice({ tone: 'error', text: '公开社群入口暂时无法加载，请稍后刷新。' })
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-  async function verify(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = event.currentTarget
-    const inviteCode = String(new FormData(form).get('inviteCode') ?? '').trim()
-    if (!inviteCode) return
-    if (!available) {
-      setNotice({ tone: 'error', text: '社群入口暂未开放，请等待运营人员完成配置。' })
-      return
-    }
-    setBusy(true)
-    setNotice(null)
-    try {
-      const grant = await api.verifyCommunityInvite(inviteCode)
-      setGrantToken(grant.grant)
-      setEntries(await api.communityEntries(grant.grant))
-      form.reset()
-      setNotice({
-        tone: 'success',
-        text: `验证成功，本次页面授权有效至 ${new Date(grant.expiresAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}。`,
-      })
-    } catch (error) {
-      api
-        .communityEntries()
-        .then(setEntries)
-        .catch(() => setEntries([]))
-      setGrantToken('')
-      setNotice({ tone: 'error', text: message(error) })
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <>
-      <header className="page-heading">
-        <p className="eyebrow">CONTINUE IN THE COMMUNITY</p>
-        <h1>
-          验证一次，
-          <br />
-          <span>找到可靠的下一步。</span>
-        </h1>
-        <p>公开入口可直接查看；使用工作人员提供的批次邀请码后，还可查看受控入口。</p>
-      </header>
-      <div className="public-form-layout">
-        <form className="paper-form" onSubmit={verify}>
-          <h2>验证邀请码</h2>
-          <fieldset disabled={busy || !available}>
-            <label>
-              邀请码
-              <input name="inviteCode" required minLength={8} maxLength={256} autoComplete="off" />
-            </label>
-            <p className="field-help">邀请码不会写入浏览器存储；页面刷新后需要重新验证。</p>
-            <button className="button primary" disabled={busy}>
-              <BusyLabel busy={busy}>
-                查看社群入口 <ArrowUpRight size={16} />
-              </BusyLabel>
-            </button>
-          </fieldset>
-          <Notice value={notice} />
-          {!available && capabilities ? (
-            <Notice value={{ tone: 'error', text: '邀请码入口暂未开放；这不是邀请码错误。' }} />
-          ) : null}
-          {capabilitiesFailed ? (
-            <Notice value={{ tone: 'error', text: '功能状态暂时无法确认，请稍后刷新页面。' }} />
-          ) : null}
-        </form>
-        <aside className="form-aside">
-          <Users size={30} strokeWidth={1.2} />
-          <h2>
-            多个入口，
-            <br />
-            一个主要去处。
-          </h2>
-          {entries.length ? (
-            entries.map((entry) => (
-              <article key={entry.id} className="community-entry">
-                <strong>
-                  {entry.primary ? '主入口 · ' : ''}
-                  {entry.name}
-                </strong>
-                {entry.description ? <p>{entry.description}</p> : null}
-                {entry.value ? <CommunityEntryValue entry={entry} /> : null}
-                {entry.mediaUrl && entry.accessLevel === 'PUBLIC' ? (
-                  <img className="community-qr" src={entry.mediaUrl} alt={`${entry.name}二维码`} />
-                ) : entry.mediaUrl && grantToken ? (
-                  <ControlledCommunityImage
-                    path={entry.mediaUrl}
-                    grant={grantToken}
-                    alt={`${entry.name}二维码`}
-                  />
-                ) : null}
-              </article>
-            ))
-          ) : (
-            <p>当前没有公开入口；验证成功后，受控入口会显示在这里。</p>
-          )}
-        </aside>
-      </div>
-    </>
-  )
-}
-
-function CommunityEntryValue({ entry }: { entry: CommunityEntry }) {
-  const href =
-    entry.contactChannel === 'EMAIL'
-      ? `mailto:${entry.value}`
-      : entry.contactChannel === 'PHONE'
-        ? `tel:${entry.value}`
-        : entry.presentationType === 'LINK'
-          ? entry.value
-          : null
-  return href ? (
-    <a
-      className="button ghost"
-      href={href ?? undefined}
-      target={href.startsWith('https://') ? '_blank' : undefined}
-      rel="noreferrer"
-    >
-      {entry.contactChannel === 'EMAIL'
-        ? '发送邮件'
-        : entry.contactChannel === 'PHONE'
-          ? '拨打电话'
-          : '打开入口'}{' '}
-      <ArrowUpRight size={14} />
-    </a>
-  ) : (
-    <button className="button ghost" type="button" onClick={() => void copyText(entry.value ?? '')}>
-      <Copy size={14} /> 复制{entry.name}
-    </button>
-  )
-}
-
 export function CaseStatusPage() {
   usePageTitle('进度查询')
   const [notice, setNotice] = useState<NoticeValue>(null)
@@ -594,7 +419,7 @@ export function CaseStatusPage() {
             事项类型
             <select name="caseType">
               <option value="SUBMISSION">投稿 / 反馈 / 版权请求</option>
-              <option value="PARTNER_APPLICATION">合作方申请</option>
+              <option value="PARTNER_APPLICATION">合作申请</option>
             </select>
           </label>
           <label>

@@ -31,6 +31,11 @@ public class ApiExceptionHandler {
         return response(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "请检查填写内容后重试。", fields, request);
     }
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> handleMalformedBody(HttpServletRequest request) {
+        return response(HttpStatus.BAD_REQUEST, "REQUEST_BODY_INVALID", "请求内容格式不正确，请检查必填字段。", Map.of(), request);
+    }
+
     @ExceptionHandler(ConstraintViolationException.class)
     ResponseEntity<ApiError> handleConstraintValidation(ConstraintViolationException exception, HttpServletRequest request) {
         Map<String, String> fields = new LinkedHashMap<>();

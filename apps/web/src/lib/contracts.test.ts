@@ -99,6 +99,22 @@ describe('v0 contract protection', () => {
       '/api/v1/public/resources?pageSize=20&q=hello+world&cursor=cursor%2Fnext',
     )
   })
+  it('forwards catalog sort filters and view-independent query params', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ data: { items: [], sort: 'deadline' } })))
+    await api.catalogList('COMPETITION', {
+      query: '数学',
+      cursor: 'c1.next',
+      sort: 'deadline',
+      filterKey: 'competitionLevel',
+      filterValue: '校内',
+      status: 'OPEN',
+    })
+    expect(String(fetcher.mock.calls[0][0])).toBe(
+      '/api/v1/public/competitions?pageSize=20&q=%E6%95%B0%E5%AD%A6&cursor=c1.next&sort=deadline&filterKey=competitionLevel&filterValue=%E6%A0%A1%E5%86%85&status=OPEN',
+    )
+  })
   it('forwards verification filters to the managed content list', async () => {
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
@@ -158,6 +174,20 @@ describe('v0 contract protection', () => {
     await api.adminDecision('item/a', 9, 'CHANGES_REQUESTED', '补充来源')
     expect(fetcher.mock.calls[1][0]).toBe('/api/v1/admin/reviews/item%2Fa/decision')
     expect(fetcher.mock.calls[1][1]?.headers).toMatchObject({ 'If-Match': '9', 'X-CSRF-TOKEN': 'csrf' })
+  })
+  it('sends homepage curation version through If-Match', async () => {
+    const fetcher = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { headerName: 'X-CSRF-TOKEN', token: 'csrf' } })),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: { version: 4, placements: [] } })))
+    await api.adminReplaceHomepagePlacements(3, [
+      { slot: 'FOCUS', contentItemId: '01HZXC0V4K7N9PQRSTVWXY0001', sortOrder: 0 },
+    ])
+    expect(fetcher.mock.calls[1][0]).toBe('/api/v1/admin/homepage-placements')
+    expect(fetcher.mock.calls[1][1]?.method).toBe('PUT')
+    expect(fetcher.mock.calls[1][1]?.headers).toMatchObject({ 'If-Match': '3', 'X-CSRF-TOKEN': 'csrf' })
   })
   it('preserves backend diagnostics and retry delay', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

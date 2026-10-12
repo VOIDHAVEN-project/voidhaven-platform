@@ -1,12 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Link,
-  useLocation,
-  useNavigate,
-  useOutletContext,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import {
   ArrowDown,
   ArrowLeft,
@@ -14,12 +7,11 @@ import {
   ArrowUpRight,
   BookOpen,
   CalendarDays,
-  Check,
   Compass,
-  Copy,
   Feather,
+  LayoutGrid,
+  LayoutList,
   Search,
-  Share2,
   ShieldCheck,
   Users,
   X,
@@ -29,38 +21,30 @@ import {
   categories,
   contentKinds,
   type ContentKind,
-  type ContentModule,
   type PublicContent,
-  type PublicAction,
   type SearchGroup,
 } from '../lib/api'
-import { copyText } from '../lib/copy-text'
 import { usePageTitle, useResource } from '../lib/hooks'
-import { ControlledCommunityImage } from '../components/controlled-community-image'
-import { EmptyState, ErrorState, LoadingRows, Notice, message, type NoticeValue } from '../components/ui'
-import { DocumentView, extractDocumentHeadings, safeUrl, type DocumentHeading } from '../components/document'
+import { siteContactLinks } from '../lib/site-meta'
+import { EmptyState, ErrorState, LoadingRows, message, statusText } from '../components/ui'
+import { StatusFigure } from '../components/status-figures'
 import type { PublicShellContext } from '../components/shell'
+import {
+  catalogFacts,
+  catalogFilterFields,
+  catalogHasActiveFilters,
+  catalogSearchParams,
+  catalogSortOptions,
+  catalogStatusOptions,
+  resolveCatalogView,
+  writeStoredCatalogView,
+  type CatalogView,
+} from '../lib/catalog'
+import { dateLabel, deadline, deadlineState } from '../lib/detail'
+import { fieldOptionLabel } from '../lib/module-field-labels'
 
-export function deadline(item: PublicContent) {
-  const value = item.details.deadlineDate ?? item.details.deadlineAt
-  return typeof value === 'string' ? value : null
-}
-
-function dateLabel(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
-}
-
-export type DeadlineState = 'active' | 'expired' | 'unknown'
-export function deadlineState(item: PublicContent, now = Date.now()): DeadlineState {
-  const value = deadline(item)
-  if (!value || item.kind === 'RESOURCE') return 'unknown'
-  const time = new Date(value.length === 10 ? value + 'T23:59:59+08:00' : value).getTime()
-  if (Number.isNaN(time)) return 'unknown'
-  return time < now ? 'expired' : 'active'
-}
+export { deadline, deadlineState }
+export type { DeadlineState } from '../lib/detail'
 
 function expired(item: PublicContent) {
   return deadlineState(item) === 'expired'
@@ -78,10 +62,17 @@ export function ContentCard({
   const location = useLocation()
   const category = categories[item.kind]
   const date = deadline(item)
+  const status = item.operationalStatus
+    ? (statusText[item.operationalStatus] ?? item.operationalStatus)
+    : null
+  const updated = item.updatedAt ? dateLabel(item.updatedAt) : null
   return (
     <article className={`editorial-card ${featured ? 'featured-story' : ''}`}>
       <div className="story-top">
-        <span>{item.moduleKey === 'resource.article' ? '文章 / 经验' : category.label}</span>
+        <span>
+          {item.moduleKey === 'resource.article' ? '文章 / 经验' : category.label}
+          {status ? ` · ${status}` : ''}
+        </span>
         <span>{featured ? 'IN FOCUS' : String(index + 1).padStart(2, '0')}</span>
       </div>
       {featured ? (
@@ -106,6 +97,7 @@ export function ContentCard({
           </Link>
         </h3>
         <p>{item.summary}</p>
+        {catalogFacts(item).length ? <p className="catalog-facts">{catalogFacts(item).join(' · ')}</p> : null}
         <div className="story-meta">
           <span>
             {date ? (
@@ -113,6 +105,11 @@ export function ContentCard({
                 <CalendarDays size={13} />
                 {dateLabel(date)}
                 {expired(item) ? ' · 已截止' : ''}
+              </>
+            ) : updated ? (
+              <>
+                <CalendarDays size={13} />
+                更新 {updated}
               </>
             ) : (
               <>
@@ -150,7 +147,7 @@ export function HomePage() {
           <Feather size={37} strokeWidth={1} />
         </h1>
         <div className="hero-explainer">
-          <p>为学生整理可靠的竞赛、团队招募与学习资源，帮助你判断下一步是否值得投入。</p>
+          <p>为学生整理可靠的竞赛、团队招募与资源与分享，帮助你判断下一步是否值得投入。</p>
           <div className="hero-actions">
             <Link className="button primary" to="/competitions">
               浏览近期机会 <ArrowRight size={16} />
@@ -171,15 +168,15 @@ export function HomePage() {
       </section>
 
       <section id="discover" className="home-section home-focus-section">
-        <SectionTitle label="01 / IN FOCUS" title="本期值得关注" path="/competitions" />
+        <SectionTitle label="01 / IN FOCUS" title="本期值得关注" />
         {state.loading ? (
           <LoadingRows />
         ) : state.error ? (
           <ErrorState error={state.error} retry={state.reload} />
-        ) : state.data?.competitions?.length ? (
+        ) : state.data?.focus?.length ? (
           <>
             <div className="focus-grid">
-              <ContentCard item={state.data.competitions[0]} featured />
+              <ContentCard item={state.data.focus[0]} featured />
               <aside className="editor-note">
                 <span className="eyebrow">A NOTE FROM VOIDHAVEN</span>
                 <span className="note-asterisk">✳</span>
@@ -188,15 +185,17 @@ export function HomePage() {
                   <br />
                   再认真出发。
                 </h3>
-                <p>核对时间，阅读规则，了解投入。不必追赶所有机会，只需找到适合自己的那一个。</p>
+                <p>
+                  竞赛、招募与资源与分享会按当前有效内容混合呈现。不必追赶所有机会，只需核对自己的下一步。
+                </p>
                 <Link to="/about">
                   我们的编辑原则 <ArrowUpRight size={15} />
                 </Link>
               </aside>
             </div>
-            {state.data.competitions.length > 1 ? (
+            {state.data.focus.length > 1 ? (
               <div className="story-grid compact-story-grid">
-                {state.data.competitions.slice(1).map((item, index) => (
+                {state.data.focus.slice(1).map((item, index) => (
                   <ContentCard key={item.id} item={item} index={index + 1} />
                 ))}
               </div>
@@ -204,8 +203,9 @@ export function HomePage() {
           </>
         ) : (
           <EmptyState
+            figure="shelf"
             title="下一份机会，正在路上"
-            text="当前没有公开竞赛。你可以先浏览学习资源，或提供可靠的线索。"
+            text="当前没有可供关注的公开内容。你可以先浏览分类目录，或提供可靠的线索。"
           />
         )}
       </section>
@@ -231,9 +231,54 @@ export function HomePage() {
         </div>
       </section>
 
+      {state.data && !state.error ? (
+        <>
+          <section className="home-section">
+            <SectionTitle label="03 / COMPETITIONS" title="竞赛资源" path="/competitions" />
+            {state.data.competitions.length ? (
+              <div className="story-grid">
+                {state.data.competitions.map((item, index) => (
+                  <ContentCard key={item.id} item={item} index={index} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState figure="shelf" title="当前没有公开竞赛" text="新的竞赛会在审核后出现在这里。" />
+            )}
+          </section>
+          <section className="home-section">
+            <SectionTitle label="04 / BETTER, TOGETHER" title="团队招募" path="/recruitments" />
+            {state.data.recruitments.length ? (
+              <div className="story-grid recruitment-grid">
+                {state.data.recruitments.map((item, index) => (
+                  <ContentCard key={item.id} item={item} index={index} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState figure="shelf" title="暂时没有公开招募" text="新的团队计划会在审核后出现在这里。" />
+            )}
+          </section>
+          <section className="home-section">
+            <SectionTitle label="05 / THE READING ROOM" title="资源与分享" path="/resources" />
+            {state.data.resources.length ? (
+              <div className="resource-list">
+                {state.data.resources.map((item, index) => (
+                  <ContentCard key={item.id} item={item} index={index} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                figure="harbor"
+                title="书架正在整理中"
+                text="欢迎提供有来源、值得阅读的学习资料。"
+              />
+            )}
+          </section>
+        </>
+      ) : null}
+
       <section className="principles-section">
         <div className="principles-intro">
-          <p className="eyebrow">03 / HOW THE INDEX IS MADE</p>
+          <p className="eyebrow">HOW THE INDEX IS MADE</p>
           <h2>
             让每一条信息，
             <br />
@@ -256,35 +301,6 @@ export function HomePage() {
           ))}
         </ol>
       </section>
-
-      {state.data && !state.error ? (
-        <>
-          <section className="home-section">
-            <SectionTitle label="04 / BETTER, TOGETHER" title="最新团队招募" path="/recruitments" />
-            {state.data.recruitments.length ? (
-              <div className="story-grid recruitment-grid">
-                {state.data.recruitments.map((item, index) => (
-                  <ContentCard key={item.id} item={item} index={index} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="暂时没有公开招募" text="新的团队计划会在审核后出现在这里。" />
-            )}
-          </section>
-          <section className="home-section">
-            <SectionTitle label="05 / THE READING ROOM" title="给下一步，留一点准备" path="/resources" />
-            {state.data.resources.length ? (
-              <div className="resource-list">
-                {state.data.resources.map((item, index) => (
-                  <ContentCard key={item.id} item={item} index={index} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="书架正在整理中" text="欢迎提供有来源、值得阅读的学习资料。" />
-            )}
-          </section>
-        </>
-      ) : null}
 
       <section className="contribute-panel">
         <div>
@@ -309,17 +325,57 @@ export function HomePage() {
   )
 }
 
-function SectionTitle({ label, title, path }: { label: string; title: string; path: string }) {
+function SectionTitle({ label, title, path }: { label: string; title: string; path?: string }) {
   return (
     <div className="section-heading">
       <div>
         <p className="eyebrow">{label}</p>
         <h2>{title}</h2>
       </div>
-      <Link to={path}>
-        查看全部 <ArrowUpRight size={15} />
-      </Link>
+      {path ? (
+        <Link to={path}>
+          查看全部 <ArrowUpRight size={15} />
+        </Link>
+      ) : null}
     </div>
+  )
+}
+
+function CatalogListRow({ item }: { item: PublicContent }) {
+  const location = useLocation()
+  const date = deadline(item)
+  const facts = catalogFacts(item)
+  const status = item.operationalStatus
+    ? (statusText[item.operationalStatus] ?? item.operationalStatus)
+    : null
+  return (
+    <article className="catalog-list-row">
+      <div>
+        <span>
+          {item.moduleKey === 'resource.article' ? '文章 / 经验' : categories[item.kind].label}
+          {status ? ` · ${status}` : ''}
+        </span>
+        {date ? (
+          <span>
+            {dateLabel(date)}
+            {expired(item) ? ' · 已截止' : ''}
+          </span>
+        ) : item.updatedAt ? (
+          <span>更新 {dateLabel(item.updatedAt)}</span>
+        ) : null}
+      </div>
+      <h3>
+        <Link
+          to={`/content/${item.id}`}
+          state={{ from: location.pathname + location.search, kind: item.kind }}
+        >
+          {item.title}
+        </Link>
+      </h3>
+      <p>{item.summary}</p>
+      {facts.length ? <p className="catalog-facts">{facts.join(' · ')}</p> : null}
+      <small>{item.sourceName ?? '来源详见正文'}</small>
+    </article>
   )
 }
 
@@ -329,32 +385,59 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
   const moduleKey = params.get('module') ?? ''
   const filterKey = params.get('filterKey') ?? ''
   const filterValue = params.get('filterValue') ?? ''
+  const sort = params.get('sort') ?? ''
+  const status = params.get('status') ?? ''
   const cursor = params.get('cursor') ?? undefined
+  const view = resolveCatalogView(kind, params.get('view'))
   const [input, setInput] = useState(query)
   const category = categories[kind]
   const location = useLocation()
   const navigate = useNavigate()
   useEffect(() => setInput(query), [query, kind])
-  usePageTitle(category.label)
+  usePageTitle(kind === 'COMPETITION' ? '竞赛资源' : category.label)
   const modulesState = useResource(useCallback((signal?: AbortSignal) => api.publicModules(signal), []))
   const modules = (modulesState.data?.modules ?? []).filter(
     (module) => module.active && module.legacyKind === kind,
   )
-  const selectedModule = modules.find((module) => module.key === moduleKey)
-  const selectedField = selectedModule?.fields.find((field) => field.filterable && field.key === filterKey)
+  const filterFields = catalogFilterFields(modules)
+  const selectedField = filterFields.find((field) => field.key === filterKey)
+  const listQuery = useMemo(
+    () => ({
+      query,
+      cursor,
+      sort: sort || undefined,
+      filterKey: filterKey || undefined,
+      filterValue: filterValue || undefined,
+      status: status || undefined,
+    }),
+    [query, cursor, sort, filterKey, filterValue, status],
+  )
   const loader = useCallback(
     (signal?: AbortSignal) =>
-      moduleKey
-        ? api.listModule(moduleKey, { query, cursor, filterKey, filterValue }, signal)
-        : api.list(kind, query, cursor, signal),
-    [kind, query, cursor, moduleKey, filterKey, filterValue],
+      moduleKey ? api.listModule(moduleKey, listQuery, signal) : api.catalogList(kind, listQuery, signal),
+    [kind, moduleKey, listQuery],
   )
   const state = useResource(loader)
+  const appliedSort = sort || state.data?.sort || 'default'
+  const filtered = catalogHasActiveFilters({
+    q: query,
+    module: moduleKey,
+    filterKey,
+    filterValue,
+    sort,
+    view: '',
+    status,
+    cursor,
+  })
   function updateParams(next: Record<string, string>) {
     const value = new URLSearchParams(params)
     value.delete('cursor')
     Object.entries(next).forEach(([key, entry]) => (entry ? value.set(key, entry) : value.delete(key)))
     setParams(value)
+  }
+  function setView(next: CatalogView) {
+    writeStoredCatalogView(kind, next)
+    updateParams({ view: next })
   }
   return (
     <>
@@ -418,7 +501,50 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
           ))}
         </div>
       ) : null}
-      {selectedModule?.fields.some((field) => field.filterable && field.type !== 'tags') ? (
+      <div className="catalog-toolbar">
+        <label>
+          排序
+          <select value={appliedSort} onChange={(event) => updateParams({ sort: event.target.value })}>
+            {catalogSortOptions(kind).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {kind !== 'RESOURCE' ? (
+          <label>
+            当前状态
+            <select value={status} onChange={(event) => updateParams({ status: event.target.value })}>
+              <option value="">全部状态</option>
+              {catalogStatusOptions().map((option) => (
+                <option key={option} value={option}>
+                  {statusText[option] ?? option}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <div className="catalog-view-toggle" role="group" aria-label="目录视图">
+          <button
+            type="button"
+            className={view === 'card' ? 'active' : ''}
+            aria-pressed={view === 'card'}
+            onClick={() => setView('card')}
+          >
+            <LayoutGrid size={15} /> 卡片
+          </button>
+          <button
+            type="button"
+            className={view === 'list' ? 'active' : ''}
+            aria-pressed={view === 'list'}
+            onClick={() => setView('list')}
+          >
+            <LayoutList size={15} /> 列表
+          </button>
+        </div>
+      </div>
+      {filterFields.length ? (
         <div className="catalog-field-filter">
           <label>
             筛选字段
@@ -427,13 +553,11 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
               onChange={(event) => updateParams({ filterKey: event.target.value, filterValue: '' })}
             >
               <option value="">不使用字段筛选</option>
-              {selectedModule.fields
-                .filter((field) => field.filterable && field.type !== 'tags')
-                .map((field) => (
-                  <option key={field.key} value={field.key}>
-                    {field.label}
-                  </option>
-                ))}
+              {filterFields.map((field) => (
+                <option key={field.key} value={field.key}>
+                  {field.label}
+                </option>
+              ))}
             </select>
           </label>
           {selectedField ? (
@@ -447,7 +571,7 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
                   <option value="">请选择</option>
                   {selectedField.options?.map((option) => (
                     <option key={option} value={option}>
-                      {option}
+                      {selectedField.optionLabels?.[option] ?? fieldOptionLabel(option)}
                     </option>
                   ))}
                 </select>
@@ -492,16 +616,39 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
       ) : state.error ? (
         <ErrorState error={state.error} retry={state.reload} />
       ) : state.data?.items.length ? (
-        <div className={kind === 'RESOURCE' ? 'resource-list' : 'story-grid'}>
-          {state.data.items.map((item, index) => (
-            <ContentCard key={item.id} item={item} index={index} />
-          ))}
+        <div
+          className={view === 'list' ? 'catalog-list' : kind === 'RESOURCE' ? 'resource-list' : 'story-grid'}
+        >
+          {state.data.items.map((item, index) =>
+            view === 'list' ? (
+              <CatalogListRow key={item.id} item={item} />
+            ) : (
+              <ContentCard key={item.id} item={item} index={index} />
+            ),
+          )}
         </div>
       ) : (
-        <EmptyState
-          title={query ? '没有找到匹配内容' : '这个目录还在整理中'}
-          text={query ? '试试更短的关键词，或清空搜索条件。' : '内容通过审核后会在此公开。'}
-        />
+        <>
+          <EmptyState
+            figure={filtered ? 'search' : kind === 'RESOURCE' ? 'harbor' : 'shelf'}
+            title={filtered ? '没有找到匹配内容' : '这个目录还在整理中'}
+            text={filtered ? '试试更短的关键词，或清空搜索、筛选和排序条件。' : '内容通过审核后会在此公开。'}
+          />
+          {filtered ? (
+            <div className="catalog-empty-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  setInput('')
+                  setParams(catalogSearchParams({ view: params.get('view') || '' }))
+                }}
+              >
+                清空筛选条件
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
       <div className="pagination">
         {cursor ? (
@@ -519,7 +666,16 @@ export function CatalogPage({ kind }: { kind: ContentKind }) {
         {!state.loading && !state.error && state.data?.nextCursor ? (
           <Link
             className="button"
-            to={`${category.path}?${new URLSearchParams({ ...(query ? { q: query } : {}), ...(moduleKey ? { module: moduleKey } : {}), ...(filterKey && filterValue ? { filterKey, filterValue } : {}), cursor: state.data.nextCursor })}`}
+            to={`${category.path}?${catalogSearchParams({
+              q: query,
+              module: moduleKey,
+              filterKey,
+              filterValue,
+              sort,
+              view: params.get('view') || '',
+              status,
+              cursor: state.data.nextCursor ?? undefined,
+            })}`}
             state={{ previousPage: location.pathname + location.search }}
           >
             下一页 <ArrowRight size={15} />
@@ -652,7 +808,7 @@ export function SearchPage() {
         <h1>
           找到更清晰的<span>下一步。</span>
         </h1>
-        <p>同时检索竞赛、团队招募与学习资源；每一条结果仍保留原始来源。</p>
+        <p>同时检索竞赛、团队招募与资源与分享；每一条结果仍保留原始来源。</p>
       </header>
       <form
         className="catalog-search search-page-form"
@@ -690,8 +846,9 @@ export function SearchPage() {
       </form>
       {!query ? (
         <EmptyState
+          figure="prompt"
           title="输入一个关键词"
-          text="我们会分别查询竞赛、团队招募与学习资源，不会把当前页面筛选冒充全站结果。"
+          text="我们会分别查询竞赛、团队招募与资源与分享，不会把当前页面筛选冒充全站结果。"
         />
       ) : allFailed ? (
         <ErrorState error="三类公开内容暂时都无法检索，请确认本地内容服务已启动。" retry={reload} />
@@ -719,6 +876,7 @@ export function SearchPage() {
                 <ErrorState error={group.error ?? '该分类暂时无法检索。'} retry={() => retry(group.kind)} />
               ) : group.status === 'empty' ? (
                 <EmptyState
+                  figure="search"
                   title={`没有匹配的${categories[group.kind].label}`}
                   text="其他分类仍可能有相关内容。"
                 />
@@ -737,566 +895,11 @@ export function SearchPage() {
   )
 }
 
-function valueAsString(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-const resourceTypes: Record<string, string> = {
-  ARTICLE: '文章 / 经验',
-  GUIDE: '指南',
-  COURSE: '课程',
-  TOOL: '工具',
-  VIDEO: '视频',
-  OTHER: '其他资源',
-}
-
-function Outline({
-  headings,
-  active,
-  mobile = false,
-}: {
-  headings: DocumentHeading[]
-  active: string
-  mobile?: boolean
-}) {
-  const links = (
-    <nav className="article-outline" aria-label="本文目录">
-      {headings.map((heading) => (
-        <a
-          key={heading.id}
-          href={`#${heading.id}`}
-          className={`${heading.level > 1 ? 'nested' : ''} ${active === heading.id ? 'active' : ''}`}
-        >
-          {heading.label}
-        </a>
-      ))}
-    </nav>
-  )
-  return mobile ? (
-    <details className="mobile-outline">
-      <summary>本文目录</summary>
-      {links}
-    </details>
-  ) : (
-    links
-  )
-}
-
-function RelatedLinks({ items }: { items: PublicContent[] }) {
-  const location = useLocation()
-  return (
-    <div className="related-links">
-      {items.map((item, index) => (
-        <Link
-          key={item.id}
-          to={`/content/${item.id}`}
-          state={{ from: location.pathname + location.search, kind: item.kind }}
-        >
-          <span>{String(index + 1).padStart(2, '0')}</span>
-          <strong>{item.title}</strong>
-          <ArrowRight size={14} />
-        </Link>
-      ))}
-    </div>
-  )
-}
-
-function RecruitmentActions({ item }: { item: PublicContent }) {
-  const [inviteCode, setInviteCode] = useState('')
-  const [grantToken, setGrantToken] = useState('')
-  const [gated, setGated] = useState<PublicAction[]>([])
-  const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<NoticeValue>(null)
-  if (item.kind !== 'RECRUITMENT') return null
-  const open = (item.operationalStatus ?? 'OPEN') === 'OPEN' && !expired(item)
-  const actions = [...(item.actions ?? []), ...gated]
-  const verify = async () => {
-    if (!inviteCode.trim()) return
-    setBusy(true)
-    setNotice(null)
-    try {
-      const grant = await api.verifyCommunityInvite(inviteCode.trim())
-      setGrantToken(grant.grant)
-      setGated(await api.gatedActions(item.id, grant.grant))
-      setInviteCode('')
-      setNotice({ tone: 'success', text: '验证成功，受控联系方式已在当前页面临时显示。' })
-    } catch (error) {
-      setNotice({ tone: 'error', text: message(error) })
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <section className="recruitment-actions" aria-labelledby="recruitment-actions-title">
-      <p className="eyebrow">TAKE THE NEXT STEP</p>
-      <h2 id="recruitment-actions-title">下一步怎么做</h2>
-      {!open ? (
-        <p className="muted">本次招募已暂停、截止或结束，行动入口不再开放；页面保留为历史记录。</p>
-      ) : (
-        <>
-          <div className="button-row">
-            {actions.map((action) => (
-              <RecruitmentAction key={action.id} action={action} grant={grantToken} />
-            ))}
-          </div>
-          <div className="community-unlock">
-            <label>
-              查看微信、群号或二维码等受控入口
-              <input
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
-                maxLength={256}
-                autoComplete="off"
-                placeholder="输入邀请码"
-              />
-            </label>
-            <button
-              className="button ghost"
-              type="button"
-              disabled={busy || !inviteCode.trim()}
-              onClick={() => void verify()}
-            >
-              {busy ? '验证中…' : '验证并显示'}
-            </button>
-          </div>
-          <Notice value={notice} />
-        </>
-      )}
-    </section>
-  )
-}
-
-function RecruitmentAction({ action, grant }: { action: PublicAction; grant?: string }) {
-  if (action.mediaUrl && action.accessLevel === 'PUBLIC') {
-    return (
-      <figure className="recruitment-qr">
-        <figcaption>{action.label}</figcaption>
-        <img src={action.mediaUrl} alt={`${action.label}二维码`} />
-      </figure>
-    )
-  }
-  if (action.mediaUrl && grant) {
-    return (
-      <figure className="recruitment-qr">
-        <figcaption>{action.label}</figcaption>
-        <ControlledCommunityImage path={action.mediaUrl} grant={grant} alt={`${action.label}二维码`} />
-      </figure>
-    )
-  }
-  if (action.mediaUrl) return <span className="button ghost">{action.label}（验证邀请码后显示二维码）</span>
-  if (!action.value) return null
-  const href =
-    action.contactChannel === 'EMAIL'
-      ? `mailto:${action.value}`
-      : action.contactChannel === 'PHONE'
-        ? `tel:${action.value}`
-        : action.presentationType === 'LINK'
-          ? safeUrl(action.value)
-          : null
-  const label =
-    action.contactChannel === 'EMAIL'
-      ? '发送邮件'
-      : action.contactChannel === 'PHONE'
-        ? '拨打电话'
-        : action.presentationType === 'LINK'
-          ? '打开入口'
-          : `复制${action.label}`
-  return href ? (
-    <a
-      className="button primary"
-      href={href}
-      target={href.startsWith('http') ? '_blank' : undefined}
-      rel="noreferrer"
-    >
-      {label} <ArrowUpRight size={14} />
-    </a>
-  ) : (
-    <button className="button ghost" type="button" onClick={() => void copyText(action.value ?? '')}>
-      {label}：{action.value}
-    </button>
-  )
-}
-
-function DetailQuickFacts({
-  item,
-  module,
-  placement,
-}: {
-  item: PublicContent
-  module?: ContentModule
-  placement: 'mobile' | 'desktop'
-}) {
-  const date = deadline(item)
-  const status = deadlineState(item)
-  const source = safeUrl(item.sourceUrl)
-  const rules = safeUrl(item.details.officialRulesUrl)
-  const follow = safeUrl(item.details.followUpUrl)
-  const relatedCompetition = valueAsString(item.details.relatedCompetitionId)
-  const resourceType = valueAsString(item.details.resourceType)
-  const audience = valueAsString(item.details.audience)
-  return (
-    <section className="quick-facts" aria-labelledby={`quick-facts-title-${placement}`}>
-      <p className="eyebrow">AT A GLANCE</p>
-      <h2 id={`quick-facts-title-${placement}`}>关键信息</h2>
-      <dl>
-        {item.kind !== 'RESOURCE' ? (
-          <>
-            <dt>当前状态</dt>
-            <dd>
-              <span className={`deadline-status ${status}`}>
-                {status === 'active' ? '进行中' : status === 'expired' ? '已截止' : '以来源为准'}
-              </span>
-            </dd>
-          </>
-        ) : null}
-        {date ? (
-          <>
-            <dt>截止日期</dt>
-            <dd>{dateLabel(date)}</dd>
-          </>
-        ) : null}
-        {item.kind === 'RESOURCE' ? (
-          <>
-            <dt>资源类型</dt>
-            <dd>{resourceType ? (resourceTypes[resourceType] ?? resourceType) : '未标注'}</dd>
-            <dt>适用人群</dt>
-            <dd>{audience ?? '未标注'}</dd>
-            <dt>内容语言</dt>
-            <dd>{item.languageLabel ?? item.languageCode}</dd>
-          </>
-        ) : null}
-        {module?.fields
-          .filter(
-            (field) =>
-              ![
-                'officialRulesUrl',
-                'deadlineDate',
-                'followUpUrl',
-                'relatedCompetitionId',
-                'resourceType',
-                'audience',
-              ].includes(field.key) && item.details[field.key] !== undefined,
-          )
-          .map((field) => (
-            <Fragment key={field.key}>
-              <dt>{field.label}</dt>
-              <dd>
-                {typeof item.details[field.key] === 'boolean'
-                  ? item.details[field.key]
-                    ? '是'
-                    : '否'
-                  : Array.isArray(item.details[field.key])
-                    ? (item.details[field.key] as unknown[]).join('、')
-                    : String(item.details[field.key])}
-              </dd>
-            </Fragment>
-          ))}
-      </dl>
-      {rules ? (
-        <a className="button primary" href={rules} target="_blank" rel="noreferrer">
-          阅读官方规则 <ArrowUpRight size={15} />
-        </a>
-      ) : null}
-      {follow && !(item.actions && item.actions.length) ? (
-        <a className="button primary" href={follow} target="_blank" rel="noreferrer">
-          了解后续入口 <ArrowUpRight size={15} />
-        </a>
-      ) : null}
-      {relatedCompetition ? (
-        <Link className="button" to={`/content/${encodeURIComponent(relatedCompetition)}`}>
-          查看关联竞赛 <ArrowRight size={15} />
-        </Link>
-      ) : null}
-      {source ? (
-        <a className="text-link" href={source} target="_blank" rel="noreferrer">
-          查看原始来源 <ArrowUpRight size={13} />
-        </a>
-      ) : null}
-      <p className="quick-facts-note">
-        {item.kind === 'COMPETITION'
-          ? '资格、时间和提交要求以官方规则为准。'
-          : item.kind === 'RECRUITMENT'
-            ? '本站负责展示信息，后续沟通由对应社群或来源入口承接。'
-            : '资源信息保留原始来源，便于继续核对与学习。'}
-      </p>
-    </section>
-  )
-}
-
-function Provenance({ item }: { item: PublicContent }) {
-  const source = safeUrl(item.sourceUrl)
-  return (
-    <section className="provenance-panel" aria-labelledby="provenance-title">
-      <div>
-        <p className="eyebrow">THE SOURCE NOTES</p>
-        <h2 id="provenance-title">来源与说明</h2>
-      </div>
-      <dl>
-        {item.originalTitle ? (
-          <>
-            <dt>原始标题</dt>
-            <dd>{item.originalTitle}</dd>
-          </>
-        ) : null}
-        <dt>官方或原始来源</dt>
-        <dd>
-          {source ? (
-            <a href={source} target="_blank" rel="noreferrer">
-              {item.sourceName || '查看来源'} <ArrowUpRight size={13} />
-            </a>
-          ) : (
-            item.sourceName || '原创内容'
-          )}
-        </dd>
-        <dt>最近来源核验</dt>
-        <dd>
-          {item.verification
-            ? `${item.verification.outcome === 'VALID' ? '有效' : item.verification.outcome === 'INVALID' ? '已标记失效' : '待复核'} · ${new Date(item.verification.checkedAt).toLocaleDateString()}`
-            : '尚无独立核验记录，请以原始来源为准'}
-        </dd>
-        <dt>作者展示名</dt>
-        <dd>{item.authorDisplayName || '未提供'}</dd>
-        <dt>权利来源 / 使用说明</dt>
-        <dd>{item.rightsBasis}</dd>
-        <dt>署名转载</dt>
-        <dd>{item.reprintPermission === 'ATTRIBUTION_ALLOWED' ? '允许署名使用' : '不允许'}</dd>
-        <dt>署名改编</dt>
-        <dd>{item.adaptationPermission === 'ATTRIBUTION_ALLOWED' ? '允许署名使用' : '不允许'}</dd>
-      </dl>
-    </section>
-  )
-}
-
-export function DetailPage() {
-  const { publicId = '' } = useParams()
-  const loader = useCallback((signal?: AbortSignal) => api.detail(publicId, signal), [publicId])
-  const state = useResource(loader)
-  usePageTitle(state.data?.title ?? '内容详情', state.data?.summary)
-  if (state.loading)
-    return (
-      <div className="detail-loading">
-        <LoadingRows />
-      </div>
-    )
-  if (state.error || !state.data)
-    return <ErrorState error={state.error || '内容不存在。'} retry={state.reload} />
-  return <DetailContent item={state.data} />
-}
-
-function DetailContent({ item }: { item: PublicContent }) {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const { setDetailKind } = useOutletContext<PublicShellContext>()
-  const [notice, setNotice] = useState<NoticeValue>(null)
-  const article = useRef<HTMLElement>(null)
-  const [progress, setProgress] = useState(0)
-  const modulesState = useResource(useCallback((signal?: AbortSignal) => api.publicModules(signal), []))
-  const module = modulesState.data?.modules.find((value) => value.key === item.moduleKey)
-  const headings = useMemo(() => extractDocumentHeadings(item.body), [item.body])
-  const [activeHeading, setActiveHeading] = useState(headings[0]?.id ?? '')
-  const relatedLoader = useCallback((signal?: AbortSignal) => api.related(item.id, signal), [item.id])
-  const related = useResource(relatedLoader)
-  const relatedItems = useMemo(
-    () => related.data?.items?.filter((entry) => entry.id !== item.id).slice(0, 4) ?? [],
-    [related.data, item.id],
-  )
-  const isLong = headings.length >= 3 || item.body.blocks.length >= 10
-  const showRelatedRail = isLong && relatedItems.length >= 2
-  useEffect(() => {
-    setDetailKind(item.kind)
-    return () => setDetailKind(null)
-  }, [item.kind, setDetailKind])
-  useEffect(() => {
-    const update = () => {
-      const rect = article.current?.getBoundingClientRect()
-      if (rect) setProgress(Math.max(0, Math.min(1, -rect.top / Math.max(1, rect.height - innerHeight))))
-    }
-    const resize = new ResizeObserver(update)
-    if (article.current) resize.observe(article.current)
-    window.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    update()
-    return () => {
-      resize.disconnect()
-      window.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
-    }
-  }, [item])
-  useEffect(() => {
-    if (headings.length < 3) return
-    const nodes = headings
-      .map((heading) => document.getElementById(heading.id))
-      .filter((node): node is HTMLElement => Boolean(node))
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]?.target.id) setActiveHeading(visible[0].target.id)
-      },
-      { rootMargin: '-18% 0px -68% 0px' },
-    )
-    nodes.forEach((node) => observer.observe(node))
-    return () => observer.disconnect()
-  }, [headings])
-  const back = location.state?.from
-  const fallback = categories[item.kind].path
-  const copy = async () => {
-    try {
-      const shareText = [item.title, item.summary, date ? `截止：${dateLabel(date)}` : '', locationOrigin()]
-        .filter(Boolean)
-        .join('\n')
-      await copyText(shareText)
-      setNotice({ tone: 'success', text: '标题、导读、截止信息和链接已复制，可直接粘贴分享。' })
-    } catch {
-      setNotice({ tone: 'error', text: '未能自动复制，请从浏览器地址栏复制链接。' })
-    }
-  }
-  const share = async () => {
-    if (!navigator.share) return copy()
-    try {
-      await navigator.share({ title: item.title, text: item.summary, url: locationOrigin() })
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      await copy()
-    }
-  }
-  const date = deadline(item)
-  return (
-    <article ref={article} className="detail-article document-detail">
-      <div className="reading-progress" aria-hidden="true">
-        <span style={{ transform: `scaleX(${progress})` }} />
-      </div>
-      <nav className="breadcrumbs" aria-label="面包屑">
-        <Link to="/">首页</Link>
-        <span>/</span>
-        <Link to={fallback}>{categories[item.kind].label}</Link>
-        <span>/</span>
-        <span aria-current="page">{item.title}</span>
-      </nav>
-      {back ? (
-        <button className="text-link back-link" onClick={() => navigate(-1)}>
-          <ArrowLeft size={15} />
-          返回浏览目录
-        </button>
-      ) : (
-        <Link className="text-link back-link" to={fallback}>
-          <ArrowLeft size={15} />
-          返回{categories[item.kind].label}
-        </Link>
-      )}
-      <header className="detail-heading">
-        <p className="detail-kicker">
-          <span className="eyebrow">{module?.label ?? categories[item.kind].caption}</span>
-          <span aria-hidden="true">·</span>
-          <span>{item.languageLabel ?? item.languageCode}</span>
-        </p>
-        <h1>{item.title}</h1>
-        <p className="detail-lead">{item.summary}</p>
-        <div className="detail-meta">
-          <span>
-            {item.authorDisplayName || 'VOIDHAVEN'}{' '}
-            {date ? ` · ${dateLabel(date)}${expired(item) ? ' · 已截止' : ''}` : ''}
-          </span>
-          <div>
-            <button
-              className="icon-button"
-              title="复制链接"
-              aria-label="复制链接"
-              onClick={() => void copy()}
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              className="icon-button"
-              title="分享内容"
-              aria-label="分享内容"
-              onClick={() => void share()}
-            >
-              <Share2 size={16} />
-            </button>
-          </div>
-        </div>
-        <Notice value={notice} />
-      </header>
-      <RecruitmentActions item={item} />
-      <div className={`detail-document-grid ${showRelatedRail ? 'has-related-rail' : ''}`}>
-        {showRelatedRail ? (
-          <aside className="related-rail">
-            <p className="eyebrow">MORE IN THIS INDEX</p>
-            <h2>同类内容</h2>
-            <RelatedLinks items={relatedItems} />
-          </aside>
-        ) : null}
-        <section className="article-reading" aria-label="正文">
-          <div className="detail-context-mobile">
-            <DetailQuickFacts item={item} module={module} placement="mobile" />
-            {headings.length >= 3 ? <Outline headings={headings} active={activeHeading} mobile /> : null}
-          </div>
-          <DocumentView body={item.body} media={item.media} />
-          <aside className="official-note">
-            <ShieldCheck size={20} />
-            <div>
-              <strong>
-                {item.kind === 'RECRUITMENT' ? '信息展示，止于可靠的入口' : '阅读导读，也请核对原始来源'}
-              </strong>
-              <p>
-                {item.kind === 'RECRUITMENT'
-                  ? '后续沟通、筛选和组队在对应社群或来源中完成，本站不保存这些过程记录。'
-                  : '本站说明帮助理解和发现机会；资格、时间与规则以官方或原始来源为准。'}
-              </p>
-            </div>
-          </aside>
-          <Provenance item={item} />
-          <Link
-            className="text-link feedback-content-link"
-            to={`/feedback?link=${encodeURIComponent(locationOrigin())}`}
-          >
-            反馈这条信息 <ArrowUpRight size={13} />
-          </Link>
-          {related.loading ? null : related.error ? (
-            <div className="related-error">
-              <span>同类内容暂时不可用。</span>
-              <button className="text-link" onClick={related.reload}>
-                重试
-              </button>
-            </div>
-          ) : relatedItems.length ? (
-            <section className="related-at-end">
-              <p className="eyebrow">KEEP EXPLORING</p>
-              <h2>继续发现</h2>
-              <RelatedLinks items={relatedItems.slice(0, 3)} />
-            </section>
-          ) : null}
-        </section>
-        <aside className="detail-context-desktop">
-          <DetailQuickFacts item={item} module={module} placement="desktop" />
-          {headings.length >= 3 ? (
-            <section className="outline-panel">
-              <p className="eyebrow">ON THIS PAGE</p>
-              <h2>本文目录</h2>
-              <Outline headings={headings} active={activeHeading} />
-            </section>
-          ) : null}
-        </aside>
-      </div>
-      <div className="article-end">
-        <Check size={16} />
-        <span>感谢认真读到这里。</span>
-        <Link to={fallback}>
-          继续发现 <ArrowRight size={15} />
-        </Link>
-      </div>
-    </article>
-  )
-}
-
-function locationOrigin() {
-  return window.location.origin + window.location.pathname
-}
+export { DetailPage } from './detail-page'
 
 export function AboutPage() {
   usePageTitle('关于')
+  const contactLinks = siteContactLinks()
   return (
     <>
       <header className="page-heading">
@@ -1306,26 +909,76 @@ export function AboutPage() {
           <br />
           <span>更清晰的下一步。</span>
         </h1>
-        <p>VOIDHAVEN，为仍然保持好奇的求索者而建。</p>
+        <p>VOIDHAVEN 是一个独立的、由学生维护的项目，不是学校或任何赛事主办方的官方平台。</p>
       </header>
       <div className="about-grid">
         <div className="about-prose">
-          <h2>让值得的事，被看见。</h2>
-          <p>
-            我们服务本校学生，重点解决发现竞赛、理解规则、找到团队与学习机会时的信息分散问题。把散落的线索整理在一起，让一次偶然发现，变成一次认真开始。
-          </p>
-          <h2>我们如何整理信息</h2>
-          <p>
-            网站负责展示、审核和沉淀信息；竞赛页面保留官方来源，站内说明只作辅助理解。社群负责后续沟通、筛选和组队。
-          </p>
-          <h2>清楚地知道边界</h2>
-          <p>
-            V0
-            不建立学生账户、简历、报名流程、私信、聊天、评论或复杂推荐，也不会保存社群沟通记录。我们相信，先把一件小事做好，就有意义。
-          </p>
-          <Link className="button primary" to="/feedback">
-            提供线索或反馈 <ArrowUpRight size={15} />
-          </Link>
+          <section>
+            <h2>名字从哪里来</h2>
+            <p>
+              VOIDHAVEN
+              由“VOID”与“HAVEN”拼成，意思是一片供人停靠的虚空避风港；“求索袋底洞”是我们对这套整理方式的称呼——把零散线索收进一个可以反复翻找的地方。
+            </p>
+          </section>
+          <section>
+            <h2>为什么开始</h2>
+            <p>
+              发现竞赛、理解规则、找到团队与学习机会时，信息往往散落在群聊、海报和转发里。我们把线索整理到一处，让一次偶然发现，变成一次认真开始。
+            </p>
+          </section>
+          <section>
+            <h2>现在提供什么</h2>
+            <p>
+              三类公开内容：竞赛资源、团队招募和资源与分享。每条内容保留来源、内容性质与最后核验时间，重要事项以原始来源为准。
+            </p>
+          </section>
+          <section id="sources">
+            <h2>内容整理、核验和来源原则</h2>
+            <p>
+              我们只做整理与索引，不代替官方发布。状态变化（截止、招满、暂停、取消）会在页面显著提示，并隐藏已经不能继续使用的行动入口；发现错误可以直接提交纠错。
+            </p>
+          </section>
+          <section>
+            <h2>维护团队与当前阶段</h2>
+            <p>
+              项目由学生小规模维护，仍处在持续建设的早期阶段：先把公开目录、详情页和内容编辑器做扎实，再逐步扩展参与方式。
+            </p>
+          </section>
+          {contactLinks.length ? (
+            <section>
+              <h2>开源代码与公开文档</h2>
+              <ul>
+                {contactLinks.map((link) => (
+                  <li key={link.href}>
+                    <a href={link.href}>{link.label}</a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          <section>
+            <h2>可以怎样参与</h2>
+            <p>
+              投稿或反馈线索，加入用户社群，或申请加入项目组；也可以先阅读隐私说明，了解我们如何处理信息。
+            </p>
+            <div className="button-row">
+              <Link className="button primary" to="/submit">
+                提供线索或反馈 <ArrowUpRight size={15} />
+              </Link>
+              <Link className="button ghost" to="/join/community">
+                用户社群
+              </Link>
+              <Link className="button ghost" to="/join/project">
+                项目组
+              </Link>
+            </div>
+          </section>
+          <section>
+            <h2>我们不提供什么</h2>
+            <p>
+              不提供学生账号、简历、站内报名、私信、聊天、评论或个性化推荐，也不保存社群沟通记录；项目组申请在站外完成。我们相信，先把一件小事做好，就有意义。
+            </p>
+          </section>
         </div>
         <aside className="about-note">
           <Feather size={36} strokeWidth={1} />
@@ -1350,11 +1003,25 @@ export function NotFoundPage() {
   usePageTitle('页面未找到')
   return (
     <section className="not-found">
-      <p className="eyebrow">A SMALL DETOUR · 404</p>
-      <span className="not-found-number">404</span>
-      <h1>这条小径，暂时没有内容。</h1>
-      <p>页面可能不存在或已下线，回到目录继续发现吧。</p>
-      <Link to="/" className="button primary">
+      <div className="not-found-copy">
+        <p className="eyebrow">Lost but still seeking</p>
+        <span className="not-found-number">
+          4
+          <span className="not-found-zero">
+            0
+            <svg className="not-found-spark" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 1.2 9.05 6.95 14.8 8 9.05 9.05 8 14.8 6.95 9.05 1.2 8 6.95 6.95Z" />
+            </svg>
+          </span>
+          4
+        </span>
+        <h1>这条小径，暂时没有内容。</h1>
+        <p>页面可能不存在或已下线。先回到目录，再找下一站。</p>
+      </div>
+      <figure className="not-found-plate">
+        <StatusFigure kind="path" className="not-found-figure" />
+      </figure>
+      <Link to="/" className="button primary not-found-action">
         返回首页 <ArrowRight size={16} />
       </Link>
     </section>

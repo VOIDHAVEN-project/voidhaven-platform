@@ -22,8 +22,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * The module file is deliberately versioned with the application.  It is a
- * presentation and validation contract, not an administrator-editable schema.
+ * Business policies are versioned with the application. Resource presentation
+ * definitions are enriched from the independently versioned administrator configuration.
  */
 @Component
 public class ContentModuleRegistry {
@@ -38,6 +38,41 @@ public class ContentModuleRegistry {
     private final ObjectMapper mapper;
     private final int version;
     private final Map<String, Module> modules;
+    private ResourceConfigService resourceConfigs;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setResourceConfigs(ResourceConfigService service) { this.resourceConfigs = service; }
+
+    public Module resourceModule(Module module, ResourceConfigService.Config config) {
+        if (module.legacyKind() != ContentKind.RESOURCE || config == null) return module;
+        ObjectNode snapshot = (ObjectNode) module.snapshot().deepCopy();
+        snapshot.set("resourceConfig", mapper.valueToTree(config));
+        snapshot.put("createVisible", !"resource.article".equals(module.key()));
+        ObjectNode labels = mapper.createObjectNode();
+        config.categories().forEach(c -> labels.put(c.key(), c.label()));
+        List<Field> fields = module.fields().stream().map(f -> f.key().equals("resourceType")
+                ? new Field(f.key(), "内容分类", f.type(), false, true, config.categories().stream().map(ResourceConfigService.Category::key).toList(), f.help()) : f).toList();
+        ArrayNode definitions = snapshot.putArray("fields");
+        for (Field field : fields) {
+            ObjectNode definition = mapper.valueToTree(field);
+            if (field.key().equals("resourceType")) definition.set("optionLabels", labels);
+            definitions.add(definition);
+        }
+        return new Module(module.key(), module.label(), module.legacyKind(), module.active(), module.allowsOriginalSource(),
+                module.requiresOfficialRules(), module.deadlinePolicy(), module.template(), fields, snapshot);
+    }
+
+    public ResourceConfigService.Config resourceConfig(Module module) {
+        JsonNode value = module.snapshot().get("resourceConfig");
+        return value == null ? null : mapper.treeToValue(value, ResourceConfigService.Config.class);
+    }
+
+    public Module prepareResource(Module module, Long configVersion, JsonNode details, JsonNode oldSnapshot, JsonNode oldDetails) {
+        if (module.legacyKind() != ContentKind.RESOURCE || resourceConfigs == null) return module;
+        ResourceConfigService.Config config = resourceConfigs.forContent(resourceConfig(module), oldSnapshot, oldDetails);
+        resourceConfigs.validateContent(config, configVersion, details, oldDetails, this);
+        return resourceModule(module, config);
+    }
 
     public ContentModuleRegistry(ObjectMapper mapper) {
         this.mapper = mapper;
@@ -72,13 +107,13 @@ public class ContentModuleRegistry {
     public Module requireActive(String key) {
         Module module = modules.get(key);
         if (module == null || !module.active()) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_MODULE_UNAVAILABLE", "该内容模块不存在或当前已停用。");
-        return module;
+        return module.legacyKind() == ContentKind.RESOURCE && resourceConfigs != null ? resourceModule(module, resourceConfigs.current()) : module;
     }
 
     public Module requireKnown(String key) {
         Module module = modules.get(key);
         if (module == null) throw new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_MODULE_UNAVAILABLE", "该内容模块不存在或当前已停用。");
-        return module;
+        return module.legacyKind() == ContentKind.RESOURCE && resourceConfigs != null ? resourceModule(module, resourceConfigs.current()) : module;
     }
 
     public String legacyModuleKey(ContentKind kind) {
@@ -90,10 +125,19 @@ public class ContentModuleRegistry {
     }
 
     public JsonNode publicDefinitions() {
+        return definitions(false);
+    }
+
+    public JsonNode definitions(boolean editor) {
         ObjectNode result = mapper.createObjectNode();
         result.put("version", version);
         ArrayNode values = result.putArray("modules");
-        modules.values().stream().filter(Module::active).forEach(module -> values.add(module.snapshot().deepCopy()));
+        ResourceConfigService.Config config = resourceConfigs == null ? null : resourceConfigs.current();
+        modules.values().stream().filter(Module::active).forEach(module -> {
+            ObjectNode definition = (ObjectNode) resourceModule(module, config).snapshot().deepCopy();
+            if (!editor) definition.remove("resourceConfig");
+            values.add(definition);
+        });
         return result;
     }
 
@@ -104,6 +148,29 @@ public class ContentModuleRegistry {
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_FILTER_UNAVAILABLE", "该筛选条件不存在或不可公开筛选。"));
     }
 
+    public Field requireFilterable(ContentKind kind, String key) {
+        return filterableFields(kind).stream().filter(field -> field.key().equals(key)).findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "CONTENT_FILTER_UNAVAILABLE", "该筛选条件不存在或不可公开筛选。"));
+    }
+
+    public List<Field> filterableFields(ContentKind kind) {
+        Map<String, Field> fields = new LinkedHashMap<>();
+        Set<String> conflicting = new java.util.HashSet<>();
+        for (Module module : modules.values()) {
+            if (!module.active() || module.legacyKind() != kind) continue;
+            for (Field field : requireKnown(module.key()).fields()) {
+                if (!field.filterable() || conflicting.contains(field.key())) continue;
+                Field existing = fields.get(field.key());
+                if (existing == null) fields.put(field.key(), field);
+                else if (!existing.type().equals(field.type())) {
+                    fields.remove(field.key());
+                    conflicting.add(field.key());
+                }
+            }
+        }
+        return List.copyOf(fields.values());
+    }
+
     public void requireValidMetadata(Module module, JsonNode metadata) {
         if (metadata == null || !metadata.isObject()) reject("CONTENT_METADATA_INVALID", "内容模块字段格式无效。");
         Map<String, Field> fields = new LinkedHashMap<>();
@@ -111,10 +178,13 @@ public class ContentModuleRegistry {
         for (String key : metadata.propertyNames()) if (!fields.containsKey(key)) reject("CONTENT_METADATA_INVALID", "内容包含当前模块未声明的字段：" + key + "。");
         for (Field field : module.fields()) {
             JsonNode value = metadata.get(field.key());
-            if (field.required() && (value == null || value.isNull() || (value.isTextual() && value.asText().isBlank()) || (value.isArray() && value.isEmpty()))) {
+            boolean empty = value == null || value.isNull()
+                    || (value.isTextual() && value.asText().isBlank())
+                    || (value.isArray() && value.isEmpty());
+            if (field.required() && empty) {
                 reject("CONTENT_METADATA_REQUIRED", "请填写“" + field.label() + "”。");
             }
-            if (value == null || value.isNull()) continue;
+            if (empty) continue;
             if (Set.of("text", "textarea", "url", "date", "datetime", "relation", "select").contains(field.type()) && !value.isTextual()) {
                 reject("CONTENT_METADATA_INVALID", "“" + field.label() + "”格式无效。");
             }

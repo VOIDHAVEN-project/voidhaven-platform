@@ -11,7 +11,7 @@ class MarkdownDocumentServiceTest {
     private final MarkdownDocumentService markdown = new MarkdownDocumentService(JsonMapper.builder().build());
 
     @Test void builds_a_safe_document_with_inline_media() {
-        var document = markdown.parse("# 标题\n\n正文含有 **重点** 与 [来源](https://voidhaven.cn/a)。\n\n![流程图](media:01JCONTENT0000000000000000)");
+        var document = markdown.parse("# 标题\n\n正文含有 **重点** 与 [来源](https://voidhaven.example/a)。\n\n![流程图](media:01JCONTENT0000000000000000)");
         assertThat(document.path("version").asInt()).isEqualTo(2);
         assertThat(markdown.mediaIds(document)).containsExactly("01JCONTENT0000000000000000");
     }

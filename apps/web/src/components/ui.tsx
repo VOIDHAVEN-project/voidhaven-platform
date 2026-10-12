@@ -2,6 +2,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, Archive, Check, LoaderCircle, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiFailure } from '../lib/api'
+import { StatusFigure, type PublicEmptyFigure } from './status-figures'
+
+export type { PublicEmptyFigure }
 export type NoticeValue = { tone: 'success' | 'error'; text: string } | null
 export const message = (error: unknown) =>
   error instanceof ApiFailure && error.retryAfterSeconds
@@ -17,10 +20,18 @@ export function Notice({ value }: { value: NoticeValue }) {
     </p>
   ) : null
 }
-export function EmptyState({ title, text }: { title: string; text: string }) {
+export function EmptyState({
+  title,
+  text,
+  figure,
+}: {
+  title: string
+  text: string
+  figure?: PublicEmptyFigure
+}) {
   return (
-    <section className="empty-state">
-      <Archive size={24} />
+    <section className={figure ? 'empty-state empty-state-ip' : 'empty-state'}>
+      {figure ? <StatusFigure kind={figure} className="empty-state-figure" /> : <Archive size={24} />}
       <strong>{title}</strong>
       <p>{text}</p>
     </section>
@@ -86,7 +97,7 @@ export function PanelHeading({
 }
 export const statusText: Record<string, string> = {
   COMPETITION: '竞赛',
-  RESOURCE: '学习资源',
+  RESOURCE: '资源与分享',
   RECRUITMENT: '团队招募',
   DRAFT: '草稿',
   CHANGES_REQUESTED: '待修改',
@@ -116,6 +127,11 @@ export const statusText: Record<string, string> = {
   ACTIVATION_PENDING: '待交付激活',
   ACTIVATED: '已激活',
   CLOSED: '已关闭',
+  OPEN: '进行中',
+  PAUSED: '已暂停',
+  FILLED: '已招满',
+  EXPIRED: '已截止',
+  CANCELLED: '已取消',
 }
 export function Badge({ value }: { value: string }) {
   return <span className={`badge badge-${value.toLowerCase()}`}>{statusText[value] ?? value}</span>

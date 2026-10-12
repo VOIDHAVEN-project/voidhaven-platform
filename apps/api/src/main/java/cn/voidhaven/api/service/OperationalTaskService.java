@@ -9,9 +9,13 @@ import java.util.List;
 public class OperationalTaskService {
     public record Task(String code, String label, int count, String href, String severity) { }
     private final JdbcTemplate jdbc;
+    private AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(AdminAuthorizationService authorization) { this.authorization = authorization; }
     public OperationalTaskService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public List<Task> tasks() {
+        if (authorization != null && !authorization.isSuper()) return authorizedTasks();
         return List.of(
                 task("CONTENT_REVIEW", "待审核内容", count("select count(*) from content_items where workflow_status = 'PENDING_REVIEW' and record_state = 'ACTIVE'"), "/workspace?section=reviews", "normal"),
                 task("PUBLIC_INPUT", "待处理投稿与反馈", count("select count(*) from content_submissions where state in ('RECEIVED','PENDING_REVIEW','IN_PROGRESS','WAITING_FOR_REQUESTER') and submission_type <> 'COPYRIGHT'"), "/workspace?section=submissions", "normal"),
@@ -25,5 +29,26 @@ public class OperationalTaskService {
         );
     }
     private Task task(String code, String label, int count, String href, String severity) { return new Task(code, label, count, href, severity); }
+    private List<Task> authorizedTasks() {
+        var tasks = new java.util.ArrayList<Task>();
+        if (authorization.has("CONTENT_REVIEW")) tasks.add(task("CONTENT_REVIEW", "待审核内容", scopedCount("CONTENT_REVIEW", "c.workflow_status = 'PENDING_REVIEW' and c.record_state = 'ACTIVE'"), "/workspace?section=reviews", "normal"));
+        if (authorization.has("CONTENT_VERIFY")) tasks.add(task("VERIFICATION_ATTENTION", "需核验内容", scopedCount("CONTENT_VERIFY", "c.record_state = 'ACTIVE' and exists(select 1 from content_verification_records v where v.content_item_id = c.id and v.outcome in ('INVALID','NEEDS_REVIEW') and not exists(select 1 from content_verification_records n where n.content_item_id = v.content_item_id and (n.checked_at > v.checked_at or (n.checked_at = v.checked_at and n.id > v.id))))"), "/workspace?section=content&verification=attention", "urgent"));
+        if (authorization.has("PUBLIC_INPUT_OPERATE")) tasks.add(task("PUBLIC_INPUT", "待处理投稿与反馈", count("select count(*) from content_submissions where state in ('RECEIVED','PENDING_REVIEW','IN_PROGRESS','WAITING_FOR_REQUESTER')"), "/workspace?section=submissions", "normal"));
+        if (authorization.has("PARTNER_VERIFY")) tasks.add(task("PARTNER_APPLICATION", "待处理合作申请", count("select count(*) from partner_applications where state in ('RECEIVED','PENDING_REVIEW','IN_REVIEW','WAITING_FOR_APPLICANT','ACTIVATION_PENDING')"), "/workspace?section=applications", "normal"));
+        if (authorization.has("ACCOUNT_OPERATE")) {
+            int pending = 0;
+            for (String id : jdbc.queryForList("select id from accounts where qualification_status = 'PENDING'", String.class)) {
+                try { authorization.requirePartnerAccount(id); pending++; } catch (cn.voidhaven.api.web.ApiException ignored) { }
+            }
+            tasks.add(task("PENDING_ACTIVATION", "待人工交付激活凭据", pending, "/workspace?section=accounts&status=PENDING", "normal"));
+        }
+        return tasks;
+    }
+    private int scopedCount(String permission, String condition) {
+        var arguments = new java.util.ArrayList<Object>();
+        String scope = authorization.contentPredicate(permission, "c", arguments);
+        Integer value = jdbc.queryForObject("select count(*) from content_items c where " + condition + " and " + scope, Integer.class, arguments.toArray());
+        return value == null ? 0 : value;
+    }
     private int count(String sql) { Integer value = jdbc.queryForObject(sql, Integer.class); return value == null ? 0 : value; }
 }

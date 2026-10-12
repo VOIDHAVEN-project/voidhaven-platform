@@ -13,6 +13,9 @@ public interface ContentItemRepository extends JpaRepository<ContentItem, String
     @Query("select c from ContentItem c join c.publishedRevision r where c.kind = :kind and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE' and (:cursor is null or c.id < :cursor) and (:query is null or lower(r.title) like lower(concat('%', :query, '%')) or lower(r.summary) like lower(concat('%', :query, '%')) or lower(r.sourceName) like lower(concat('%', :query, '%'))) order by c.id desc")
     List<ContentItem> findPublicPageByKind(@Param("kind") ContentKind kind, @Param("cursor") String cursor, @Param("query") String query, Pageable pageable);
     @EntityGraph(attributePaths = "publishedRevision")
+    @Query("select c from ContentItem c join c.publishedRevision r where (:kind is null or c.kind = :kind) and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE' and (:cursor is null or c.id < :cursor) and (:query is null or lower(r.title) like lower(concat('%', :query, '%')) or lower(r.summary) like lower(concat('%', :query, '%')) or lower(r.sourceName) like lower(concat('%', :query, '%'))) order by c.id desc")
+    List<ContentItem> findPublicSearch(@Param("kind") ContentKind kind, @Param("cursor") String cursor, @Param("query") String query, Pageable pageable);
+    @EntityGraph(attributePaths = "publishedRevision")
     @Query("select c from ContentItem c where c.id = :id and c.kind = :kind and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE'")
     Optional<ContentItem> findPublicByIdAndKind(@Param("id") String id, @Param("kind") ContentKind kind);
     @EntityGraph(attributePaths = "publishedRevision")
@@ -21,6 +24,9 @@ public interface ContentItemRepository extends JpaRepository<ContentItem, String
     @EntityGraph(attributePaths = "publishedRevision")
     @Query("select c from ContentItem c where c.id in :ids and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE' order by c.id desc")
     List<ContentItem> findPublicByIds(@Param("ids") Collection<String> ids);
+    @EntityGraph(attributePaths = {"publishedRevision", "currentRevision"})
+    @Query("select c from ContentItem c where c.id in :ids")
+    List<ContentItem> findGraphByIds(@Param("ids") Collection<String> ids);
     @EntityGraph(attributePaths = "publishedRevision")
     @Query("select c from ContentItem c where c.id = :id and c.publishedRevision is not null and c.visibility = 'PUBLIC' and c.recordState = 'ACTIVE'")
     Optional<ContentItem> findPublicById(@Param("id") String id);

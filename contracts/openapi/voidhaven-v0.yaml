@@ -5,6 +5,56 @@ info:
   description: 公开读取、公开输入和受控后台的接口契约。所有写入接口均使用 Idempotency-Key；私密字段绝不出现在公开响应。
 servers: [{ url: /api/v1 }]
 paths:
+  /admin/resource-config:
+    {
+      'get':
+        {
+          'summary': '管理员读取资源与分享配置',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ResourceConfigEnvelope' } } },
+                },
+              '403': { 'description': '仅管理员可用' },
+            },
+        },
+      'put':
+        {
+          'summary': '保存并生效新配置版本；沿用受控会话与 CSRF；旧标识只停用，类型不可更改',
+          'parameters': [{ '$ref': '#/components/parameters/IdempotencyKey' }, { '$ref': '#/components/parameters/IfMatch' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ResourceConfig' } } } },
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ResourceConfigEnvelope' } } },
+                },
+              '400': { 'description': '配置无效' },
+              '403': { 'description': '仅管理员可用' },
+              '409': { 'description': '版本或幂等冲突，保留输入并刷新核对' },
+            },
+        },
+    }
+  /admin/resource-config/versions:
+    {
+      'get':
+        {
+          'summary': '管理员查看历史配置，每页 20 条；使用末项版本作为 before 翻页，恢复通过 PUT 新建版本',
+          'parameters': [{ 'name': 'before', 'in': 'query', 'schema': { 'type': 'integer', 'minimum': 1 } }],
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ResourceConfigHistoryEnvelope' } } },
+                },
+            },
+        },
+    }
   /public/capabilities:
     get:
       summary: 读取当前可供公开页面使用的产品能力；用于安全关闭未配置功能
@@ -16,7 +66,7 @@ paths:
               schema: { $ref: '#/components/schemas/ProductCapabilitiesEnvelope' }
   /public/home:
     get:
-      summary: 首页三栏投影
+      summary: 首页四栏投影，含混合推荐与三类栏目的人工编排和自动补位
       responses: { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/HomeEnvelope' } } } } }
   /public/sitemap.xml:
     get:
@@ -44,6 +94,8 @@ paths:
           { $ref: '#/components/parameters/PageSize' },
           { $ref: '#/components/parameters/CsCursor' },
           { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/CatalogSort' },
+          { $ref: '#/components/parameters/CatalogStatus' },
         ]
       responses:
         {
@@ -84,6 +136,10 @@ paths:
           { $ref: '#/components/parameters/PageSize' },
           { $ref: '#/components/parameters/CsCursor' },
           { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/CatalogSort' },
+          { name: filterKey, in: query, required: false, schema: { type: string, maxLength: 64 } },
+          { name: filterValue, in: query, required: false, schema: { type: string, maxLength: 512 } },
+          { $ref: '#/components/parameters/CatalogStatus' },
         ]
       responses:
         { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
@@ -94,19 +150,23 @@ paths:
       responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } }
   /public/resources:
     get:
-      summary: 公开学习资源列表（服务端筛选与 Cursor 分页）
+      summary: 公开资源与分享列表（服务端筛选与 Cursor 分页）
       parameters:
         [
           { $ref: '#/components/parameters/PageSize' },
           { $ref: '#/components/parameters/CsCursor' },
           { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/CatalogSort' },
+          { name: filterKey, in: query, required: false, schema: { type: string, maxLength: 64 } },
+          { name: filterValue, in: query, required: false, schema: { type: string, maxLength: 512 } },
+          { $ref: '#/components/parameters/CatalogStatus' },
         ]
       responses:
         { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
   /public/resources/{id}:
     get:
       {
-        summary: 公开学习资源详情,
+        summary: 公开资源与分享详情,
         parameters: [{ $ref: '#/components/parameters/Id' }],
         responses: { '200': { description: 成功 }, '404': { $ref: '#/components/responses/HiddenNotFound' } },
       }
@@ -118,6 +178,10 @@ paths:
           { $ref: '#/components/parameters/PageSize' },
           { $ref: '#/components/parameters/CsCursor' },
           { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/CatalogSort' },
+          { name: filterKey, in: query, required: false, schema: { type: string, maxLength: 64 } },
+          { name: filterValue, in: query, required: false, schema: { type: string, maxLength: 512 } },
+          { $ref: '#/components/parameters/CatalogStatus' },
         ]
       responses:
         { '200': { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PublicPageEnvelope' } } } } }
@@ -189,11 +253,60 @@ paths:
       responses:
         '200': { description: '图片字节，Cache-Control: no-store' }
         '401': { description: 社群授权无效或已过期 }
+  /public/participation/project-join:
+    get:
+      summary: 无授权时读取公开且启用的项目组入口；携带社群短期授权时同时读取受控入口
+      parameters: [{ $ref: '#/components/parameters/CommunityGrantOptional' }]
+      responses:
+        '200':
+          { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectJoinEntryListEnvelope' } } } }
+        '401': { description: 社群授权无效或已过期 }
   /auth/session:
-    post: { summary: 受控账号登录, responses: { '200': { description: 会话已创建 }, '401': { description: 通用认证失败 } } }
+    post:
+      summary: 受控账号登录
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [loginId, password],
+                      properties: { loginId: { type: string, maxLength: 100 }, password: { type: string, maxLength: 128 } },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          '200':
+            {
+              description: 会话已创建,
+              content: { application/json: { schema: { $ref: '#/components/schemas/ControlledIdentityEnvelope' } } },
+            },
+          '401': { description: 通用认证失败 },
+        }
     delete: { summary: 销毁当前会话, responses: { '204': { description: 已退出 } } }
   /auth/me:
-    get: { summary: 当前受控身份, responses: { '200': { description: 成功 }, '401': { description: 未认证 } } }
+    get:
+      {
+        'summary': '当前受控身份与有效授权',
+        'responses':
+          {
+            '200':
+              {
+                'description': '成功',
+                'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledIdentityEnvelope' } } },
+              },
+            '400': { 'description': '参数无效' },
+            '401': { 'description': '会话失效' },
+            '403': { 'description': '权限不足' },
+            '409': { 'description': '状态或版本冲突' },
+          },
+      }
   /auth/csrf:
     get: { summary: 获取受控写操作的 CSRF 令牌, responses: { '200': { description: 成功 } } }
   /auth/activation/consume:
@@ -209,7 +322,7 @@ paths:
         { '204': { description: 已修改，需重新登录 }, '400': { description: 当前密码错误或新密码不合规 }, '401': { description: 未登录 } }
   /auth/password-reset/consume:
     post:
-      summary: 使用超级管理员人工交付的一次性凭据设置新密码
+      summary: 使用受控人工交付的一次性凭据设置新密码（不支持超级管理员目标）
       requestBody:
         { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PasswordResetConsumeRequest' } } } }
       responses: { '200': { description: 已重置 }, '400': { description: 凭据无效、已使用或已过期 } }
@@ -269,7 +382,7 @@ paths:
         '409': { description: 幂等键冲突 }
   /media/{id}/preview:
     get:
-      summary: 管理员读取待审媒体，或合作方读取自己候选修订的媒体；匿名和跨归属统一 404
+      summary: 按内容范围和私密权限读取待审媒体；组织成员共享当前组织内容已绑定媒体，未绑定暂存图片仅限上传者；匿名和跨归属统一 404
       parameters: [{ $ref: '#/components/parameters/MediaId' }]
       responses:
         '200': { description: 受控预览图片，Cache-Control 为 no-store, content: { image/jpeg: {}, image/png: {} } }
@@ -286,7 +399,12 @@ paths:
             { $ref: '#/components/parameters/StatusFilter' },
             { $ref: '#/components/parameters/ModuleFilter' },
           ],
-        responses: { '200': { description: 成功 }, '403': { description: 无有效合作方档案 } },
+        responses:
+          {
+            '200':
+              { description: 成功, content: { application/json: { schema: { $ref: '#/components/schemas/PartnerDashboardEnvelope' } } } },
+            '403': { description: 无有效合作方档案 },
+          },
       }
   /partner/content-items:
     get:
@@ -551,10 +669,18 @@ paths:
       }
   /admin/partner-applications/{id}/approve:
     post:
-      summary: 兼容期快捷路径：批准申请并签发激活凭据，写入 from_state 与人工交付记录
+      summary: 核验批准原子创建待激活组织主账号；由账号运营独立签发凭据
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ApprovePartnerApplication' } } } }
-      responses: { '200': { description: 凭据仅在此首次响应中出现 }, '409': { description: 申请已处理或凭据不可重放 } }
+      responses:
+        {
+          '200':
+            {
+              description: 创建成功，无激活令牌,
+              content: { application/json: { schema: { $ref: '#/components/schemas/ProvisionedPartnerAccountEnvelope' } } },
+            },
+          '409': { description: 申请已处理或重复请求 },
+        }
   /admin/partner-applications/{id}/decision:
     post:
       deprecated: true
@@ -626,7 +752,14 @@ paths:
             { $ref: '#/components/parameters/PageSize' },
             { $ref: '#/components/parameters/SearchQuery' },
           ],
-        responses: { '200': { description: 成功 } },
+        responses:
+          {
+            '200':
+              {
+                description: 成功,
+                content: { application/json: { schema: { $ref: '#/components/schemas/PartnerProfilesPageEnvelope' } } },
+              },
+          },
       }
   /admin/partner-profiles/{id}/content-quota:
     patch:
@@ -811,21 +944,108 @@ paths:
       parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
       responses: { '200': { description: 已撤销 }, '403': { description: 仅超级管理员 } }
+  /admin/participation/project-join:
+    get: { summary: 超级管理员读取项目组入口, responses: { '200': { description: 成功 }, '403': { description: 仅超级管理员 } } }
+    post:
+      summary: 超级管理员创建项目组入口
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectJoinEntryWrite' } } } }
+      responses:
+        { '201': { description: 已创建 }, '400': { description: 模型组合、格式或公开风险确认无效 }, '403': { description: 仅超级管理员 } }
+  /admin/participation/project-join/{id}:
+    patch:
+      summary: 超级管理员编辑项目组入口；使用 If-Match 版本校验
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectJoinEntryWrite' } } } }
+      responses: { '200': { description: 已更新 }, '403': { description: 仅超级管理员 }, '409': { description: 版本冲突或入口已停用 } }
+  /admin/participation/project-join/{id}/deactivate:
+    post:
+      summary: 超级管理员停用项目组入口
+      parameters:
+        [
+          { $ref: '#/components/parameters/Id' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ActionReason' } } } }
+      responses: { '200': { description: 已停用 }, '403': { description: 仅超级管理员 }, '409': { description: 版本冲突 } }
   /admin/homepage-placements:
     get:
-      summary: 管理员读取首页编排
+      summary: 管理员读取首页编排及每条内容的公开有效性
       responses:
         '200':
           description: 成功
           content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementReplacement' } } }
     put:
-      summary: 管理员整体替换首页编排；同一栏目下同一内容复用原记录，避免与历史停用行冲突
-      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      summary: 管理员整体替换首页编排并立即发布；使用 If-Match 防止并发覆盖
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/IfMatch' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementWrite' } } } }
       responses:
         '200':
           description: 已保存，响应可幂等回放
           content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementReplacement' } } }
+        '409': { description: 编排版本冲突，需刷新后重试 }
+  /admin/homepage-placements/candidates:
+    get:
+      summary: 按栏目搜索可编排的公开内容
+      parameters:
+        [
+          { name: slot, in: query, schema: { type: string, enum: [FOCUS, COMPETITION, RECRUITMENT, RESOURCE] } },
+          { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/ManagementCursor' },
+        ]
+      responses:
+        '200':
+          description: 成功
+          content: { application/json: { schema: { $ref: '#/components/schemas/HomepageCandidatePage' } } }
+  /admin/homepage-placements/preview:
+    post:
+      summary: 预览尚未保存的首页编排结果，不写入线上版本
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HomepagePlacementWrite' } } } }
+      responses:
+        '200':
+          description: 预览成功
+          content: { application/json: { schema: { $ref: '#/components/schemas/HomeEnvelope' } } }
+  /admin/catalog-order/{kind}:
+    get:
+      summary: 管理员读取某一类公开目录的默认排序与人工顺序
+      parameters: [{ $ref: '#/components/parameters/CatalogKind' }]
+      responses:
+        '200':
+          description: 成功
+          content: { application/json: { schema: { $ref: '#/components/schemas/CatalogOrderReplacement' } } }
+    put:
+      summary: 管理员整体替换某一类目录的默认排序与人工顺序；使用 If-Match 防止并发覆盖
+      parameters:
+        [
+          { $ref: '#/components/parameters/CatalogKind' },
+          { $ref: '#/components/parameters/IdempotencyKey' },
+          { $ref: '#/components/parameters/IfMatch' },
+        ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogOrderWrite' } } } }
+      responses:
+        '200':
+          description: 已保存，响应可幂等回放
+          content: { application/json: { schema: { $ref: '#/components/schemas/CatalogOrderReplacement' } } }
+        '409': { description: 排序版本冲突，需刷新后重试 }
+  /admin/catalog-order/{kind}/candidates:
+    get:
+      summary: 按类型搜索可加入目录人工顺序的公开内容
+      parameters:
+        [
+          { $ref: '#/components/parameters/CatalogKind' },
+          { $ref: '#/components/parameters/SearchQuery' },
+          { $ref: '#/components/parameters/ManagementCursor' },
+        ]
+      responses:
+        '200':
+          description: 成功
+          content: { application/json: { schema: { $ref: '#/components/schemas/CatalogCandidatePage' } } }
   /admin/audit-logs:
     get:
       {
@@ -843,9 +1063,402 @@ paths:
           ],
         responses: { '200': { description: 成功，不含密码、令牌、私密正文或联系方式 }, '400': { description: 时间范围无效 } },
       }
+  /admin/permission-catalog:
+    {
+      'get':
+        {
+          'summary': '超级管理员读取固定权限目录',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminPermissionCatalogEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+        },
+    }
+  /admin/accounts/{id}/authorization:
+    {
+      'get':
+        {
+          'summary': '超级管理员读取当前授权',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }],
+        },
+      'put':
+        {
+          'summary': '超级管理员更新授权并撤销旧会话',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/Id' },
+              { '$ref': '#/components/parameters/IdempotencyKey' },
+              { '$ref': '#/components/parameters/IfMatch' },
+            ],
+          'requestBody':
+            {
+              'required': true,
+              'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationInput' } } },
+            },
+        },
+    }
+  /admin/accounts/{id}/authorization/preview:
+    {
+      'post':
+        {
+          'summary': '超级管理员预览授权影响（不修改）',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationPreviewEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }],
+          'requestBody':
+            {
+              'required': true,
+              'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationInput' } } },
+            },
+        },
+    }
+  /admin/accounts/{id}/authorization/revoke:
+    {
+      'post':
+        {
+          'summary': '超级管理员撤销全部授权',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/Id' },
+              { '$ref': '#/components/parameters/IdempotencyKey' },
+              { '$ref': '#/components/parameters/IfMatch' },
+            ],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /admin/accounts/{id}/authorization/history:
+    {
+      'get':
+        {
+          'summary': '超级管理员查询授权审计历史，遵循现有留存策略',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/AdminAuthorizationHistoryEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '409': { 'description': '状态或版本冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }],
+        },
+    }
+  /admin/accounts/authorization-preview:
+    post:
+      summary: 超级管理员预览新管理员初始授权
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminAuthorizationInput' } } } }
+      responses:
+        '200':
+          {
+            description: 预览成功,
+            content: { application/json: { schema: { $ref: '#/components/schemas/AdminAuthorizationPreviewEnvelope' } } },
+          }
+        '400': { description: 参数无效 }
+        '403': { description: 权限不足 }
+  /partner/members:
+    {
+      'get':
+        {
+          'summary': '组织主账号查询本组织成员和名额',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledMembersEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+        },
+      'post':
+        {
+          'summary': '主账号在平台核定限额内创建待激活成员；不签发凭据',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledMemberEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            {
+              'required': true,
+              'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/CreateControlledMember' } } },
+            },
+        },
+    }
+  /admin/partner-profiles/{id}/member-quota:
+    {
+      'patch':
+        {
+          'summary': '具备组织范围配额权限者设置成员限额；下调不自动停用成员',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/OrganizationStateEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/Id' },
+              { '$ref': '#/components/parameters/IdempotencyKey' },
+              { '$ref': '#/components/parameters/IfMatch' },
+            ],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/MemberQuotaChange' } } } },
+        },
+    }
+  /admin/partner-profiles/{id}/suspend:
+    {
+      'post':
+        {
+          'summary': '具备组织范围账号运营权限者停用组织并撤销全部会话和链接；公开内容保持展示',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/OrganizationStateEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/Id' },
+              { '$ref': '#/components/parameters/IdempotencyKey' },
+              { '$ref': '#/components/parameters/IfMatch' },
+            ],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /admin/partner-profiles/{id}/reactivate:
+    {
+      'post':
+        {
+          'summary': '具备组织范围账号运营权限者恢复组织；旧凭据不复活',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/OrganizationStateEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters':
+            [
+              { '$ref': '#/components/parameters/Id' },
+              { '$ref': '#/components/parameters/IdempotencyKey' },
+              { '$ref': '#/components/parameters/IfMatch' },
+            ],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /partner/members/{id}/suspend:
+    {
+      'post':
+        {
+          'summary': '主账号管理本组织成员资格：suspend',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledMemberEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }, { '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /partner/members/{id}/reactivate:
+    {
+      'post':
+        {
+          'summary': '主账号管理本组织成员资格：reactivate',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledMemberEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }, { '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /partner/members/{id}/revoke:
+    {
+      'post':
+        {
+          'summary': '主账号管理本组织成员资格：revoke',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledMemberEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }, { '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /partner/members/{id}/activation-links:
+    {
+      'post':
+        {
+          'summary': '主账号为本组织待激活成员签发一次性交付凭据',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/CreatedAdminAccountEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }, { '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
+  /partner/members/{id}/password-reset-links:
+    {
+      'post':
+        {
+          'summary': '主账号为本组织正常成员签发密码恢复凭据；密码由使用者设置',
+          'responses':
+            {
+              '200':
+                {
+                  'description': '成功',
+                  'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ControlledPasswordResetEnvelope' } } },
+                },
+              '400': { 'description': '参数无效' },
+              '401': { 'description': '会话失效' },
+              '403': { 'description': '权限不足' },
+              '404': { 'description': '组织、账号或内容不可访问' },
+              '409': { 'description': '版本、名额或状态冲突' },
+            },
+          'parameters': [{ '$ref': '#/components/parameters/Id' }, { '$ref': '#/components/parameters/IdempotencyKey' }],
+          'requestBody':
+            { 'required': true, 'content': { 'application/json': { 'schema': { '$ref': '#/components/schemas/ActionReason' } } } },
+        },
+    }
 components:
   parameters:
     Id: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
+    CatalogKind: { name: kind, in: path, required: true, schema: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] } }
     MediaId: { name: id, in: path, required: true, schema: { type: string, minLength: 26, maxLength: 26 } }
     IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
     IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, description: JPA 内容版本号 } }
@@ -866,7 +1479,14 @@ components:
         description: 可选的短期授权；不携带时响应只包含 PUBLIC 入口,
       }
     PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
-    CsCursor: { name: cursor, in: query, schema: { type: string, description: 上一页最后一条不透明 ID } }
+    CsCursor: { name: cursor, in: query, schema: { type: string, maxLength: 256, description: 不透明分页游标，编码当前排序键与唯一 ID } }
+    CatalogSort:
+      {
+        name: sort,
+        in: query,
+        schema: { type: string, enum: [default, deadline, updated], description: 用户显式排序；缺省时使用运营配置的目录默认排序 },
+      }
+    CatalogStatus: { name: status, in: query, schema: { type: string, enum: [OPEN, PAUSED, FILLED, EXPIRED, CANCELLED] } }
     SearchQuery: { name: q, in: query, schema: { type: string, maxLength: 240 } }
     ManagementCursor:
       { name: cursor, in: query, schema: { type: string, minLength: 26, maxLength: 26, description: 上一页最后一条管理记录的不透明 ID } }
@@ -878,6 +1498,88 @@ components:
     HiddenNotFound: { description: 不存在、隐藏、待审或无权限时统一返回 404 }
     IdempotencyConflict: { description: 相同幂等键用于不同请求 }
   schemas:
+    ResourceCategory:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['key', 'label', 'enabled'],
+        'properties':
+          {
+            'key': { 'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_]{0,63}$' },
+            'label': { 'type': 'string', 'minLength': 1, 'maxLength': 80 },
+            'enabled': { 'type': 'boolean' },
+          },
+      }
+    ResourceField:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['key', 'label', 'enabled', 'type', 'help', 'options'],
+        'properties':
+          {
+            'key': { 'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_]{0,63}$' },
+            'label': { 'type': 'string', 'minLength': 1, 'maxLength': 80 },
+            'enabled': { 'type': 'boolean' },
+            'type': { 'type': 'string', 'enum': ['text', 'textarea', 'date', 'url', 'number', 'select', 'tags'] },
+            'help': { 'type': 'string', 'maxLength': 500 },
+            'options': { 'type': 'array', 'maxItems': 100, 'items': { 'type': 'string', 'minLength': 1, 'maxLength': 40 } },
+          },
+      }
+    ResourceTemplate:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['key', 'label', 'enabled', 'markdown', 'fieldKeys'],
+        'properties':
+          {
+            'key': { 'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_]{0,63}$' },
+            'label': { 'type': 'string', 'minLength': 1, 'maxLength': 80 },
+            'enabled': { 'type': 'boolean' },
+            'markdown': { 'type': 'string', 'maxLength': 262144 },
+            'fieldKeys': { 'type': 'array', 'maxItems': 30, 'items': { 'type': 'string' } },
+          },
+      }
+    ResourceConfig:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['version', 'categories', 'fields', 'templates'],
+        'properties':
+          {
+            'version': { 'type': 'integer', 'minimum': 1 },
+            'categories': { 'type': 'array', 'maxItems': 100, 'items': { '$ref': '#/components/schemas/ResourceCategory' } },
+            'fields': { 'type': 'array', 'maxItems': 100, 'items': { '$ref': '#/components/schemas/ResourceField' } },
+            'templates': { 'type': 'array', 'maxItems': 50, 'items': { '$ref': '#/components/schemas/ResourceTemplate' } },
+          },
+      }
+    ResourceConfigEnvelope:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['requestId', 'data'],
+        'properties': { 'requestId': { 'type': 'string' }, 'data': { '$ref': '#/components/schemas/ResourceConfig' } },
+      }
+    ResourceConfigHistoryEnvelope:
+      {
+        'type': 'object',
+        'additionalProperties': false,
+        'required': ['requestId', 'data'],
+        'properties':
+          {
+            'requestId': { 'type': 'string' },
+            'data': { 'type': 'array', 'maxItems': 20, 'items': { '$ref': '#/components/schemas/ResourceConfig' } },
+          },
+      }
+    ResourcePresentation:
+      {
+        'type': ['object', 'null'],
+        'description': '发布修订的公开展示快照，不含模板或后台管理数据',
+        'properties':
+          {
+            'category': { 'type': ['string', 'null'] },
+            'fields': { 'type': 'array', 'maxItems': 30, 'items': { '$ref': '#/components/schemas/ResourceField' } },
+          },
+      }
     ProductCapabilitiesEnvelope:
       type: object
       required: [data, requestId]
@@ -885,7 +1587,7 @@ components:
         requestId: { type: string }
         data:
           type: object
-          required: [privateContactEnabled, communityGateEnabled, gatedRecruitmentEnabled, statusQueryEnabled]
+          required: [privateContactEnabled, communityGateEnabled, gatedRecruitmentEnabled, statusQueryEnabled, projectJoinEnabled]
           properties:
             privateContactEnabled:
               type: boolean
@@ -899,6 +1601,9 @@ components:
             statusQueryEnabled:
               type: boolean
               description: 回执号与查询码状态查询是否可用
+            projectJoinEnabled:
+              type: boolean
+              description: 是否存在已启用的项目组行动入口
     SubmissionRequest:
       type: object
       required: [submissionType, title, message]
@@ -971,7 +1676,14 @@ components:
       required: [data, requestId]
       properties:
         requestId: { type: string }
-        data: { type: object }
+        data:
+          type: object
+          required: [focus, competitions, recruitments, resources]
+          properties:
+            focus: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
+            competitions: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
+            recruitments: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
+            resources: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
     PublicPageEnvelope:
       type: object
       required: [data, requestId]
@@ -983,6 +1695,7 @@ components:
           properties:
             items: { type: array, items: { $ref: '#/components/schemas/PublicContent' } }
             nextCursor: { type: [string, 'null'] }
+            sort: { type: [string, 'null'], enum: [default, deadline, updated] }
     PublicContent:
       type: object
       required:
@@ -1010,6 +1723,8 @@ components:
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
         moduleKey: { type: string, maxLength: 64, description: 版本控制的模块键；例如 resource.article。 }
         schemaVersion: { type: integer, minimum: 1 }
+        resourceConfigVersion: { type: [integer, 'null'], minimum: 1 }
+        resourcePresentation: { $ref: '#/components/schemas/ResourcePresentation' }
         title: { type: string, maxLength: 240 }
         summary: { type: string, maxLength: 1000 }
         body: { $ref: '#/components/schemas/RichTextDocument' }
@@ -1022,12 +1737,26 @@ components:
         authorDisplayName: { type: string, maxLength: 120 }
         reprintPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
         adaptationPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
-        details: { type: object }
+        details:
+          type: object
+          description: 类型专属信息；RESOURCE 的分类、标签和 customFields 均可选，空分类由服务端规范化为 GENERAL。其余既有字段保持兼容。
+          properties:
+            resourceType: { type: string, maxLength: 64 }
+            tags: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 40 } }
+            customFields:
+              type: object
+              maxProperties: 30
+              description: 按管理员声明的字段标识和类型验证；不接受未知字段；非空写入须携带 resourceConfigVersion。
+              additionalProperties:
+                type: [string, number, array, 'null']
+                items: { type: string }
+
         revision: { type: integer }
         media: { type: array, items: { $ref: '#/components/schemas/PublicMedia' } }
         verification:
           anyOf: [{ $ref: '#/components/schemas/PublicContentVerification' }, { type: 'null' }]
-        actions: { type: array, items: { $ref: '#/components/schemas/PublicAction' } }
+        operationalStatus: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'], format: date-time }
     PublicAction:
       type: object
       required: [id, presentationType, contactChannel, label, accessLevel]
@@ -1127,6 +1856,38 @@ components:
         publicExposureConfirmed: { type: boolean, description: 公开个人联系方式时必须为 true }
         primary: { type: boolean }
         sortOrder: { type: integer, minimum: 0, maximum: 1000 }
+    ProjectJoinEntry:
+      type: object
+      required: [id, name, presentationType, contactChannel, accessLevel, sortOrder]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        presentationType: { $ref: '#/components/schemas/PresentationType' }
+        contactChannel: { $ref: '#/components/schemas/ContactChannel' }
+        accessLevel: { $ref: '#/components/schemas/EntryAccessLevel' }
+        value: { type: [string, 'null'], maxLength: 2048 }
+        mediaUrl: { type: [string, 'null'], pattern: '^/api/v1/public/(media|community/media)/[A-Za-z0-9]+$' }
+        sortOrder: { type: integer }
+    ProjectJoinEntryListEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data: { type: array, items: { $ref: '#/components/schemas/ProjectJoinEntry' } }
+    ProjectJoinEntryWrite:
+      type: object
+      required: [name, presentationType, contactChannel, accessLevel, publicExposureConfirmed, sortOrder]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, 'null'], maxLength: 1000 }
+        presentationType: { $ref: '#/components/schemas/PresentationType' }
+        contactChannel: { $ref: '#/components/schemas/ContactChannel' }
+        accessLevel: { $ref: '#/components/schemas/EntryAccessLevel' }
+        value: { type: [string, 'null'], maxLength: 2048 }
+        mediaAssetId: { type: [string, 'null'], minLength: 26, maxLength: 26 }
+        publicExposureConfirmed: { type: boolean, description: 公开个人联系方式或二维码时必须为 true }
+        sortOrder: { type: integer, minimum: 0, maximum: 1000 }
     PublicContentVerification:
       type: object
       required: [outcome, checkedAt]
@@ -1188,6 +1949,7 @@ components:
         kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
         moduleKey: { type: string, maxLength: 64 }
         schemaVersion: { type: integer, minimum: 1 }
+        resourceConfigVersion: { type: [integer, 'null'], minimum: 1 }
         title: { type: string, maxLength: 240 }
         summary: { type: string, maxLength: 1000 }
         body: { $ref: '#/components/schemas/RichTextDocument' }
@@ -1203,7 +1965,20 @@ components:
         authorDisplayName: { type: string, maxLength: 120 }
         reprintPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
         adaptationPermission: { type: string, enum: [NOT_ALLOWED, ATTRIBUTION_ALLOWED] }
-        details: { type: object }
+        details:
+          type: object
+          description: 类型专属信息；RESOURCE 的分类、标签和 customFields 均可选，空分类由服务端规范化为 GENERAL。其余既有字段保持兼容。
+          properties:
+            resourceType: { type: string, maxLength: 64 }
+            tags: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 40 } }
+            customFields:
+              type: object
+              maxProperties: 30
+              description: 按管理员声明的字段标识和类型验证；不接受未知字段；非空写入须携带 resourceConfigVersion。
+              additionalProperties:
+                type: [string, number, array, 'null']
+                items: { type: string }
+
     ContentModuleSetEnvelope:
       type: object
       required: [data, requestId]
@@ -1221,6 +1996,7 @@ components:
       required: [id, draft, revision, workflowStatus, publicationStatus, visibility, recordState, media, reviews]
       properties:
         id: { type: string, minLength: 26, maxLength: 26 }
+        resourceConfig: { $ref: '#/components/schemas/ResourceConfig' }
         draft: { $ref: '#/components/schemas/ContentDraft' }
         revision: { type: integer, minimum: 0 }
         workflowStatus: { type: string }
@@ -1255,6 +2031,25 @@ components:
         ownerPartnerProfileId: { type: [string, 'null'] }
         submittedAt: { type: [string, 'null'], format: date-time }
         latestReview: { anyOf: [{ $ref: '#/components/schemas/ReviewRecord' }, { type: 'null' }] }
+    PartnerDashboardEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        requestId: { type: string }
+        data:
+          type: object
+          required: [displayName, quota, publicActiveCount, contentItems, organization]
+          properties:
+            displayName: { type: string }
+            quota: { type: integer, minimum: 0 }
+            publicActiveCount: { type: integer, minimum: 0 }
+            organization: { $ref: '#/components/schemas/OrganizationIdentity' }
+            contentItems:
+              type: object
+              required: [items]
+              properties:
+                items: { type: array, items: { $ref: '#/components/schemas/ManagedContent' } }
+                nextCursor: { type: [string, 'null'] }
     ManagedContentPageEnvelope:
       type: object
       required: [data, requestId]
@@ -1307,6 +2102,8 @@ components:
         requiresOfficialRules: { type: boolean }
         deadlinePolicy: { type: string }
         template: { type: string }
+        resourceConfig: { $ref: '#/components/schemas/ResourceConfig' }
+        createVisible: { type: boolean }
         fields:
           type: array
           items:
@@ -1318,6 +2115,7 @@ components:
               type: { type: string, enum: [text, textarea, url, date, datetime, relation, select, boolean, number, tags] }
               required: { type: boolean }
               filterable: { type: boolean }
+              optionLabels: { type: object, additionalProperties: { type: string } }
               options: { type: array, items: { type: string } }
               help: { type: string }
     PublicContentEnvelope:
@@ -1386,19 +2184,27 @@ components:
         reason: { type: string, minLength: 1, maxLength: 1000 }
     HomepagePlacement:
       type: object
-      required: [id, slot, contentItemId, sortOrder, version]
+      required: [id, slot, contentItemId, sortOrder, version, publicEligible]
       properties:
         id: { type: string, minLength: 26, maxLength: 26 }
-        slot: { type: string, enum: [FOCUS, RECRUITMENT, RESOURCE] }
+        slot: { type: string, enum: [FOCUS, COMPETITION, RECRUITMENT, RESOURCE] }
         contentItemId: { type: string, minLength: 26, maxLength: 26 }
         sortOrder: { type: integer }
         startsAt: { type: [string, 'null'], format: date-time }
         endsAt: { type: [string, 'null'], format: date-time }
         version: { type: integer, format: int64 }
+        title: { type: [string, 'null'] }
+        kind: { type: [string, 'null'], enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        operationalStatus: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'] }
+        publicEligible: { type: boolean }
+        issue: { type: [string, 'null'] }
     HomepagePlacementReplacement:
       type: object
-      required: [placements]
+      required: [version, placements]
       properties:
+        version: { type: integer, format: int64 }
         placements: { type: array, items: { $ref: '#/components/schemas/HomepagePlacement' } }
     HomepagePlacementWrite:
       type: object
@@ -1406,16 +2212,88 @@ components:
       properties:
         placements:
           type: array
-          maxItems: 30
+          maxItems: 48
           items:
             type: object
             required: [slot, contentItemId, sortOrder]
             properties:
-              slot: { type: string, enum: [FOCUS, RECRUITMENT, RESOURCE] }
+              slot: { type: string, enum: [FOCUS, COMPETITION, RECRUITMENT, RESOURCE] }
               contentItemId: { type: string, minLength: 26, maxLength: 26 }
               sortOrder: { type: integer }
               startsAt: { type: [string, 'null'], format: date-time }
               endsAt: { type: [string, 'null'], format: date-time }
+    HomepageCandidate:
+      type: object
+      required: [id, title, kind, publicEligible]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        title: { type: string }
+        kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        operationalStatus: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'] }
+        publicEligible: { type: boolean }
+        issue: { type: [string, 'null'] }
+    HomepageCandidatePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/HomepageCandidate' } }
+        nextCursor: { type: [string, 'null'] }
+    CatalogOrderEntry:
+      type: object
+      required: [contentItemId, sortOrder]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        contentItemId: { type: string, minLength: 26, maxLength: 26 }
+        sortOrder: { type: integer }
+        title: { type: [string, 'null'] }
+        kind: { type: [string, 'null'], enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        operationalStatus: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'] }
+        publicEligible: { type: boolean }
+        issue: { type: [string, 'null'] }
+    CatalogOrderReplacement:
+      type: object
+      required: [version, kind, defaultSort, entries]
+      properties:
+        version: { type: integer, format: int64 }
+        kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        defaultSort: { type: string, enum: [default, deadline, updated] }
+        entries: { type: array, items: { $ref: '#/components/schemas/CatalogOrderEntry' } }
+    CatalogOrderWrite:
+      type: object
+      required: [defaultSort, entries]
+      properties:
+        defaultSort: { type: string, enum: [default, deadline, updated] }
+        entries:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [contentItemId, sortOrder]
+            properties:
+              contentItemId: { type: string, minLength: 26, maxLength: 26 }
+              sortOrder: { type: integer }
+    CatalogCandidate:
+      type: object
+      required: [id, title, kind, publicEligible]
+      properties:
+        id: { type: string, minLength: 26, maxLength: 26 }
+        title: { type: string }
+        kind: { type: string, enum: [COMPETITION, RESOURCE, RECRUITMENT] }
+        operationalStatus: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        deadline: { type: [string, 'null'] }
+        publicEligible: { type: boolean }
+        issue: { type: [string, 'null'] }
+    CatalogCandidatePage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/CatalogCandidate' } }
+        nextCursor: { type: [string, 'null'] }
     CreateInviteBatch:
       type: object
       required: [label]
@@ -1463,6 +2341,7 @@ components:
       type: object
       required: [loginId, reason]
       properties:
+        authorization: { $ref: '#/components/schemas/AdminAuthorizationInput' }
         loginId: { type: string, pattern: '^[A-Za-z0-9._-]{4,100}$' }
         reason: { type: string, minLength: 1, maxLength: 1000 }
     CreatedAdminAccount:
@@ -1488,3 +2367,340 @@ components:
         requestId: { type: string }
         fieldErrors: { type: object, additionalProperties: { type: string } }
         retryable: { type: boolean }
+
+    AdminGrant:
+      {
+        'type': 'object',
+        'required': ['permission', 'scopeType', 'scopeIds'],
+        'properties':
+          {
+            'permission':
+              {
+                'type': 'string',
+                'enum':
+                  [
+                    'CONTENT_READ',
+                    'CONTENT_EDIT',
+                    'CONTENT_REVIEW',
+                    'CONTENT_PUBLISH',
+                    'CONTENT_VERIFY',
+                    'PARTNER_VERIFY',
+                    'ACCOUNT_OPERATE',
+                    'PRIVATE_DATA_READ',
+                    'OWNERSHIP_TRANSFER',
+                    'QUOTA_CONFIG',
+                    'AUDIT_READ',
+                    'PUBLIC_INPUT_OPERATE',
+                    'HOMEPAGE_CONFIG',
+                    'CATALOG_CONFIG',
+                    'RESOURCE_CONFIG',
+                  ],
+              },
+            'scopeType': { 'type': 'string', 'enum': ['GLOBAL', 'MODULES', 'ORGANIZATIONS'] },
+            'scopeIds': { 'type': 'array', 'uniqueItems': true, 'maxItems': 1000, 'items': { 'type': 'string' } },
+          },
+      }
+    AdminAuthorization:
+      {
+        'type': 'object',
+        'required': ['grants', 'longTerm', 'version'],
+        'properties':
+          {
+            'grants': { 'type': 'array', 'items': { '$ref': '#/components/schemas/AdminGrant' } },
+            'longTerm': { 'type': 'boolean' },
+            'expiresAt': { 'type': ['string', 'null'], 'format': 'date-time' },
+            'version': { 'type': 'integer', 'format': 'int64', 'minimum': 0 },
+          },
+      }
+    AdminAuthorizationInput:
+      {
+        'type': 'object',
+        'required': ['grants', 'longTerm', 'reason'],
+        'description': '每项权限仅一种范围；期限必须明确选择。GLOBAL 无 scopeIds，其他范围至少选择一个对象。',
+        'properties':
+          {
+            'grants': { 'type': 'array', 'maxItems': 15, 'items': { '$ref': '#/components/schemas/AdminGrant' } },
+            'longTerm': { 'type': 'boolean' },
+            'expiresAt': { 'type': ['string', 'null'], 'format': 'date-time' },
+            'reason': { 'type': 'string', 'minLength': 1, 'maxLength': 1000 },
+          },
+      }
+    AdminAuthorizationPreview:
+      {
+        'type': 'object',
+        'required': ['before', 'proposed', 'added', 'removed', 'impacts'],
+        'properties':
+          {
+            'before': { '$ref': '#/components/schemas/AdminAuthorization' },
+            'proposed': { '$ref': '#/components/schemas/AdminAuthorization' },
+            'added': { 'type': 'array', 'items': { 'type': 'string' } },
+            'removed': { 'type': 'array', 'items': { 'type': 'string' } },
+            'impacts': { 'type': 'array', 'items': { 'type': 'string' } },
+          },
+      }
+    AdminPermissionCatalog:
+      {
+        'type': 'array',
+        'items':
+          {
+            'type': 'object',
+            'required': ['code', 'label', 'scopeTypes'],
+            'properties':
+              {
+                'code': { 'type': 'string' },
+                'label': { 'type': 'string' },
+                'scopeTypes': { 'type': 'array', 'items': { 'type': 'string' } },
+              },
+          },
+      }
+    AdminAuthorizationHistory:
+      {
+        'type': 'array',
+        'items':
+          {
+            'type': 'object',
+            'required': ['id', 'createdAt', 'actorAccountId', 'before', 'after', 'reason'],
+            'properties':
+              {
+                'id': { 'type': 'string' },
+                'createdAt': { 'type': 'string', 'format': 'date-time' },
+                'actorAccountId': { 'type': 'string' },
+                'before': { '$ref': '#/components/schemas/AdminAuthorization' },
+                'after': { '$ref': '#/components/schemas/AdminAuthorization' },
+                'reason': { 'type': 'string' },
+              },
+          },
+      }
+    ControlledIdentity:
+      {
+        'type': 'object',
+        'required': ['loginId', 'roles', 'accountId', 'permissions'],
+        'properties':
+          {
+            'loginId': { 'type': 'string' },
+            'roles': { 'type': 'array', 'items': { 'type': 'string' } },
+            'accountId': { 'type': 'string' },
+            'permissions': { 'type': 'array', 'items': { '$ref': '#/components/schemas/AdminGrant' } },
+            'authorizationExpiresAt': { 'type': ['string', 'null'], 'format': 'date-time' },
+            'organization': { anyOf: [{ '$ref': '#/components/schemas/OrganizationIdentity' }, { type: 'null' }] },
+          },
+      }
+    ProvisionedPartnerAccount:
+      {
+        'type': 'object',
+        'required': ['partnerProfileId', 'accountId', 'loginId', 'qualificationStatus'],
+        'description': '核验批准仅建立待激活主账号，不签发或返回凭据。具备账号运营权限者另行签发激活链接。',
+        'properties':
+          {
+            'partnerProfileId': { 'type': 'string' },
+            'accountId': { 'type': 'string' },
+            'loginId': { 'type': 'string' },
+            'qualificationStatus': { 'type': 'string', 'const': 'PENDING' },
+          },
+      }
+    AdminGrantEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminGrant' }, 'requestId': { 'type': 'string' } },
+      }
+    AdminAuthorizationEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminAuthorization' }, 'requestId': { 'type': 'string' } },
+      }
+    AdminAuthorizationInputEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminAuthorizationInput' }, 'requestId': { 'type': 'string' } },
+      }
+    AdminAuthorizationPreviewEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminAuthorizationPreview' }, 'requestId': { 'type': 'string' } },
+      }
+    AdminPermissionCatalogEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminPermissionCatalog' }, 'requestId': { 'type': 'string' } },
+      }
+    AdminAuthorizationHistoryEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/AdminAuthorizationHistory' }, 'requestId': { 'type': 'string' } },
+      }
+    ControlledIdentityEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/ControlledIdentity' }, 'requestId': { 'type': 'string' } },
+      }
+    ProvisionedPartnerAccountEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/ProvisionedPartnerAccount' }, 'requestId': { 'type': 'string' } },
+      }
+
+    OrganizationIdentity:
+      {
+        'type': 'object',
+        'required': ['id', 'displayName', 'accountKind', 'memberQuota', 'memberCount', 'version'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'displayName': { 'type': 'string' },
+            'accountKind': { 'type': 'string', 'enum': ['MAIN', 'MEMBER'] },
+            'memberQuota': { 'type': 'integer', 'minimum': 0 },
+            'memberCount': { 'type': 'integer', 'minimum': 0 },
+            'version': { 'type': 'integer', 'minimum': 0 },
+          },
+      }
+    OrganizationState:
+      {
+        'type': 'object',
+        'required': ['id', 'active', 'memberQuota', 'memberCount', 'version'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'active': { 'type': 'boolean' },
+            'memberQuota': { 'type': 'integer', 'minimum': 0 },
+            'memberCount': { 'type': 'integer', 'minimum': 0 },
+            'version': { 'type': 'integer', 'minimum': 0 },
+          },
+      }
+    ControlledMember:
+      {
+        'type': 'object',
+        'required': ['id', 'loginId', 'qualificationStatus'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'loginId': { 'type': 'string' },
+            'qualificationStatus': { 'type': 'string', 'enum': ['PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED'] },
+          },
+      }
+    ControlledMembers:
+      {
+        'type': 'object',
+        'required': ['organization', 'items'],
+        'properties':
+          {
+            'organization': { '$ref': '#/components/schemas/OrganizationIdentity' },
+            'items': { 'type': 'array', 'items': { '$ref': '#/components/schemas/ControlledMember' } },
+          },
+      }
+    CreateControlledMember:
+      {
+        'type': 'object',
+        'required': ['loginId', 'reason'],
+        'properties':
+          {
+            'loginId': { 'type': 'string', 'pattern': '^[A-Za-z0-9._-]{4,100}$' },
+            'reason': { 'type': 'string', 'minLength': 1, 'maxLength': 1000 },
+          },
+      }
+    MemberQuotaChange:
+      {
+        'type': 'object',
+        'required': ['quota', 'reason'],
+        'properties':
+          {
+            'quota': { 'type': 'integer', 'minimum': 0, 'maximum': 1000 },
+            'reason': { 'type': 'string', 'minLength': 1, 'maxLength': 1000 },
+          },
+      }
+    PartnerProfileView:
+      {
+        'type': 'object',
+        'required':
+          ['id', 'accountId', 'displayName', 'contentQuota', 'active', 'qualificationStatus', 'memberQuota', 'memberCount', 'version'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'accountId': { 'type': 'string' },
+            'displayName': { 'type': 'string' },
+            'contentQuota': { 'type': 'integer', 'minimum': 0 },
+            'active': { 'type': 'boolean' },
+            'qualificationStatus': { 'type': 'string' },
+            'memberQuota': { 'type': 'integer', 'minimum': 0 },
+            'memberCount': { 'type': 'integer', 'minimum': 0 },
+            'version': { 'type': 'integer', 'minimum': 0 },
+          },
+      }
+    PartnerProfilesPage:
+      {
+        'type': 'object',
+        'required': ['items', 'nextCursor'],
+        'properties':
+          {
+            'items': { 'type': 'array', 'items': { '$ref': '#/components/schemas/PartnerProfileView' } },
+            'nextCursor': { 'type': ['string', 'null'] },
+          },
+      }
+    OrganizationIdentityEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/OrganizationIdentity' }, 'requestId': { 'type': 'string' } },
+      }
+    OrganizationStateEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/OrganizationState' }, 'requestId': { 'type': 'string' } },
+      }
+    ControlledMemberEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/ControlledMember' }, 'requestId': { 'type': 'string' } },
+      }
+    ControlledMembersEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/ControlledMembers' }, 'requestId': { 'type': 'string' } },
+      }
+    PartnerProfileViewEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/PartnerProfileView' }, 'requestId': { 'type': 'string' } },
+      }
+    PartnerProfilesPageEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/PartnerProfilesPage' }, 'requestId': { 'type': 'string' } },
+      }
+    ControlledPasswordReset:
+      {
+        'type': 'object',
+        'required': ['accountId', 'loginId', 'resetToken', 'expiresAt'],
+        'properties':
+          {
+            'accountId': { 'type': 'string' },
+            'loginId': { 'type': 'string' },
+            'resetToken': { 'type': 'string' },
+            'expiresAt': { 'type': 'string', 'format': 'date-time' },
+          },
+      }
+    ControlledPasswordResetEnvelope:
+      {
+        'type': 'object',
+        'required': ['data', 'requestId'],
+        'properties': { 'data': { '$ref': '#/components/schemas/ControlledPasswordReset' }, 'requestId': { 'type': 'string' } },
+      }
+
+    CreatedAdminAccountEnvelope:
+      type: object
+      required: [data, requestId]
+      properties:
+        data: { $ref: '#/components/schemas/CreatedAdminAccount' }
+        requestId: { type: string }

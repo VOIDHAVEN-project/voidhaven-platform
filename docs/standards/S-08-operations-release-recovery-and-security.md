@@ -1,5 +1,7 @@
 # S-08：上线、运维、备份、回滚与安全基线规范
 
+> 2026-10-02 受控账号迭代：账号安全、管理员授权及组织成员规则以已批准的 [DR-006](../decisions/DR-006-controlled-accounts-and-authorization.md) 和 [实施规范](controlled-accounts-implementation.md) 为准。本文原有默认管理员全权、独立合作方账号和直接发布描述已由新规则替代；其余隐私与留存约束继续执行。
+
 | 字段 | 内容 |
 | --- | --- |
 | 文档 ID | S-08 |

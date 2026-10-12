@@ -1,3 +1,5 @@
+import { can, useIdentity } from '../lib/authorization'
+import { AuthorizationPanel } from './authorization-panel'
 import { useCallback, useState, type FormEvent, type ReactNode } from 'react'
 import { ArrowUpRight, Copy, KeyRound, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -11,7 +13,6 @@ import {
   type ManagementPage,
   type ManagementQuery,
   type PendingPartnerApplication,
-  type ProvisionedPartner,
   type CreatedAdminAccount,
   type PublicSubmission,
   type PublicationReadiness,
@@ -136,7 +137,7 @@ const moduleSelect = (
       <option value="">全部模块</option>
       <option value="competition">竞赛</option>
       <option value="recruitment">团队招募</option>
-      <option value="resource">学习资源</option>
+      <option value="resource">资源与分享</option>
       <option value="resource.article">文章 / 经验</option>
     </select>
   </label>
@@ -179,6 +180,7 @@ export function ReviewWorkspace({ itemId, isSuperAdmin }: { itemId?: string; isS
 }
 
 function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: boolean }) {
+  const identity = useIdentity()
   const loader = useCallback(() => api.adminContent(itemId), [itemId])
   const state = useResource(loader)
   const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
@@ -281,8 +283,12 @@ function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: 
               <p>暂无历史审核记录。</p>
             )}
           </section>
-          {detail.workflowStatus === 'PENDING_REVIEW' ||
-          (detail.workflowStatus === 'APPROVED' && detail.recordState === 'ACTIVE') ? (
+          {can(identity, 'CONTENT_REVIEW', {
+            ownerPartnerProfileId: detail.ownerPartnerProfileId,
+            moduleKey: detail.draft.moduleKey,
+          }) &&
+          (detail.workflowStatus === 'PENDING_REVIEW' ||
+            (detail.workflowStatus === 'APPROVED' && detail.recordState === 'ACTIVE')) ? (
             <form className="review-decision-form" onSubmit={decision}>
               <label>
                 审核决定
@@ -326,7 +332,14 @@ function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: 
               ) : null}
               <button
                 className="button primary"
-                disabled={busy || !readiness?.ready}
+                disabled={
+                  busy ||
+                  !readiness?.ready ||
+                  !can(identity, 'CONTENT_PUBLISH', {
+                    ownerPartnerProfileId: detail.ownerPartnerProfileId,
+                    moduleKey: detail.draft.moduleKey,
+                  })
+                }
                 onClick={async () => {
                   setBusy(true)
                   try {
@@ -460,6 +473,7 @@ function CaseWorkflow({
 }) {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<NoticeValue>(null)
+  const identity = useIdentity()
   const [contact, setContact] = useState('')
   const [clearDueAt, setClearDueAt] = useState(false)
   return (
@@ -540,12 +554,12 @@ function CaseWorkflow({
         明确清除处理截止时间
       </label>
       <div>
-        {contactAvailable ? (
+        {contactAvailable && can(identity, 'PRIVATE_DATA_READ', {}) ? (
           <button className="button ghost" name="action" value="reveal" disabled={busy}>
             查看联系人
           </button>
         ) : null}
-        {deliverySubject?.ready ? (
+        {deliverySubject?.ready && identity?.roles.includes('SUPER_ADMIN') ? (
           <button className="button ghost" name="action" value="deliver" disabled={busy}>
             记录结果已通知
           </button>
@@ -561,7 +575,8 @@ function CaseWorkflow({
 }
 
 export function ApplicationsPanel() {
-  const [credential, setCredential] = useState<ProvisionedPartner | null>(null)
+  const identity = useIdentity()
+  const [credential, setCredential] = useState<CreatedAdminAccount | null>(null)
   const [deliverySubjectId, setDeliverySubjectId] = useState('')
   const [notice, setNotice] = useState<NoticeValue>(null)
   return (
@@ -579,7 +594,7 @@ export function ApplicationsPanel() {
               className="button ghost"
               type="button"
               onClick={async () => {
-                if (deliverySubjectId) {
+                if (deliverySubjectId && identity?.roles.includes('SUPER_ADMIN')) {
                   try {
                     await api.adminRecordManualDelivery({
                       subjectType: 'PARTNER_APPLICATION',
@@ -603,11 +618,11 @@ export function ApplicationsPanel() {
       ) : null}
       <Notice value={notice} />
       <PagedPanel<PendingPartnerApplication>
-        eyebrow="合作方申请"
+        eyebrow="合作申请"
         title="新的内容维护者"
-        description="批准与拒绝都必须写明原因；批准时会生成一次性激活凭据。"
+        description="批准后建立待激活组织主账号；激活凭据由具备账号运营权限的人签发。"
         loader={api.adminPartnerApplications}
-        empty="当前没有合作方申请"
+        empty="当前没有合作申请"
         initialOptions={{ status: 'RECEIVED' }}
         controls={
           <label>
@@ -650,15 +665,27 @@ export function ApplicationsPanel() {
                     setNotice({ tone: 'error', text: '批准需填写登录名和原因；拒绝需填写原因。' })
                     return
                   }
+                  let provisioned = false
                   try {
                     if (decision === 'APPROVE') {
                       setDeliverySubjectId(item.id)
-                      setCredential(await api.adminApprovePartnerApplication(item.id, loginId, reason))
+                      const approved = await api.adminApprovePartnerApplication(item.id, loginId, reason)
+                      provisioned = true
+                      if (
+                        can(identity, 'ACCOUNT_OPERATE', { ownerPartnerProfileId: approved.partnerProfileId })
+                      )
+                        setCredential(await api.adminReissueActivation(approved.accountId, reason))
                     } else await api.adminDecidePartnerApplication(item.id, reason)
                     reload()
                     setNotice({ tone: 'success', text: '申请处理结果已保存。' })
                   } catch (error) {
-                    setNotice({ tone: 'error', text: message(error) })
+                    if (provisioned) reload()
+                    setNotice({
+                      tone: 'error',
+                      text:
+                        (provisioned ? '申请已批准，激活链接未签发，可在账号运营中重新签发。' : '') +
+                        message(error),
+                    })
                   }
                 }}
               >
@@ -675,7 +702,7 @@ export function ApplicationsPanel() {
                     拒绝
                   </button>
                   <button className="button primary" name="decision" value="APPROVE">
-                    批准并生成凭据
+                    {can(identity, 'ACCOUNT_OPERATE', {}) ? '批准并签发激活链接' : '批准申请'}
                   </button>
                 </div>
               </form>
@@ -735,7 +762,10 @@ function activationUrl(token: string) {
 }
 
 export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
+  const identity = useIdentity()
+  const isSuper = identity?.roles.includes('SUPER_ADMIN') ?? false
   const [notice, setNotice] = useState<NoticeValue>(null)
+  const [authorizationAccount, setAuthorizationAccount] = useState<string | null>(null)
   const [credential, setCredential] = useState<CreatedAdminAccount | null>(null)
   const [resetCredential, setResetCredential] = useState<{
     accountId: string
@@ -785,12 +815,13 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
                 type="button"
                 onClick={async () => {
                   try {
-                    await api.adminRecordManualDelivery({
-                      subjectType: 'ACCOUNT',
-                      subjectId: credential.id,
-                      deliveryType: 'ACTIVATION',
-                      note: '已当面交付激活凭据',
-                    })
+                    if (isSuper)
+                      await api.adminRecordManualDelivery({
+                        subjectType: 'ACCOUNT',
+                        subjectId: credential.id,
+                        deliveryType: 'ACTIVATION',
+                        note: '已当面交付激活凭据',
+                      })
                     setCredential(null)
                     setCopied(false)
                   } catch (error) {
@@ -826,12 +857,13 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
                 type="button"
                 onClick={async () => {
                   try {
-                    await api.adminRecordManualDelivery({
-                      subjectType: 'ACCOUNT',
-                      subjectId: resetCredential.accountId,
-                      deliveryType: 'PASSWORD_RESET',
-                      note: '已当面交付密码重置凭据',
-                    })
+                    if (isSuper)
+                      await api.adminRecordManualDelivery({
+                        subjectType: 'ACCOUNT',
+                        subjectId: resetCredential.accountId,
+                        deliveryType: 'PASSWORD_RESET',
+                        note: '已当面交付密码重置凭据',
+                      })
                     setResetCredential(null)
                   } catch (error) {
                     setNotice({ tone: 'error', text: message(error) })
@@ -845,50 +877,18 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
         </section>
       ) : null}
       <Notice value={notice} />
-      <form
-        className="panel create-admin-form"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          const form = event.currentTarget
-          const data = new FormData(form)
-          const loginId = String(data.get('loginId') ?? '').trim()
-          const reason = String(data.get('reason') ?? '').trim()
-          if (!loginId || !reason) {
-            setNotice({ tone: 'error', text: '请填写登录名和开通说明。' })
-            return
-          }
-          try {
-            const created = await api.adminCreateAdmin(loginId, reason)
+      {isSuper && (
+        <AuthorizationPanel
+          onCreated={(created) => {
             setCredential(created)
             setCopied(false)
             setNotice({ tone: 'success', text: '普通管理员已创建，请立即复制一次性激活链接。' })
-            form.reset()
-          } catch (error) {
-            setNotice({ tone: 'error', text: message(error) })
-          }
-        }}
-      >
-        <PanelHeading eyebrow="超级管理员" title="创建普通管理员" />
-        <p className="panel-help">只创建 ADMIN 角色的待激活账号；激活链接不会写入日志或浏览器存储。</p>
-        <label>
-          登录名
-          <input
-            name="loginId"
-            required
-            minLength={4}
-            maxLength={100}
-            pattern="[A-Za-z0-9._-]{4,100}"
-            placeholder="admin.example"
-          />
-        </label>
-        <label>
-          开通说明
-          <input name="reason" required maxLength={1000} />
-        </label>
-        <button className="button primary">创建普通管理员</button>
-      </form>
+          }}
+        />
+      )}
+
       <PagedPanel<AccountStatus>
-        eyebrow="超级管理员"
+        eyebrow={isSuper ? '超级管理员' : '合作方账号运营'}
         title="账号资格治理"
         description="永久撤销不可逆；当前登录账号和超级管理员账号不提供停用或撤销入口。"
         loader={api.adminAccounts}
@@ -916,6 +916,22 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
               </div>
               <h3>{account.loginId}</h3>
             </div>
+            {isSuper &&
+              account.roles.includes('ADMIN') &&
+              !account.roles.includes('SUPER_ADMIN') &&
+              account.qualificationStatus !== 'REVOKED' && (
+                <details
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) setAuthorizationAccount(account.id)
+                    else setAuthorizationAccount((current) => (current === account.id ? null : current))
+                  }}
+                >
+                  <summary className="button ghost">配置职责与权限</summary>
+                  {authorizationAccount === account.id && (
+                    <AuthorizationPanel accountId={account.id} onDone={reload} />
+                  )}
+                </details>
+              )}
             {account.loginId === currentLoginId ||
             account.qualificationStatus === 'REVOKED' ||
             account.roles.includes('SUPER_ADMIN') ? (
@@ -923,6 +939,7 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
             ) : (
               <AccountActions
                 account={account}
+                canReset={isSuper}
                 run={async (action, reason) => {
                   try {
                     if (action === 'suspend') await api.adminSuspendAccount(account.id, reason)
@@ -956,10 +973,12 @@ export function AccountsPanel({ currentLoginId }: { currentLoginId: string }) {
   )
 }
 
-function AccountActions({
+export function AccountActions({
   account,
   run,
+  canReset,
 }: {
+  canReset: boolean
   account: AccountStatus
   run: (action: 'suspend' | 'reactivate' | 'revoke' | 'reissue' | 'reset', reason: string) => Promise<void>
 }) {
@@ -1004,14 +1023,21 @@ function AccountActions({
       </label>
       <div>
         {account.qualificationStatus === 'PENDING' ? (
-          <button className="button ghost" name="action" value="reissue" disabled={busy}>
-            重新签发
-          </button>
+          <>
+            <button className="button ghost" name="action" value="reissue" disabled={busy}>
+              重新签发
+            </button>
+            <button className="button ghost" name="action" value="suspend" disabled={busy}>
+              停用
+            </button>
+          </>
         ) : account.qualificationStatus === 'ACTIVE' ? (
           <>
-            <button className="button ghost" name="action" value="reset" disabled={busy}>
-              签发密码重置
-            </button>
+            {canReset && (
+              <button className="button ghost" name="action" value="reset" disabled={busy}>
+                签发密码重置
+              </button>
+            )}
             <button className="button ghost" name="action" value="suspend" disabled={busy}>
               停用
             </button>

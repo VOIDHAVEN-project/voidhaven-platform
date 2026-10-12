@@ -38,7 +38,7 @@ jobs:
       - name: Install browser for review recovery regression
         run: npx playwright install --with-deps chromium
       - name: Verify approved review recovery in both themes
-        run: npm run web:e2e -- review-recovery.spec.ts
+        run: npm run web:e2e -- review-recovery.spec.ts controlled-accounts.spec.ts resource-config.spec.ts
 
   api:
     runs-on: ubuntu-latest
@@ -85,3 +85,38 @@ jobs:
       - run: docker compose -f infra/compose/compose.local.yml config --quiet
       - run: docker compose -f infra/compose/compose.test-server.yml config --quiet
       - run: docker compose -f infra/compose/compose.candidate.yml config --quiet
+
+  full-stack:
+    runs-on: ubuntu-latest
+    env:
+      VOIDHAVEN_E2E_REAL: '1'
+      VOIDHAVEN_E2E_BASE_URL: http://127.0.0.1:18080
+      VOIDHAVEN_HTTP_PORT: '18080'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start isolated MySQL, media, API and web
+        run: docker compose --project-name voidhavenbaselineci -f infra/compose/compose.local.yml up --build --detach --wait --wait-timeout 180
+      - name: Wait for API readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:18080/api/v1/public/capabilities; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Verify real publishing, credentials and controlled entries
+        run: npm run web:e2e -- full-stack.spec.ts controlled-accounts.spec.ts
+      - name: Preserve synthetic test diagnostics on failure
+        if: failure()
+        run: docker compose --project-name voidhavenbaselineci -f infra/compose/compose.local.yml logs --tail 120 api
+      - name: Stop isolated services
+        if: always()
+        run: docker compose --project-name voidhavenbaselineci -f infra/compose/compose.local.yml down

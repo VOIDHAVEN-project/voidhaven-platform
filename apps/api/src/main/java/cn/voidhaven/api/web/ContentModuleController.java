@@ -13,8 +13,21 @@ import tools.jackson.databind.JsonNode;
 @PreAuthorize("hasAnyRole('PARTNER','ADMIN','SUPER_ADMIN')")
 public class ContentModuleController {
     private final ContentModuleRegistry modules;
+    private cn.voidhaven.api.service.AdminAuthorizationService authorization;
+    @org.springframework.beans.factory.annotation.Autowired
+    void authorization(cn.voidhaven.api.service.AdminAuthorizationService authorization) { this.authorization = authorization; }
     public ContentModuleController(ContentModuleRegistry modules) { this.modules = modules; }
     @GetMapping ApiResponse<JsonNode> definitions(HttpServletRequest request) {
-        return new ApiResponse<>(modules.publicDefinitions(), (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
+        var definitions = modules.definitions(true);
+        if (authorization.isAdmin() && !authorization.isSuper()) {
+            var filtered = ((tools.jackson.databind.node.ObjectNode) definitions).putArray("modules");
+            for (var module : modules.definitions(true).path("modules")) {
+                String key = module.path("key").asText();
+                boolean allowed = authorization.allows("CONTENT_READ", key, null)
+                        || authorization.effective().stream().anyMatch(grant -> grant.permission().startsWith("CONTENT_") && grant.scopeType().equals("ORGANIZATIONS"));
+                if (allowed) filtered.add(module);
+            }
+        }
+        return new ApiResponse<>(definitions, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 }

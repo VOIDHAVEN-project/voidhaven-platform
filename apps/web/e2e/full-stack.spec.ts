@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 
 const enabled = process.env.VOIDHAVEN_E2E_REAL === '1'
 const adminLogin = process.env.VOIDHAVEN_E2E_ADMIN_LOGIN || 'local-admin'
@@ -68,7 +69,7 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
   await page.getByLabel('展示名称').fill(partnerName)
   await page.getByLabel('你想维护什么内容？').fill('仅用于隔离端到端验收的虚构内容维护申请。')
   await page.getByLabel('联系方式').fill(`test-${suffix}@example.org`)
-  await page.getByRole('button', { name: '提交合作方申请' }).click()
+  await page.getByRole('button', { name: '提交合作申请' }).click()
   await expect(page.getByText('申请已进入审核队列')).toBeVisible()
   const partnerApplication = await readReceipt(page)
 
@@ -78,7 +79,7 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
   await expect(applicationRow).toBeVisible()
   await applicationRow.getByLabel('受控登录名').fill(partnerLogin)
   await applicationRow.getByLabel('审核原因').fill('隔离端到端验收批准')
-  await applicationRow.getByRole('button', { name: '批准并生成凭据' }).click()
+  await applicationRow.getByRole('button', { name: '批准并签发激活链接' }).click()
   const activationCard = page.locator('.token-card').filter({ hasText: partnerLogin })
   await expect(activationCard).toBeVisible()
   const activationUrl = (await activationCard.locator('code').textContent())?.trim()
@@ -116,7 +117,7 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
   await entryForm.getByRole('button', { name: '创建入口' }).click()
   await expect(page.getByText('社群入口已创建。')).toBeVisible()
 
-  await page.goto('/join')
+  await page.goto('/join/community')
   await page.getByLabel('邀请码').fill(inviteCode!)
   await page.getByRole('button', { name: '查看社群入口' }).click()
   const communityEntry = page.locator('.community-entry').filter({ hasText: communityName })
@@ -126,9 +127,54 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
     'https://github.com/voidhaven',
   )
 
+  // Create a unique, open synthetic recruitment so repeated runs do not depend on old fixture revisions.
+  async function setupWrite(path: string, data: unknown, version?: number, method = 'POST') {
+    const csrf = (await (await page.request.get('/api/v1/auth/csrf')).json()).data
+    const headers: Record<string, string> = { [csrf.headerName]: csrf.token, 'Idempotency-Key': randomUUID() }
+    if (version !== undefined) headers['If-Match'] = String(version)
+    const response = await page.request.fetch('/api/v1' + path, { data, headers, method })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    return (await response.json()).data
+  }
+  const templatePage = (
+    await (await page.request.get('/api/v1/admin/content-items?module=recruitment')).json()
+  ).data
+  const template = (
+    await (await page.request.get('/api/v1/admin/content-items/' + templatePage.items[0].id)).json()
+  ).data
+  const recruitmentName = `端到端招募-${suffix}`
+  const recruitment = await setupWrite('/admin/content-items', {
+    ...template.draft,
+    title: recruitmentName,
+    details: { ...template.draft.details, deadlineDate: '2035-12-31' },
+  })
+  await setupWrite(
+    `/admin/content-items/${recruitment.id}/actions`,
+    {
+      actions: [
+        {
+          presentationType: 'LINK',
+          contactChannel: 'URL',
+          accessLevel: 'PUBLIC',
+          label: '初始合成入口',
+          value: 'https://github.com/voidhaven/voidhaven-platform',
+          enabled: true,
+          publicExposureConfirmed: false,
+          sortOrder: 0,
+        },
+      ],
+    },
+    recruitment.revision,
+    'PUT',
+  )
+  await setupWrite(`/admin/content-items/${recruitment.id}/submit-review`, {})
+  const reviewReady = (await (await page.request.get(`/api/v1/admin/content-items/${recruitment.id}`)).json())
+    .data
+  await setupWrite(`/admin/reviews/${recruitment.id}/decision`, { decision: 'APPROVE' }, reviewReady.revision)
+  await setupWrite(`/admin/content-items/${recruitment.id}/publish`, {})
   await page.goto('/workspace?section=content')
   const recruitmentRow = page
-    .getByRole('heading', { name: '数据可视化小组招募（示例）' })
+    .getByRole('heading', { name: recruitmentName })
     .locator('xpath=ancestor::article')
   const editHref = await recruitmentRow.getByRole('link', { name: '编辑' }).getAttribute('href')
   expect(editHref).toMatch(/\/workspace\/content\/.+\/edit/)
@@ -178,7 +224,7 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
   await expect(page.getByRole('img', { name: new RegExp(qrLabel) })).toHaveCount(0)
 
   await page.goto('/workspace?section=content')
-  const candidateRow = page.locator('.data-row').filter({ hasText: '数据可视化小组招募（示例）' })
+  const candidateRow = page.locator('.data-row').filter({ hasText: recruitmentName })
   await candidateRow.getByRole('button', { name: '送审', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '确认送审' }).click()
   await candidateRow.getByRole('link', { name: '查看原文并审核' }).click()
@@ -195,7 +241,7 @@ test('真实产品闭环：回执、合作激活、社群、招募审核、核�
     new RegExp(`/api/v1/public/media/${qrId}$`),
   )
   await expect(page.getByText(/最近来源核验/)).toBeVisible()
-  await expect(page.getByText(/有效/)).toBeVisible()
+  await expect(page.locator('dd').filter({ hasText: '来源核验有效' })).toBeVisible()
 
   await page.goto('/workspace')
   await expect(page.getByText('待处理投稿与反馈')).toBeVisible()

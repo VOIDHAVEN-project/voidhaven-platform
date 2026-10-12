@@ -20,6 +20,7 @@ public class IdempotencyService {
     @Transactional
     public <T> T execute(String key, Object request, Class<T> responseType, Supplier<T> action) {
         if (key == null || key.isBlank() || key.length() > 128) throw new ApiException(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_REQUIRED", "请携带有效的幂等请求标识后重试。");
+        key = scopedKey(key);
         String requestHash = hash(write(request));
         IdempotencyReservationService.Existing existing = reservations.reserve(key, requestHash);
         if (existing != null) return restore(existing, requestHash, responseType);
@@ -41,6 +42,7 @@ public class IdempotencyService {
     @Transactional
     public <T> T executeSingleDelivery(String key, Object request, Supplier<T> action) {
         if (key == null || key.isBlank() || key.length() > 128) throw new ApiException(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_REQUIRED", "请携带有效的幂等请求标识后重试。");
+        key = scopedKey(key);
         String requestHash = hash(write(request));
         IdempotencyReservationService.Existing existing = reservations.reserve(key, requestHash);
         if (existing != null) {
@@ -66,5 +68,15 @@ public class IdempotencyService {
         try { return json.readValue(existing.responseBody(), type); } catch (Exception error) { throw new IllegalStateException("Stored idempotency response cannot be restored", error); }
     }
     private String write(Object object) { try { return json.writeValueAsString(object); } catch (Exception error) { throw new IllegalStateException("Response cannot be serialized", error); } }
+    String scopedKey(String key) {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) return key;
+        if (!(authentication.getPrincipal() instanceof cn.voidhaven.api.security.AccountPrincipal principal))
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "ACCOUNT_INACTIVE", "会话已失效。");
+        var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        String operation = attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet
+                ? servlet.getRequest().getMethod() + ":" + servlet.getRequest().getRequestURI() : "internal";
+        return hash(principal.accountId() + ":" + principal.securityEpoch() + ":" + operation + ":" + key);
+    }
     private String hash(String input) { try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8))); } catch (Exception error) { throw new IllegalStateException(error); } }
 }
