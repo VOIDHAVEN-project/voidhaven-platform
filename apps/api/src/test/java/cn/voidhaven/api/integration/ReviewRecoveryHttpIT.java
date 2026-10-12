@@ -83,10 +83,10 @@ class ReviewRecoveryHttpIT {
     String key() { return UUID.randomUUID().toString(); }
     HttpClient client() { return HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).connectTimeout(Duration.ofSeconds(10)).build(); }
     HttpClient login(String login, String password) throws Exception { var c = client(); response(send(c, "POST", "/auth/session", json.createObjectNode().put("loginId", login).put("password", password), null, null, null)); return c; }
-    JsonNode draft(String title, boolean recruitment) {
+    JsonNode draft(String title, boolean recruitment) throws Exception {
         var body = json.createObjectNode().put("kind", recruitment ? "RECRUITMENT" : "RESOURCE").put("moduleKey", recruitment ? "recruitment" : "resource")
                 .put("sourceUrl", "http://localhost:8080/local-fixtures/source").put("sourceName", "本地合成来源")
-                .put("schemaVersion", 2).put("title", title).put("summary", "用于审核恢复验收的合成内容")
+                .put("schemaVersion", get(root, "/content-modules").path("version").asInt()).put("title", title).put("summary", "用于审核恢复验收的合成内容")
                 .put("markdownSource", "# 合成正文\n\n用于隔离测试。").put("languageCode", "zh-CN").put("rightsBasis", "合成验收数据")
                 .put("authorDisplayName", "合成作者").put("reprintPermission", "NOT_ALLOWED").put("adaptationPermission", "NOT_ALLOWED");
         body.set("body", json.readTree("{\"version\":1,\"blocks\":[]}"));
