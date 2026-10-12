@@ -49,6 +49,10 @@ jobs:
           java-version: '17'
           cache: maven
           cache-dependency-path: apps/api/pom.xml
+      - name: Prepare pinned MinIO image for integration tests
+        run: |
+          docker pull coollabsio/minio@sha256:a4938f37f1be1841b8e7b627ad0207b265345fd0d063e42d7410c78af0e63e68
+          docker tag coollabsio/minio@sha256:a4938f37f1be1841b8e7b627ad0207b265345fd0d063e42d7410c78af0e63e68 minio/minio:RELEASE.2025-04-22T22-12-26Z
       - run: chmod +x mvnw
       - run: ./mvnw -B verify
 
