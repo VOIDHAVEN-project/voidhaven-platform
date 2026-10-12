@@ -124,6 +124,7 @@ public class ContentManagementService {
     private void submit(ContentItem item, String actorId, String role, String requestId) {
         require(item.getWorkflowStatus() == WorkflowStatus.DRAFT || item.getWorkflowStatus() == WorkflowStatus.CHANGES_REQUESTED, "CONTENT_NOT_SUBMITTABLE");
         requireCurrentMediaMatchesDocument(item.getCurrentRevision());
+        requireRecruitmentAction(item);
         item.submit();
         audit.record(actorId, role, "CONTENT_SUBMITTED", "CONTENT_ITEM", item.getId(), "{\"workflowStatus\":\"DRAFT\"}", "{\"workflowStatus\":\"PENDING_REVIEW\"}", null, requestId);
     }
@@ -176,11 +177,13 @@ public class ContentManagementService {
         requireActiveActor(actorId);
         ContentItem item = find(id);
         if (expectedVersion == null || !Objects.equals(item.getVersion(), expectedVersion)) throw new ApiException(HttpStatus.CONFLICT, "CONTENT_VERSION_CONFLICT", "送审内容已发生变化，请刷新后重新审核。");
-        require(item.getWorkflowStatus() == WorkflowStatus.PENDING_REVIEW, "CONTENT_NOT_IN_REVIEW");
+        boolean returningApproved = item.getWorkflowStatus() == WorkflowStatus.APPROVED
+                && item.getRecordState() == RecordState.ACTIVE && "CHANGES_REQUESTED".equals(decision);
+        require(item.getWorkflowStatus() == WorkflowStatus.PENDING_REVIEW || returningApproved, "CONTENT_NOT_IN_REVIEW");
         String normalizedReason = reason == null ? null : reason.trim();
         if (("CHANGES_REQUESTED".equals(decision) || "REJECT".equals(decision)) && blank(normalizedReason)) throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_REASON_REQUIRED", "退回修改或拒绝时必须填写审核原因。");
-        String before = "{\"workflowStatus\":\"PENDING_REVIEW\"}";
-        if ("APPROVE".equals(decision)) item.approve();
+        String before = "{\"workflowStatus\":\"" + item.getWorkflowStatus() + "\"}";
+        if ("APPROVE".equals(decision)) { requireRecruitmentAction(item); item.approve(); }
         else if ("CHANGES_REQUESTED".equals(decision)) item.requestChanges();
         else if ("REJECT".equals(decision)) item.reject();
         else throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REVIEW_DECISION", "审核决定无效。");
@@ -208,13 +211,17 @@ public class ContentManagementService {
         ContentItem item = items.findByIdForUpdate(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONTENT_NOT_FOUND", "内容不存在。"));
         require(item.getWorkflowStatus() == WorkflowStatus.APPROVED, "CONTENT_NOT_APPROVED");
         requireCurrentMediaMatchesDocument(item.getCurrentRevision());
-        if (item.getKind() == ContentKind.RECRUITMENT && (contentActions == null || !contentActions.hasEnabledAction(item.getCurrentRevision().getId()))) {
-            throw new ApiException(HttpStatus.CONFLICT, "RECRUITMENT_ACTION_REQUIRED", "招募内容至少需要一个有效行动入口后才能发布。");
-        }
+        requireRecruitmentAction(item);
         requirePartnerPublicationCapacity(item);
         item.publish();
         audit.record(actorId, role, "CONTENT_PUBLISHED", "CONTENT_ITEM", id, "{\"visibility\":\"HIDDEN\"}", "{\"visibility\":\"PUBLIC\"}", null, requestId);
         return managed(item);
+    }
+
+    private void requireRecruitmentAction(ContentItem item) {
+        if (item.getKind() == ContentKind.RECRUITMENT && (contentActions == null || !contentActions.hasEnabledAction(item.getCurrentRevision().getId()))) {
+            throw new ApiException(HttpStatus.CONFLICT, "RECRUITMENT_ACTION_REQUIRED", "招募内容至少需要一个有效行动入口，请补齐后重新送审。");
+        }
     }
 
     @Transactional public Managed hide(String id, String reason, String actorId, String role, String requestId) { requireActiveActor(actorId); ContentItem item = find(id); require(item.getPublishedRevision() != null && item.getVisibility() == Visibility.PUBLIC && item.getRecordState() == RecordState.ACTIVE, "CONTENT_NOT_HIDEABLE"); item.hide(); audit.record(actorId, role, "CONTENT_HIDDEN", "CONTENT_ITEM", id, "{\"visibility\":\"PUBLIC\"}", "{\"visibility\":\"HIDDEN\"}", requireReason(reason), requestId); return managed(item); }

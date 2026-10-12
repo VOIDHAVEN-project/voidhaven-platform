@@ -199,9 +199,10 @@ function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: 
     setNotice(null)
     try {
       const updated = await api.adminDecision(itemId, detail.revision, value, reason || undefined)
-      if (updated.workflowStatus === 'APPROVED') setReadiness(await api.adminPublicationReadiness(itemId))
+      setReadiness(null)
       state.reload()
       setNotice({ tone: 'success', text: '审核决定已保存，并与当前修订版本绑定。' })
+      if (updated.workflowStatus === 'APPROVED') setReadiness(await api.adminPublicationReadiness(itemId))
     } catch (error) {
       setNotice({ tone: 'error', text: message(error) })
     } finally {
@@ -280,7 +281,8 @@ function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: 
               <p>暂无历史审核记录。</p>
             )}
           </section>
-          {detail.workflowStatus === 'PENDING_REVIEW' ? (
+          {detail.workflowStatus === 'PENDING_REVIEW' ||
+          (detail.workflowStatus === 'APPROVED' && detail.recordState === 'ACTIVE') ? (
             <form className="review-decision-form" onSubmit={decision}>
               <label>
                 审核决定
@@ -288,9 +290,9 @@ function ReviewDetail({ itemId, isSuperAdmin }: { itemId: string; isSuperAdmin: 
                   <option value="" disabled>
                     请选择
                   </option>
-                  <option value="APPROVE">通过</option>
+                  {detail.workflowStatus === 'PENDING_REVIEW' ? <option value="APPROVE">通过</option> : null}
                   <option value="CHANGES_REQUESTED">退回修改</option>
-                  <option value="REJECT">拒绝</option>
+                  {detail.workflowStatus === 'PENDING_REVIEW' ? <option value="REJECT">拒绝</option> : null}
                 </select>
               </label>
               <label>
