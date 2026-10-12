@@ -48,6 +48,19 @@
   margin-top: 12px;
   border: 1px solid var(--border);
 }
+.recruitment-qr {
+  width: min(280px, 100%);
+  min-width: 0;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.recruitment-qr img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0 0;
+}
 .workspace-stack {
   display: grid;
   gap: 20px;
@@ -1041,6 +1054,7 @@ select:disabled {
   display: block;
   max-width: 100%;
   height: auto;
+  margin-inline: auto;
   background: var(--wash);
   border: 1px solid var(--line);
   border-radius: 5px;
